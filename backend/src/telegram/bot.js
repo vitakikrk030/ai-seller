@@ -35,6 +35,13 @@ const bot = {
     try {
       await axios.post(`${getAPI()}/setWebhook`, {
         url: webhookUrl,
+        allowed_updates: [
+          'message',
+          'callback_query',
+          'business_connection',
+          'business_message',
+          'edited_business_message',
+        ],
       });
       console.log('Webhook set:', webhookUrl);
     } catch (err) {

@@ -15,6 +15,9 @@ router.post('/webhook', async (req, res) => {
   try {
     const update = req.body;
 
+    // Debug logging
+    console.log('UPDATE:', JSON.stringify(update));
+
     // Support regular + Telegram Business messages
     const msg = update.message || update.business_message || update.edited_business_message;
 
