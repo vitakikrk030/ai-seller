@@ -9,6 +9,13 @@ node_modules/
 .next/
 out/
 
+# Build
+dist/
+
+# Logs
+logs/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
