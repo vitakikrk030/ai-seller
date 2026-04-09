@@ -2155,6 +2155,44 @@ async function testBusinessWebhookRouting() {
   assert(msg4 === undefined, 'routing: empty update returns undefined');
 }
 
+async function testBusinessDeepLink() {
+  console.log('\n🔗 51. BUSINESS DEEP LINK + CONNECTION TEST');
+
+  const { handleMessage } = require('../telegram/handler');
+
+  const testId = 999051;
+  await cleanup(testId);
+
+  await settings.set('global_ai_enabled', 'true');
+
+  // Test 1: /start bizChat should return immediately, no AI call
+  const msg1 = { from: { id: testId, first_name: 'BizStart', username: 'bizstart' }, text: '/start bizChat12345' };
+  await handleMessage(msg1, 'biz_abc');
+  // Should NOT create user messages (it returns before saving)
+  const user1 = await users.findOrCreate(testId, 'BizStart', 'bizstart');
+  const h1 = await messages.getHistory(user1.id, 10);
+  const aiMsgs1 = h1.filter((m) => m.role === 'ai');
+  assert(aiMsgs1.length === 0, 'deeplink: /start bizChat does not trigger AI');
+
+  // Test 2: /start bizChat without businessConnectionId
+  await cleanup(testId);
+  const msg2 = { from: { id: testId, first_name: 'BizStart', username: 'bizstart' }, text: '/start bizChatXXX' };
+  await handleMessage(msg2);
+  const user2 = await users.findOrCreate(testId, 'BizStart', 'bizstart');
+  const h2 = await messages.getHistory(user2.id, 10);
+  assert(h2.length === 0, 'deeplink: /start bizChat without connId no crash');
+
+  // Test 3: Regular /start should NOT be intercepted
+  await cleanup(testId);
+  const msg3 = { from: { id: testId, first_name: 'BizStart', username: 'bizstart' }, text: '/start' };
+  await handleMessage(msg3);
+  const user3 = await users.findOrCreate(testId, 'BizStart', 'bizstart');
+  const h3 = await messages.getHistory(user3.id, 10);
+  assert(h3.some((m) => m.role === 'user' && m.text === '/start'), 'deeplink: regular /start passes through');
+
+  await cleanup(testId);
+}
+
 async function run() {
   console.log('🚀 Starting E2E tests...\n');
 
@@ -2216,6 +2254,7 @@ async function run() {
     await testAiModeApiEndpoint();
     await testTelegramBusinessSupport();
     await testBusinessWebhookRouting();
+    await testBusinessDeepLink();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);

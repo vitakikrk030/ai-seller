@@ -114,6 +114,15 @@ async function handleMessage(msg, businessConnectionId) {
   const text = msg.text || msg.caption || null;
   const photo = msg.photo;
 
+  // Handle /start bizChat deep link (Telegram Business connection handshake)
+  if (text && text.startsWith('/start bizChat')) {
+    try {
+      const sendOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
+      await bot.sendMessage(telegramId, 'Подключение успешно ✅', sendOpts);
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
   // Ignore unsupported message types (voice, sticker, video, document, etc.)
   if (!text && !photo) {
     try {

@@ -49,7 +49,14 @@ router.post('/webhook', async (req, res) => {
     // Handle business_connection events (bot connected/disconnected)
     if (update.business_connection) {
       const bc = update.business_connection;
-      console.log(`Business connection: user=${bc.user?.id} enabled=${!bc.is_deleted}`);
+      const chatId = bc.user?.id;
+      const enabled = !bc.is_deleted;
+      console.log(`Business connection: user=${chatId} enabled=${enabled}`);
+
+      // Confirm to Telegram that bot is alive and supports Business
+      if (chatId && enabled) {
+        await bot.sendMessage(chatId, '✅ Бот подключён и готов к работе');
+      }
     }
 
     res.sendStatus(200);
