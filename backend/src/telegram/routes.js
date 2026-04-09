@@ -11,61 +11,59 @@ function getAPI() {
 }
 
 // Telegram webhook endpoint
-router.post('/webhook', async (req, res) => {
-  try {
-    const update = req.body;
+router.post('/webhook', (req, res) => {
+  res.sendStatus(200); // Сразу отвечаем Telegram
 
-    // Debug logging
-    console.log('UPDATE:', JSON.stringify(update));
+  const update = req.body;
+  console.log('UPDATE:', JSON.stringify(update));
 
-    // Support regular + Telegram Business messages
-    const msg = update.message || update.business_message || update.edited_business_message;
+  // Support regular + Telegram Business messages
+  const msg = update.message || update.business_message || update.edited_business_message;
 
-    if (msg) {
-      const businessConnectionId =
-        update.business_message?.business_connection_id ||
-        update.edited_business_message?.business_connection_id ||
-        null;
+  if (msg) {
+    const businessConnectionId =
+      update.business_message?.business_connection_id ||
+      update.edited_business_message?.business_connection_id ||
+      null;
 
-      await handleMessage(msg, businessConnectionId);
-    }
+    handleMessage(msg, businessConnectionId).catch((err) =>
+      console.error('handleMessage error:', err)
+    );
+  }
 
-    // Handle callback_query (inline button presses)
-    if (update.callback_query) {
-      const cbq = update.callback_query;
-      if (cbq.data === 'copy_card') {
-        const cardNumber = await settings.get('payment_card_number');
-        if (cardNumber) {
-          await bot.sendMessage(cbq.message.chat.id, cardNumber);
-        }
+  // Handle callback_query (inline button presses)
+  if (update.callback_query) {
+    const cbq = update.callback_query;
+    if (cbq.data === 'copy_card') {
+      (async () => {
         try {
+          const cardNumber = await settings.get('payment_card_number');
+          if (cardNumber) {
+            await bot.sendMessage(cbq.message.chat.id, cardNumber);
+          }
           await axios.post(`${getAPI()}/answerCallbackQuery`, {
             callback_query_id: cbq.id,
             text: 'Номер карты отправлен для копирования',
           });
         } catch (e) {
-          console.error('answerCallbackQuery error:', e.message);
+          console.error('callbackQuery error:', e.message);
         }
-      }
+      })();
     }
+  }
 
-    // Handle business_connection events (bot connected/disconnected)
-    if (update.business_connection) {
-      const bc = update.business_connection;
-      const chatId = bc.user?.id;
-      const enabled = !bc.is_deleted;
-      console.log(`Business connection: user=${chatId} enabled=${enabled}`);
+  // Handle business_connection events (bot connected/disconnected)
+  if (update.business_connection) {
+    const bc = update.business_connection;
+    const chatId = bc.user?.id;
+    const enabled = !bc.is_deleted;
+    console.log(`Business connection: user=${chatId} enabled=${enabled}`);
 
-      // Confirm to Telegram that bot is alive and supports Business
-      if (chatId && enabled) {
-        await bot.sendMessage(chatId, '✅ Бот подключён и готов к работе');
-      }
+    if (chatId && enabled) {
+      bot.sendMessage(chatId, '✅ Бот подключён и готов к работе').catch((e) =>
+        console.error('business_connection send error:', e.message)
+      );
     }
-
-    res.sendStatus(200);
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.sendStatus(200); // Always return 200 to Telegram
   }
 });
 
