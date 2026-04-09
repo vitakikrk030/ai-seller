@@ -30,6 +30,16 @@ router.get('/users/:id', async (req, res) => {
   }
 });
 
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const deleted = await users.deleteById(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'User not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/users/:id/ai', async (req, res) => {
   try {
     const { enabled } = req.body;
@@ -248,6 +258,89 @@ router.post('/settings/test-telegram', async (req, res) => {
     }
   } catch (err) {
     res.json({ ok: false, error: err.response?.data?.description || err.message });
+  }
+});
+
+// Change bot token: validate → delete old webhook → save → set new webhook
+router.post('/settings/change-token', async (req, res) => {
+  try {
+    const { token, webhook_url } = req.body;
+    if (!token || typeof token !== 'string' || token.length < 10) {
+      return res.status(400).json({ ok: false, error: 'Невалидный токен' });
+    }
+
+    // 1. Validate new token via getMe
+    let botInfo;
+    try {
+      const resp = await axios.get(`https://api.telegram.org/bot${token}/getMe`);
+      if (!resp.data?.ok) {
+        return res.json({ ok: false, error: 'Telegram отклонил токен' });
+      }
+      botInfo = resp.data.result;
+    } catch (err) {
+      return res.json({ ok: false, error: err.response?.data?.description || 'Невалидный токен' });
+    }
+
+    // 2. Delete webhook on OLD token (if exists)
+    const oldToken = await settings.get('bot_token') || process.env.BOT_TOKEN;
+    if (oldToken && oldToken !== token) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${oldToken}/deleteWebhook`);
+      } catch (e) { /* old token may be invalid, ignore */ }
+    }
+
+    // 3. Save new token
+    await settings.set('bot_token', token);
+    if (webhook_url) {
+      await settings.set('webhook_url', webhook_url);
+    }
+
+    // 4. Reload config
+    const config = require('../config');
+    await config.reloadSettings();
+
+    // 5. Set webhook on new token
+    const whUrl = webhook_url || config.get('WEBHOOK_URL');
+    if (whUrl) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${token}/setWebhook`, {
+          url: whUrl,
+          allowed_updates: ['message', 'callback_query', 'business_connection', 'business_message', 'edited_business_message'],
+        });
+      } catch (err) {
+        return res.json({ ok: true, bot: botInfo, webhook: false, webhook_error: err.response?.data?.description || err.message });
+      }
+    }
+
+    res.json({ ok: true, bot: botInfo, webhook: !!whUrl });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Disconnect bot: remove webhook + clear token
+router.post('/settings/disconnect-bot', async (req, res) => {
+  try {
+    const token = await settings.get('bot_token') || process.env.BOT_TOKEN;
+
+    // Delete webhook
+    if (token) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${token}/deleteWebhook`);
+      } catch (e) { /* ignore */ }
+    }
+
+    // Clear token and webhook from DB
+    await settings.set('bot_token', '');
+    await settings.set('webhook_url', '');
+
+    // Reload config
+    const config = require('../config');
+    await config.reloadSettings();
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

@@ -44,6 +44,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ state }),
     }),
+  deleteUser: (id) =>
+    fetchAPI(`/users/${id}`, { method: 'DELETE' }),
 
   // Messages
   getMessages: (userId) => fetchAPI(`/users/${userId}/messages`),
@@ -84,4 +86,11 @@ export const api = {
     fetchAPI('/settings/test-telegram', { method: 'POST' }),
   testShop: () =>
     fetchAPI('/settings/test-shop', { method: 'POST' }),
+  changeToken: (token, webhook_url) =>
+    fetchAPI('/settings/change-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, webhook_url }),
+    }),
+  disconnectBot: () =>
+    fetchAPI('/settings/disconnect-bot', { method: 'POST' }),
 };

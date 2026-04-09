@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   User, Bot, ShieldCheck, ChevronLeft, UserCircle, Send,
-  Package, Phone, MapPin, Hash, Clock, MessageSquare, Info,
+  Package, Phone, MapPin, Hash, Clock, MessageSquare, Info, Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -80,6 +80,19 @@ export default function ChatView() {
     try {
       const user = await api.setAiMode(selected.id, mode);
       setSelected({ ...selected, ai_mode: mode });
+      loadUsers();
+    } catch (e) { console.error(e); }
+  }
+
+  async function deleteDialog() {
+    if (!selected) return;
+    if (!confirm(`Удалить диалог с ${selected.name || 'клиентом'}? Все сообщения и заказы будут удалены.`)) return;
+    try {
+      await api.deleteUser(selected.id);
+      setSelected(null);
+      setMessages([]);
+      setOrders([]);
+      setMobilePanel('list');
       loadUsers();
     } catch (e) { console.error(e); }
   }
@@ -324,6 +337,16 @@ export default function ChatView() {
               ) : (
                 <div style={{ color: 'var(--text-dim)', fontSize: 13 }}>Нет заказов</div>
               )}
+            </div>
+
+            <div className="panel-section">
+              <button
+                className="btn btn-small"
+                style={{ background: '#dc2626', color: '#fff', border: 'none', width: '100%', justifyContent: 'center' }}
+                onClick={deleteDialog}
+              >
+                <Trash2 size={13} /> Удалить диалог
+              </button>
             </div>
           </>
         ) : (

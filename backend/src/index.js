@@ -12,6 +12,17 @@ const app = express();
 app.use(cors({ origin: config.FRONTEND_URL }));
 app.use(express.json());
 
+// Global request logger — see ALL incoming requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+// Webhook health check (GET) — Telegram and browsers can verify endpoint exists
+app.get('/api/telegram/webhook', (req, res) => {
+  res.json({ ok: true, endpoint: 'telegram webhook active' });
+});
+
 // Public routes (no auth)
 app.use('/api/telegram', telegramRoutes);
 app.post('/api/auth/login', login);

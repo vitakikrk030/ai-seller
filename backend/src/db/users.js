@@ -105,6 +105,11 @@ const users = {
     );
     return result.rows;
   },
+
+  async deleteById(id) {
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0];
+  },
 };
 
 module.exports = users;

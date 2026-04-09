@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Save, Check, AlertCircle, Zap, Bot, Globe, Sliders,
   Eye, EyeOff, RefreshCw, Link, Key, Cpu, Clock, Power,
-  MessageSquare, CreditCard, Copy, User,
+  MessageSquare, CreditCard, Copy, User, Unplug, RotateCw,
 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -85,6 +85,50 @@ export default function IntegrationsView() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  async function changeToken() {
+    const token = edits.bot_token;
+    if (!token || token.includes('••••')) {
+      setStatus({ type: 'error', text: 'Введите новый токен' });
+      return;
+    }
+    setTesting((p) => ({ ...p, tokenChange: true }));
+    try {
+      const result = await api.changeToken(token, edits.webhook_url || '');
+      if (result.ok) {
+        const botName = result.bot ? `@${result.bot.username}` : '';
+        const whStatus = result.webhook ? ' + webhook установлен' : '';
+        setStatus({ type: 'success', text: `Токен сохранён ${botName}${whStatus}` });
+        setTestResults((p) => ({ ...p, telegram: { ok: true, bot: result.bot } }));
+        await loadSettings();
+      } else {
+        setStatus({ type: 'error', text: result.error || 'Ошибка смены токена' });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', text: e.message });
+    }
+    setTesting((p) => ({ ...p, tokenChange: false }));
+    setTimeout(() => setStatus(null), 5000);
+  }
+
+  async function disconnectBot() {
+    if (!confirm('Отключить бота? Webhook будет удалён, токен очищен.')) return;
+    setTesting((p) => ({ ...p, disconnect: true }));
+    try {
+      const result = await api.disconnectBot();
+      if (result.ok) {
+        setStatus({ type: 'success', text: 'Бот отключён' });
+        setTestResults((p) => ({ ...p, telegram: null }));
+        await loadSettings();
+      } else {
+        setStatus({ type: 'error', text: result.error || 'Ошибка отключения' });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', text: e.message });
+    }
+    setTesting((p) => ({ ...p, disconnect: false }));
+    setTimeout(() => setStatus(null), 5000);
   }
 
   function SecretInput({ settingKey, placeholder }) {
@@ -217,6 +261,26 @@ export default function IntegrationsView() {
             Проверить
           </button>
           <TestBadge result={testResults.telegram} />
+        </div>
+
+        <div className="settings-actions" style={{ marginTop: 8 }}>
+          <button
+            className="btn btn-primary btn-small"
+            onClick={changeToken}
+            disabled={testing.tokenChange}
+          >
+            <RotateCw size={13} className={testing.tokenChange ? 'spin' : ''} />
+            Сменить токен + webhook
+          </button>
+          <button
+            className="btn btn-small"
+            style={{ background: '#dc2626', color: '#fff', border: 'none' }}
+            onClick={disconnectBot}
+            disabled={testing.disconnect}
+          >
+            <Unplug size={13} className={testing.disconnect ? 'spin' : ''} />
+            Отключить бота
+          </button>
         </div>
       </div>
 
