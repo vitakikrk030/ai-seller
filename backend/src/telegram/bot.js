@@ -16,6 +16,10 @@ const bot = {
       if (options.parse_mode) {
         payload.parse_mode = options.parse_mode;
       }
+      // Telegram Business: send as the connected user
+      if (options.business_connection_id) {
+        payload.business_connection_id = options.business_connection_id;
+      }
       await axios.post(`${getAPI()}/sendMessage`, payload);
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);

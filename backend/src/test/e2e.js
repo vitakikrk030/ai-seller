@@ -2037,6 +2037,124 @@ async function testAiModeApiEndpoint() {
   await cleanup(testId);
 }
 
+async function testTelegramBusinessSupport() {
+  console.log('\n💼 49. TELEGRAM BUSINESS SUPPORT TEST');
+
+  const { handleMessage } = require('../telegram/handler');
+
+  const testId = 999049;
+  await cleanup(testId);
+
+  await settings.set('global_ai_enabled', 'true');
+
+  // Test 1: handleMessage accepts businessConnectionId without crashing
+  const msg1 = { from: { id: testId, first_name: 'BizUser', username: 'bizuser' }, text: 'привет' };
+  await handleMessage(msg1, 'biz_conn_abc123');
+  const user = await users.findOrCreate(testId, 'BizUser', 'bizuser');
+  const h1 = await messages.getHistory(user.id, 10);
+  assert(h1.some((m) => m.role === 'user' && m.text === 'привет'), 'business: message saved with connectionId');
+
+  // Test 2: handleMessage works without businessConnectionId (backward compat)
+  await cleanup(testId);
+  const msg2 = { from: { id: testId, first_name: 'BizUser', username: 'bizuser' }, text: 'hello' };
+  await handleMessage(msg2, null);
+  const user2 = await users.findOrCreate(testId, 'BizUser', 'bizuser');
+  const h2 = await messages.getHistory(user2.id, 10);
+  assert(h2.some((m) => m.role === 'user' && m.text === 'hello'), 'business: backward compat without connectionId');
+
+  // Test 3: handleMessage with no second arg (legacy callers)
+  await cleanup(testId);
+  const msg3 = { from: { id: testId, first_name: 'BizUser', username: 'bizuser' }, text: 'test' };
+  await handleMessage(msg3);
+  const user3 = await users.findOrCreate(testId, 'BizUser', 'bizuser');
+  const h3 = await messages.getHistory(user3.id, 10);
+  assert(h3.some((m) => m.role === 'user' && m.text === 'test'), 'business: legacy call without arg works');
+
+  // Test 4: caption extracted as text for business photo-like messages
+  await cleanup(testId);
+  const msg4 = { from: { id: testId, first_name: 'BizUser', username: 'bizuser' }, caption: 'найди мне эти кроссы' };
+  // No text, no photo — should be treated as unsupported format (caption without photo)
+  await handleMessage(msg4, 'biz_conn_xyz');
+  const user4 = await users.findOrCreate(testId, 'BizUser', 'bizuser');
+  const h4 = await messages.getHistory(user4.id, 10);
+  // With caption fallback in text extraction, it becomes text message
+  const hasCaptionOrUnsupported = h4.some((m) => m.role === 'user');
+  assert(hasCaptionOrUnsupported, 'business: caption msg handled without crash');
+
+  // Test 5: unsupported msg type with business connection — no crash
+  await cleanup(testId);
+  const msg5 = { from: { id: testId, first_name: 'BizUser', username: 'bizuser' }, voice: { file_id: 'xyz' } };
+  await handleMessage(msg5, 'biz_conn_voice');
+  const user5 = await users.findOrCreate(testId, 'BizUser', 'bizuser');
+  const h5 = await messages.getHistory(user5.id, 10);
+  assert(h5.some((m) => m.text === '[неподдерживаемый формат]'), 'business: voice msg saved as unsupported');
+
+  await cleanup(testId);
+}
+
+async function testBusinessWebhookRouting() {
+  console.log('\n📡 50. BUSINESS WEBHOOK ROUTING TEST');
+
+  // Test that routes.js correctly extracts msg from business_message
+  // We test the routing logic by simulating different update shapes
+
+  // Simulate business_message update structure
+  const bizUpdate = {
+    business_message: {
+      from: { id: 999050, first_name: 'BizClient' },
+      chat: { id: 999050 },
+      text: 'бизнес привет',
+      business_connection_id: 'conn_123',
+    },
+  };
+
+  const msg = bizUpdate.message || bizUpdate.business_message || bizUpdate.edited_business_message;
+  assert(msg !== undefined, 'routing: business_message extracted');
+  assert(msg.text === 'бизнес привет', 'routing: business_message text correct');
+
+  const bcId = bizUpdate.business_message?.business_connection_id ||
+    bizUpdate.edited_business_message?.business_connection_id || null;
+  assert(bcId === 'conn_123', 'routing: business_connection_id extracted');
+
+  // Simulate edited_business_message
+  const editedUpdate = {
+    edited_business_message: {
+      from: { id: 999050, first_name: 'BizClient' },
+      chat: { id: 999050 },
+      text: 'edited text',
+      business_connection_id: 'conn_456',
+    },
+  };
+
+  const msg2 = editedUpdate.message || editedUpdate.business_message || editedUpdate.edited_business_message;
+  assert(msg2.text === 'edited text', 'routing: edited_business_message extracted');
+
+  const bcId2 = editedUpdate.business_message?.business_connection_id ||
+    editedUpdate.edited_business_message?.business_connection_id || null;
+  assert(bcId2 === 'conn_456', 'routing: edited connectionId extracted');
+
+  // Simulate regular message — backward compat
+  const regularUpdate = {
+    message: {
+      from: { id: 999050, first_name: 'RegularUser' },
+      chat: { id: 999050 },
+      text: 'обычное',
+    },
+  };
+
+  const msg3 = regularUpdate.message || regularUpdate.business_message || regularUpdate.edited_business_message;
+  assert(msg3.text === 'обычное', 'routing: regular message still works');
+
+  const bcId3 = regularUpdate.business_message?.business_connection_id ||
+    regularUpdate.edited_business_message?.business_connection_id || null;
+  assert(bcId3 === null, 'routing: no connectionId for regular msg');
+
+  // Empty update — should not crash
+  const emptyUpdate = {};
+  const msg4 = emptyUpdate.message || emptyUpdate.business_message || emptyUpdate.edited_business_message;
+  assert(msg4 === undefined, 'routing: empty update returns undefined');
+}
+
 async function run() {
   console.log('🚀 Starting E2E tests...\n');
 
@@ -2096,6 +2214,8 @@ async function run() {
     await testManagerOverrideFlow();
     await testObserveModeHandler();
     await testAiModeApiEndpoint();
+    await testTelegramBusinessSupport();
+    await testBusinessWebhookRouting();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);

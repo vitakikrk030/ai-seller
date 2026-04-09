@@ -15,8 +15,16 @@ router.post('/webhook', async (req, res) => {
   try {
     const update = req.body;
 
-    if (update.message) {
-      await handleMessage(update.message);
+    // Support regular + Telegram Business messages
+    const msg = update.message || update.business_message || update.edited_business_message;
+
+    if (msg) {
+      const businessConnectionId =
+        update.business_message?.business_connection_id ||
+        update.edited_business_message?.business_connection_id ||
+        null;
+
+      await handleMessage(msg, businessConnectionId);
     }
 
     // Handle callback_query (inline button presses)
@@ -25,10 +33,8 @@ router.post('/webhook', async (req, res) => {
       if (cbq.data === 'copy_card') {
         const cardNumber = await settings.get('payment_card_number');
         if (cardNumber) {
-          // Send card number as plain text for easy copying
           await bot.sendMessage(cbq.message.chat.id, cardNumber);
         }
-        // Answer callback to remove loading state
         try {
           await axios.post(`${getAPI()}/answerCallbackQuery`, {
             callback_query_id: cbq.id,
@@ -38,6 +44,12 @@ router.post('/webhook', async (req, res) => {
           console.error('answerCallbackQuery error:', e.message);
         }
       }
+    }
+
+    // Handle business_connection events (bot connected/disconnected)
+    if (update.business_connection) {
+      const bc = update.business_connection;
+      console.log(`Business connection: user=${bc.user?.id} enabled=${!bc.is_deleted}`);
     }
 
     res.sendStatus(200);

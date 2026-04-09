@@ -81,20 +81,23 @@ function checkAiMode(user, text) {
   }
 }
 
-async function sendAIResponse(telegramId, user, response) {
+async function sendAIResponse(telegramId, user, response, businessConnectionId) {
   const responseText = typeof response === 'object' ? response.text : response;
   const paymentData = typeof response === 'object' ? response.sendPayment : null;
 
   const delay = parseInt(await config.getSetting('response_delay') || '0', 10);
   if (delay > 0 && delay <= 30) await sleep(delay * 1000);
 
+  const sendOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
+
   await messages.save(user.id, 'ai', responseText);
-  await bot.sendMessage(telegramId, responseText);
+  await bot.sendMessage(telegramId, responseText, sendOpts);
 
   if (paymentData) {
     const amountStr = paymentData.amount ? `\nСумма: ${paymentData.amount}₽` : '';
     const paymentText = `💳 Реквизиты для оплаты:\n\nКарта: ${paymentData.cardNumber}\nПолучатель: ${paymentData.cardName}${amountStr}\n\nПереведи и скинь скрин/чек — сразу отправим заказ 🚀`;
     await bot.sendMessage(telegramId, paymentText, {
+      ...sendOpts,
       reply_markup: {
         inline_keyboard: [[
           { text: '📋 Скопировать номер карты', callback_data: 'copy_card' }
@@ -104,11 +107,11 @@ async function sendAIResponse(telegramId, user, response) {
   }
 }
 
-async function handleMessage(msg) {
+async function handleMessage(msg, businessConnectionId) {
   const telegramId = msg.from.id;
   const name = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
   const username = msg.from.username || null;
-  const text = msg.text;
+  const text = msg.text || msg.caption || null;
   const photo = msg.photo;
 
   // Ignore unsupported message types (voice, sticker, video, document, etc.)
@@ -154,7 +157,7 @@ async function handleMessage(msg) {
         response = 'Не удалось загрузить фото 😔 Попробуй отправить ещё раз или напиши название товара текстом';
       }
 
-      await sendAIResponse(telegramId, user, response);
+      await sendAIResponse(telegramId, user, response, businessConnectionId);
       return;
     }
 
@@ -173,11 +176,12 @@ async function handleMessage(msg) {
     const response = await processMessage(user, text);
 
     if (response) {
-      await sendAIResponse(telegramId, user, response);
+      await sendAIResponse(telegramId, user, response, businessConnectionId);
     }
   } catch (err) {
     console.error(`Error handling message from ${telegramId}:`, err);
-    await bot.sendMessage(telegramId, 'Произошла ошибка, попробуйте ещё раз через минуту.');
+    const errOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
+    await bot.sendMessage(telegramId, 'Произошла ошибка, попробуйте ещё раз через минуту.', errOpts);
   }
 }
 
