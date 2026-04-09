@@ -159,12 +159,8 @@ async function handleMessage(msg, businessConnectionId) {
       const largest = photo[photo.length - 1];
       const fileUrl = await bot.getFileUrl(largest.file_id);
 
-      let response;
-      if (fileUrl) {
-        response = await processPhoto(user, fileUrl, msg.caption || null);
-      } else {
-        response = 'Не удалось загрузить фото 😔 Попробуй отправить ещё раз или напиши название товара текстом';
-      }
+      if (!fileUrl) return;
+      const response = await processPhoto(user, fileUrl, msg.caption || null);
 
       await sendAIResponse(telegramId, user, response, businessConnectionId);
       return;
@@ -189,8 +185,6 @@ async function handleMessage(msg, businessConnectionId) {
     }
   } catch (err) {
     console.error(`Error handling message from ${telegramId}:`, err);
-    const errOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
-    await bot.sendMessage(telegramId, 'Произошла ошибка, попробуйте ещё раз через минуту.', errOpts);
   }
 }
 
