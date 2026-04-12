@@ -27,31 +27,34 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <nav className="nav-bar">
+      <nav className="nav-bar" role="navigation" aria-label="Основная навигация">
         <button
           className={`nav-tab ${tab === 'chats' ? 'active' : ''}`}
           onClick={() => setTab('chats')}
+          aria-current={tab === 'chats' ? 'page' : undefined}
         >
           <MessageSquare size={15} /> Чаты
         </button>
         <button
           className={`nav-tab ${tab === 'settings' ? 'active' : ''}`}
           onClick={() => setTab('settings')}
+          aria-current={tab === 'settings' ? 'page' : undefined}
         >
           <Settings size={15} /> Настройки
         </button>
         <button
           className={`nav-tab ${tab === 'integrations' ? 'active' : ''}`}
           onClick={() => setTab('integrations')}
+          aria-current={tab === 'integrations' ? 'page' : undefined}
         >
           <Plug size={15} /> Интеграции
         </button>
         <div className="nav-right">
           <StatsBar />
-          <button className="theme-toggle" onClick={toggleTheme} title="Переключить тему">
+          <button className="theme-toggle" onClick={toggleTheme} title="Переключить тему" aria-label="Переключить тему">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button className="theme-toggle" onClick={logout} title="Выйти">
+          <button className="theme-toggle" onClick={logout} title="Выйти" aria-label="Выйти">
             <LogOut size={16} />
           </button>
         </div>

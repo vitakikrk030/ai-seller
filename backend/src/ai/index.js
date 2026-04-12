@@ -54,27 +54,35 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
     chatMessages.push({ role: 'user', content: userMessage });
   }
 
-  try {
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: config.get('OPENROUTER_MODEL'),
-        messages: chatMessages,
-        max_tokens: 500,
-        temperature: 0.3,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${config.get('OPENROUTER_API_KEY')}`,
-          'Content-Type': 'application/json',
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    try {
+      const response = await axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          model: config.get('OPENROUTER_MODEL'),
+          messages: chatMessages,
+          max_tokens: 500,
+          temperature: 0.3,
         },
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${config.get('OPENROUTER_API_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        }
+      );
 
-    return response.data.choices[0]?.message?.content || '';
-  } catch (err) {
-    console.error('AI error:', err.response?.data || err.message);
-    return 'Извините, произошла ошибка. Попробуйте позже или напишите @admin';
+      return response.data.choices[0]?.message?.content || '';
+    } catch (err) {
+      const status = err.response?.status;
+      if (attempt < 1 && (status === 429 || (status >= 500 && status < 600))) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      console.error('AI error:', err.response?.data || err.message);
+      return 'Извините, произошла ошибка. Попробуйте позже или напишите @admin';
+    }
   }
 }
 

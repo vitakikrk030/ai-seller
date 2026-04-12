@@ -31,13 +31,25 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  function login(newToken) {
+  function login(newToken, newRefreshToken) {
     localStorage.setItem('auth_token', newToken);
+    if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
     setToken(newToken);
   }
 
   function logout() {
+    // Best-effort server-side revocation
+    const t = localStorage.getItem('auth_token');
+    const rt = localStorage.getItem('refresh_token');
+    if (t) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ refreshToken: rt || undefined }),
+      }).catch(() => {});
+    }
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('refresh_token');
     setToken(null);
   }
 

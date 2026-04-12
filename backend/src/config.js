@@ -5,6 +5,7 @@ const envConfig = {
   BOT_TOKEN: process.env.BOT_TOKEN,
   OWNER_CHAT_ID: process.env.OWNER_CHAT_ID,
   WEBHOOK_URL: process.env.WEBHOOK_URL,
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
   DATABASE_URL: process.env.DATABASE_URL,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
@@ -21,11 +22,13 @@ const DB_KEY_MAP = {
   openrouter_model: 'OPENROUTER_MODEL',
   bot_token: 'BOT_TOKEN',
   webhook_url: 'WEBHOOK_URL',
+  webhook_secret: 'WEBHOOK_SECRET',
   owner_chat_id: 'OWNER_CHAT_ID',
 };
 
 let _dbSettings = null;
 let _settingsModule = null;
+let _loadingPromise = null;
 
 function _getSettingsModule() {
   if (!_settingsModule) {
@@ -35,14 +38,21 @@ function _getSettingsModule() {
 }
 
 async function loadDbSettings() {
-  try {
-    const settings = _getSettingsModule();
-    if (settings) {
-      _dbSettings = await settings.getMap();
+  // Mutex: prevent concurrent DB reads from racing
+  if (_loadingPromise) return _loadingPromise;
+  _loadingPromise = (async () => {
+    try {
+      const settings = _getSettingsModule();
+      if (settings) {
+        _dbSettings = await settings.getMap();
+      }
+    } catch (e) {
+      _dbSettings = {};
+    } finally {
+      _loadingPromise = null;
     }
-  } catch (e) {
-    _dbSettings = {};
-  }
+  })();
+  return _loadingPromise;
 }
 
 // Reload cache — called after POST /api/settings

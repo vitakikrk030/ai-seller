@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
 
+-- Performance indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_messages_user_created ON messages(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_user_role ON messages(user_id) WHERE role = 'user';
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
+
 -- Default settings
 INSERT INTO settings (key, value) VALUES
   ('openrouter_api_key', ''),

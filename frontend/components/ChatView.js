@@ -14,44 +14,78 @@ export default function ChatView() {
   const [orders, setOrders] = useState([]);
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sending, setSending] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   // Mobile panel: 'list' | 'chat' | 'info'
   const [mobilePanel, setMobilePanel] = useState('list');
   const messagesEnd = useRef(null);
   const pollRef = useRef(null);
+  const selectedRef = useRef(null);
+
+  // Keep selectedRef in sync
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Load users + poll, sync selected with fresh data
+  const loadUsers = useCallback(async () => {
+    try {
+      const data = await api.getUsers(debouncedSearch);
+      setUsers(data);
+      setLoadingUsers(false);
+      // Sync selected with fresh user data
+      if (selectedRef.current) {
+        const fresh = data.find((u) => u.id === selectedRef.current.id);
+        if (fresh) {
+          setSelected((prev) => prev && prev.id === fresh.id ? fresh : prev);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      setLoadingUsers(false);
+    }
+  }, [debouncedSearch]);
 
   useEffect(() => {
     loadUsers();
     const interval = setInterval(loadUsers, 5000);
     return () => clearInterval(interval);
-  }, [search]);
+  }, [loadUsers]);
 
+  // Messages polling — uses ref to avoid stale closure
   useEffect(() => {
-    if (selected) {
-      loadMessages();
-      loadOrders();
-      pollRef.current = setInterval(loadMessages, 3000);
-      return () => clearInterval(pollRef.current);
-    }
+    if (!selected) return;
+
+    const loadMsgs = async () => {
+      const cur = selectedRef.current;
+      if (!cur) return;
+      try { setMessages(await api.getMessages(cur.id)); } catch (e) { console.error(e); }
+      setLoadingMessages(false);
+    };
+
+    const loadOrd = async () => {
+      const cur = selectedRef.current;
+      if (!cur) return;
+      try { setOrders(await api.getUserOrders(cur.id)); } catch (e) { console.error(e); }
+    };
+
+    loadMsgs();
+    loadOrd();
+    pollRef.current = setInterval(loadMsgs, 3000);
+    return () => { clearInterval(pollRef.current); pollRef.current = null; };
   }, [selected?.id]);
 
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesEnd.current?.parentElement;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages]);
-
-  async function loadUsers() {
-    try { setUsers(await api.getUsers(search)); } catch (e) { console.error(e); }
-  }
-
-  async function loadMessages() {
-    if (!selected) return;
-    try { setMessages(await api.getMessages(selected.id)); } catch (e) { console.error(e); }
-  }
-
-  async function loadOrders() {
-    if (!selected) return;
-    try { setOrders(await api.getUserOrders(selected.id)); } catch (e) { console.error(e); }
-  }
 
   async function sendMessage(e) {
     e.preventDefault();
@@ -60,7 +94,8 @@ export default function ChatView() {
     try {
       await api.sendMessage(selected.id, input.trim());
       setInput('');
-      await loadMessages();
+      const msgs = await api.getMessages(selected.id);
+      setMessages(msgs);
     } catch (e) { console.error(e); }
     setSending(false);
   }
@@ -117,6 +152,7 @@ export default function ChatView() {
 
   const selectUser = useCallback((u) => {
     setSelected(u);
+    setLoadingMessages(true);
     setMobilePanel('chat');
   }, []);
 
@@ -143,9 +179,20 @@ export default function ChatView() {
             placeholder="Поиск..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Поиск клиентов"
           />
         </div>
         <div className="chat-list">
+          {loadingUsers && users.length === 0 && (
+            <div className="skeleton-list">
+              {[1,2,3,4,5].map(i => (
+                <div key={i} className="skeleton-item">
+                  <div className="skeleton-line" style={{width: '60%'}} />
+                  <div className="skeleton-line" style={{width: '80%', height: 10, marginTop: 6}} />
+                </div>
+              ))}
+            </div>
+          )}
           {users.map((u) => (
             <div
               key={u.id}
@@ -175,7 +222,7 @@ export default function ChatView() {
           <>
             <div className="chat-header">
               <div className="chat-header-left">
-                <button className="btn-icon back-btn" onClick={() => setMobilePanel('list')}>
+                <button className="btn-icon back-btn" onClick={() => setMobilePanel('list')} aria-label="Назад к списку">
                   <ChevronLeft size={18} />
                 </button>
                 <h3>
@@ -184,7 +231,7 @@ export default function ChatView() {
                 </h3>
               </div>
               <div className="chat-header-right">
-                <button className="btn-icon back-btn" onClick={() => setMobilePanel('info')} title="Карточка клиента">
+                <button className="btn-icon back-btn" onClick={() => setMobilePanel('info')} title="Карточка клиента" aria-label="Карточка клиента">
                   <Info size={16} />
                 </button>
                 <span style={{
@@ -196,11 +243,20 @@ export default function ChatView() {
                   {getAiStatusInfo(selected).text}
                 </span>
                 <span className="ai-label">AI</span>
-                <div className={`toggle ${selected.ai_enabled ? 'active' : ''}`} onClick={toggleAI} />
+                <div className={`toggle ${selected.ai_enabled ? 'active' : ''}`} onClick={toggleAI} role="switch" aria-checked={selected.ai_enabled} aria-label="AI автоответ" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAI(); }}} />
               </div>
             </div>
 
             <div className="messages">
+              {loadingMessages && messages.length === 0 && (
+                <div className="skeleton-messages">
+                  {[1,2,3].map(i => (
+                    <div key={i} className={`skeleton-msg ${i % 2 === 0 ? 'right' : 'left'}`}>
+                      <div className="skeleton-line" style={{width: '50%'}} />
+                    </div>
+                  ))}
+                </div>
+              )}
               {messages.map((m) => (
                 <div key={m.id} className={`message message-${m.role}`}>
                   <div className="message-label">
@@ -221,7 +277,7 @@ export default function ChatView() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
               />
-              <button type="submit" className="btn btn-primary" disabled={sending}>
+              <button type="submit" className="btn btn-primary" disabled={sending} aria-label="Отправить сообщение">
                 <Send size={14} />
               </button>
             </form>
@@ -241,7 +297,7 @@ export default function ChatView() {
             <div className="panel-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div className="panel-section-title"><UserCircle size={14} /> Клиент</div>
-                <button className="btn-icon back-btn" onClick={() => setMobilePanel('chat')}>
+                <button className="btn-icon back-btn" onClick={() => setMobilePanel('chat')} aria-label="Назад к чату">
                   <ChevronLeft size={18} />
                 </button>
               </div>

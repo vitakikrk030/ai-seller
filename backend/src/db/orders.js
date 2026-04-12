@@ -12,7 +12,7 @@ const orders = {
 
   async getByUser(userId) {
     const result = await db.query(
-      'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC',
+      'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
       [userId]
     );
     return result.rows;
@@ -22,8 +22,9 @@ const orders = {
     const result = await db.query(`
       SELECT o.*, u.name as user_name, u.telegram_id 
       FROM orders o 
-      JOIN users u ON o.user_id = u.id 
+      LEFT JOIN users u ON o.user_id = u.id 
       ORDER BY o.created_at DESC
+      LIMIT 500
     `);
     return result.rows;
   },

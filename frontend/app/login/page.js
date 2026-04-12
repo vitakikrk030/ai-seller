@@ -28,7 +28,7 @@ export default function LoginPage() {
         setError(data.error || 'Ошибка авторизации');
         return;
       }
-      auth.login(data.token);
+      auth.login(data.token, data.refreshToken);
       router.push('/');
     } catch (err) {
       setError('Сервер недоступен');

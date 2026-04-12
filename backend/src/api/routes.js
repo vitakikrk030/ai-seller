@@ -7,6 +7,7 @@ const prompts = require('../db/prompts');
 const settings = require('../db/settings');
 const bot = require('../telegram/bot');
 const axios = require('axios');
+const shop = require('../shop');
 
 // === USERS ===
 
@@ -63,6 +64,10 @@ router.patch('/users/:id/ai-mode', async (req, res) => {
 router.patch('/users/:id/state', async (req, res) => {
   try {
     const { state } = req.body;
+    const validStates = ['NEW', 'WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT', 'PAID', 'DONE'];
+    if (!state || !validStates.includes(state)) {
+      return res.status(400).json({ error: `Invalid state. Allowed: ${validStates.join(', ')}` });
+    }
     const user = await users.updateState(req.params.id, state);
     res.json(user);
   } catch (err) {
@@ -128,6 +133,10 @@ router.get('/users/:id/orders', async (req, res) => {
 router.patch('/orders/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
+    const validStatuses = ['NEW', 'PAID', 'DONE', 'CANCELLED'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Allowed: ${validStatuses.join(', ')}` });
+    }
     const order = await orders.updateStatus(req.params.id, status);
     res.json(order);
   } catch (err) {
@@ -187,7 +196,7 @@ router.get('/settings', async (req, res) => {
     const data = await settings.getMap();
     // Mask sensitive values for frontend display
     const masked = { ...data };
-    const sensitiveKeys = ['openrouter_api_key', 'bot_token', 'shop_api_key'];
+    const sensitiveKeys = ['openrouter_api_key', 'bot_token', 'shop_api_key', 'webhook_secret'];
     for (const k of sensitiveKeys) {
       if (masked[k] && masked[k].length > 8) {
         masked[k] = masked[k].slice(0, 4) + '••••' + masked[k].slice(-4);
@@ -208,14 +217,14 @@ router.post('/settings', async (req, res) => {
     // Validate keys — only allow known settings
     const allowedKeys = [
       'openrouter_api_key', 'openrouter_model',
-      'bot_token', 'webhook_url', 'owner_chat_id',
+      'bot_token', 'webhook_url', 'webhook_secret', 'owner_chat_id',
       'shop_api_url', 'shop_api_key',
       'global_ai_enabled', 'response_delay', 'auto_reply',
       'payment_card_number', 'payment_name',
     ];
     const filtered = entries.filter((e) => allowedKeys.includes(e.key));
     // Skip masked values to prevent overwriting real secrets with masked versions
-    const sensitiveKeys = ['openrouter_api_key', 'bot_token', 'shop_api_key'];
+    const sensitiveKeys = ['openrouter_api_key', 'bot_token', 'shop_api_key', 'webhook_secret'];
     const safe = filtered.filter((e) => {
       if (sensitiveKeys.includes(e.key) && e.value && e.value.includes('••••')) {
         return false; // Don't save masked value
@@ -226,6 +235,10 @@ router.post('/settings', async (req, res) => {
     // Reload cached settings in config
     const config = require('../config');
     await config.reloadSettings();
+    // Invalidate shop cache if shop settings changed
+    if (safe.some((e) => e.key === 'shop_api_url' || e.key === 'shop_api_key')) {
+      shop.clearCache();
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

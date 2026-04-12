@@ -6,6 +6,24 @@ const { processMessage, processPhoto } = require('../logic/sales');
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// Webhook deduplication — prevents processing duplicate updates from Telegram
+const _processedUpdates = new Map();
+const DEDUP_TTL = 60000; // 60 seconds
+
+function isDuplicate(msgId, chatId) {
+  const key = `${chatId}:${msgId}`;
+  if (_processedUpdates.has(key)) return true;
+  _processedUpdates.set(key, Date.now());
+  // Cleanup old entries periodically
+  if (_processedUpdates.size > 1000) {
+    const now = Date.now();
+    for (const [k, ts] of _processedUpdates) {
+      if (now - ts > DEDUP_TTL) _processedUpdates.delete(k);
+    }
+  }
+  return false;
+}
+
 // AI mode constants
 const AI_MODES = {
   OBSERVE: 'OBSERVE',
@@ -109,6 +127,10 @@ async function sendAIResponse(telegramId, user, response, businessConnectionId) 
 
 async function handleMessage(msg, businessConnectionId) {
   const telegramId = msg.from.id;
+
+  // Deduplicate: skip if we've seen this message already
+  if (msg.message_id && isDuplicate(msg.message_id, telegramId)) return;
+
   const name = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
   const username = msg.from.username || null;
   const text = msg.text || msg.caption || null;

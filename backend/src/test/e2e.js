@@ -617,7 +617,7 @@ async function testAuth() {
   console.log('\n🔐 11. AUTH TEST');
 
   const jwt = require('jsonwebtoken');
-  const { authMiddleware, login: loginHandler, verify: verifyHandler } = require('../api/auth');
+  const { authMiddleware, login: loginHandler, verify: verifyHandler, refresh: refreshHandler, logout: logoutHandler } = require('../api/auth');
 
   // Test login with correct credentials
   let loginResult = null;
@@ -626,12 +626,14 @@ async function testAuth() {
     json: (data) => { loginResult = data; },
     status: function(code) { this.statusCode = code; return this; },
   };
-  loginHandler(mockReq, mockRes);
+  await loginHandler(mockReq, mockRes);
   assert(loginResult && loginResult.token, 'Login returns token');
+  assert(loginResult && loginResult.refreshToken, 'Login returns refreshToken');
 
   // Verify token is valid JWT
   const decoded = jwt.verify(loginResult.token, config.JWT_SECRET);
   assert(decoded.login === config.ADMIN_LOGIN, 'Token contains correct login');
+  assert(decoded.jti, 'Token contains JTI for revocation');
 
   // Test login with wrong password
   let wrongResult = null;
@@ -641,7 +643,7 @@ async function testAuth() {
     status: function(code) { this.statusCode = code; return this; },
     statusCode: 200,
   };
-  loginHandler(wrongReq, wrongRes);
+  await loginHandler(wrongReq, wrongRes);
   assert(wrongRes.statusCode === 401, 'Wrong password returns 401');
   assert(wrongResult.error, 'Wrong password returns error message');
 
@@ -653,7 +655,7 @@ async function testAuth() {
     status: function(code) { this.statusCode = code; return this; },
     statusCode: 200,
   };
-  loginHandler(emptyReq, emptyRes);
+  await loginHandler(emptyReq, emptyRes);
   assert(emptyRes.statusCode === 400, 'Empty body returns 400');
 
   // Test middleware with valid token
@@ -685,6 +687,50 @@ async function testAuth() {
   };
   authMiddleware(badTokenReq, badTokenRes, () => {});
   assert(badTokenRes.statusCode === 401, 'Invalid token returns 401');
+
+  // Test refresh token flow
+  let refreshResult = null;
+  const refreshReq = { body: { refreshToken: loginResult.refreshToken } };
+  const refreshRes = {
+    json: (data) => { refreshResult = data; },
+    status: function(code) { this.statusCode = code; return this; },
+    statusCode: 200,
+  };
+  refreshHandler(refreshReq, refreshRes);
+  assert(refreshResult && refreshResult.token, 'Refresh returns new access token');
+  assert(refreshResult && refreshResult.refreshToken, 'Refresh returns rotated refresh token');
+
+  // Test refresh with invalid token
+  let badRefreshResult = null;
+  const badRefreshReq = { body: { refreshToken: 'bad.token' } };
+  const badRefreshRes = {
+    json: (data) => { badRefreshResult = data; },
+    status: function(code) { this.statusCode = code; return this; },
+    statusCode: 200,
+  };
+  refreshHandler(badRefreshReq, badRefreshRes);
+  assert(badRefreshRes.statusCode === 401, 'Bad refresh token returns 401');
+
+  // Test logout (token revocation) — use rotated refresh token
+  let logoutResult = null;
+  const logoutReq = { user: decoded, body: { refreshToken: refreshResult.refreshToken } };
+  const logoutRes = {
+    json: (data) => { logoutResult = data; },
+    status: function(code) { this.statusCode = code; return this; },
+  };
+  logoutHandler(logoutReq, logoutRes);
+  assert(logoutResult && logoutResult.ok === true, 'Logout returns ok');
+
+  // After logout, token should be revoked
+  let revokedResult = null;
+  const revokedReq = { headers: { authorization: `Bearer ${loginResult.token}` } };
+  const revokedRes = {
+    json: (data) => { revokedResult = data; },
+    status: function(code) { this.statusCode = code; return this; },
+    statusCode: 200,
+  };
+  authMiddleware(revokedReq, revokedRes, () => {});
+  assert(revokedRes.statusCode === 401, 'Revoked token returns 401');
 }
 
 async function testPaymentSystem() {
@@ -1103,8 +1149,9 @@ async function testCatalogUnavailableFallback() {
   const response = await processMessage(user, 'хочу купить кроссовки');
 
   assert(typeof response === 'string', 'Returns string (not AI call)');
+  const lr = response.toLowerCase();
   assert(
-    response.includes('гляну') || response.includes('подбер') || response.includes('размер') || response.includes('норм') || response.includes('наличию'),
+    lr.includes('гляну') || lr.includes('подбер') || lr.includes('размер') || lr.includes('норм') || lr.includes('наличи'),
     'Soft fallback continues dialog'
   );
 
@@ -2193,6 +2240,51 @@ async function testBusinessDeepLink() {
   await cleanup(testId);
 }
 
+async function testWebhookDeduplication() {
+  console.log('\n🔁 52. WEBHOOK DEDUPLICATION TEST');
+
+  const TG_ID = 999999950;
+  await cleanup(TG_ID);
+
+  const user = await users.findOrCreate(TG_ID, 'Dedup Test', 'deduptest');
+
+  // Save a message manually
+  await messages.save(user.id, 'user', 'first msg');
+
+  // Count user messages before
+  const before = await db.query("SELECT COUNT(*)::int as cnt FROM messages WHERE user_id = $1 AND role = 'user'", [user.id]);
+  const countBefore = before.rows[0].cnt;
+
+  // Simulate handleMessage with same message_id twice
+  const { handleMessage } = require('../telegram/handler');
+  const msg = {
+    message_id: 999999,
+    from: { id: TG_ID, first_name: 'Dedup', last_name: 'Test' },
+    text: 'duplicate test',
+  };
+
+  // First call processes normally
+  await handleMessage(msg, null);
+
+  // Second call with same message_id should be skipped
+  await handleMessage(msg, null);
+
+  const after = await db.query("SELECT COUNT(*)::int as cnt FROM messages WHERE user_id = $1 AND role = 'user'", [user.id]);
+  const countAfter = after.rows[0].cnt;
+
+  // Should have exactly 1 new user message (not 2)
+  assert(countAfter - countBefore === 1, 'Duplicate message_id processed only once');
+
+  // Different message_id should still work
+  const msg2 = { ...msg, message_id: 1000000, text: 'unique msg' };
+  await handleMessage(msg2, null);
+
+  const after2 = await db.query("SELECT COUNT(*)::int as cnt FROM messages WHERE user_id = $1 AND role = 'user'", [user.id]);
+  assert(after2.rows[0].cnt - countBefore === 2, 'Different message_id processed normally');
+
+  await cleanup(TG_ID);
+}
+
 async function run() {
   console.log('🚀 Starting E2E tests...\n');
 
@@ -2255,6 +2347,7 @@ async function run() {
     await testTelegramBusinessSupport();
     await testBusinessWebhookRouting();
     await testBusinessDeepLink();
+    await testWebhookDeduplication();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);

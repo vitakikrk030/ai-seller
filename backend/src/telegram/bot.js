@@ -5,6 +5,25 @@ function getAPI() {
   return `https://api.telegram.org/bot${config.get('BOT_TOKEN')}`;
 }
 
+// Retry helper for transient Telegram errors (429, 5xx)
+async function tgRequest(method, payload, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await axios.post(`${getAPI()}/${method}`, payload);
+    } catch (err) {
+      const status = err.response?.status;
+      const retryAfter = err.response?.data?.parameters?.retry_after;
+      // Retry on 429 (rate limit) or 5xx (server errors)
+      if (attempt < retries && (status === 429 || (status >= 500 && status < 600))) {
+        const delay = retryAfter ? retryAfter * 1000 : 1000 * (attempt + 1);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 const bot = {
   async sendMessage(chatId, text, options = {}) {
     try {
@@ -20,7 +39,7 @@ const bot = {
       if (options.business_connection_id) {
         payload.business_connection_id = options.business_connection_id;
       }
-      await axios.post(`${getAPI()}/sendMessage`, payload);
+      await tgRequest('sendMessage', payload);
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);
     }
@@ -33,7 +52,7 @@ const bot = {
       return;
     }
     try {
-      await axios.post(`${getAPI()}/setWebhook`, {
+      const webhookPayload = {
         url: webhookUrl,
         allowed_updates: [
           'message',
@@ -42,7 +61,13 @@ const bot = {
           'business_message',
           'edited_business_message',
         ],
-      });
+      };
+      // Add secret token for webhook verification
+      const webhookSecret = config.get('WEBHOOK_SECRET');
+      if (webhookSecret) {
+        webhookPayload.secret_token = webhookSecret;
+      }
+      await axios.post(`${getAPI()}/setWebhook`, webhookPayload);
       console.log('Webhook set:', webhookUrl);
     } catch (err) {
       console.error('Webhook setup error:', err.response?.data || err.message);

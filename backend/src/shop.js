@@ -46,6 +46,9 @@ async function getProducts(forceRefresh = false) {
 /** Last fetch status */
 function getStatus() { return _lastStatus; }
 
+/** Clear product cache — call when shop settings change */
+function clearCache() { _cache = { products: null, ts: 0 }; _lastStatus = 'not_configured'; }
+
 /**
  * Check catalog availability. Returns { available, status, products }
  */
@@ -163,11 +166,6 @@ function formatForAI(products) {
 async function isConfigured() {
   const { url } = await getConfig();
   return !!url;
-}
-
-function clearCache() {
-  _cache = { products: null, ts: 0 };
-  _lastStatus = 'not_configured';
 }
 
 module.exports = {

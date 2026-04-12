@@ -1,6 +1,7 @@
 import './globals.css';
 import { ThemeProvider } from '../lib/ThemeContext';
 import { AuthProvider } from '../lib/AuthContext';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export const metadata = {
   title: 'AI Seller — CRM',
@@ -28,7 +29,9 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

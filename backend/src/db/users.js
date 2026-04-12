@@ -38,18 +38,25 @@ const users = {
   async getAll() {
     const result = await db.query(`
       SELECT u.*, 
-        (SELECT text FROM messages WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1) as last_message,
-        (SELECT created_at FROM messages WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1) as last_message_at,
-        (SELECT COUNT(*) FROM messages WHERE user_id = u.id AND role = 'user') as message_count
-      FROM users u 
-      ORDER BY last_seen DESC
+        lm.text as last_message,
+        lm.created_at as last_message_at,
+        COALESCE(mc.cnt, 0)::int as message_count
+      FROM users u
+      LEFT JOIN LATERAL (
+        SELECT text, created_at FROM messages WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
+      ) lm ON true
+      LEFT JOIN (
+        SELECT user_id, COUNT(*) as cnt FROM messages WHERE role = 'user' GROUP BY user_id
+      ) mc ON mc.user_id = u.id
+      ORDER BY u.last_seen DESC
+      LIMIT 500
     `);
     return result.rows;
   },
 
   async search(query) {
     const result = await db.query(
-      `SELECT * FROM users WHERE name ILIKE $1 OR username ILIKE $1 ORDER BY last_seen DESC`,
+      `SELECT * FROM users WHERE name ILIKE $1 OR username ILIKE $1 ORDER BY last_seen DESC LIMIT 100`,
       [`%${query}%`]
     );
     return result.rows;

@@ -179,15 +179,22 @@ async function handleWaitingSize(user, text, lower) {
       return `${product.name} — отличный вкус 👍 Уточняю наличие, скоро отвечу. Какой размер нужен?`;
     }
 
-    // Create order with REAL product and price from catalog
-    await orders.create({
-      user_id: user.id,
-      product: product.name,
-      size,
-      price: product.price,
-    });
-
-    await users.updateState(user.id, 'WAITING_FORM');
+    // Create order with REAL product and price from catalog (transactional)
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'INSERT INTO orders (user_id, product, size, price, status) VALUES ($1, $2, $3, $4, $5)',
+        [user.id, product.name, size, product.price, 'NEW']
+      );
+      await client.query('UPDATE users SET state = $1 WHERE id = $2', ['WAITING_FORM', user.id]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
 
     return `Отлично! Записал:\n👟 ${product.name}\n📏 Размер: ${size}\n💰 Стоимость: ${product.price}₽\n\nОсталось чуть-чуть — скинь одним сообщением: ФИО, телефон и адрес доставки 📝`;
   }
@@ -223,12 +230,22 @@ async function handleWaitingForm(user, text, lower) {
       return 'Уточняю цену на этот товар. Подскажи, какой именно интересует — пересчитаем 🙏';
     }
 
-    await db.query(
-      'UPDATE orders SET full_name = $1, phone = $2, address = $3 WHERE id = $4',
-      [fullName, phone, address, order.id]
-    );
-
-    await users.updateState(user.id, 'WAITING_PAYMENT');
+    // Transactional — update order + user state together
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'UPDATE orders SET full_name = $1, phone = $2, address = $3 WHERE id = $4',
+        [fullName, phone, address, order.id]
+      );
+      await client.query('UPDATE users SET state = $1 WHERE id = $2', ['WAITING_PAYMENT', user.id]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
 
     const cardNumber = await settings.get('payment_card_number');
     const cardName = await settings.get('payment_name');
@@ -256,11 +273,25 @@ async function handleWaitingPayment(user, text, lower) {
   const confirmedPay = payKeywords.some((kw) => lower.includes(kw));
 
   if (confirmedPay) {
-    await users.updateState(user.id, 'PAID');
-
     const order = await orders.getLatestByUser(user.id);
+    // Transactional state + order status update
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE users SET state = $1 WHERE id = $2', ['PAID', user.id]);
+      if (order) {
+        await client.query('UPDATE orders SET status = $1 WHERE id = $2', ['PAID', order.id]);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
     if (order) {
-      const updatedOrder = await orders.updateStatus(order.id, 'PAID');
+      const updatedOrder = await orders.getLatestByUser(user.id);
       await notifyOwnerNewOrder(user, updatedOrder);
     }
 
@@ -312,10 +343,16 @@ async function handleDone(user, text, lower) {
 }
 
 async function notifyOwnerNewOrder(user, order) {
-  const priceStr = order.price ? `\n💰 Цена: ${order.price}₽` : '';
-  const text = `🆕 <b>Новый заказ #${order.id}</b>\n\n👤 ${order.full_name || user.name}\n📞 ${order.phone || 'не указан'}\n📍 ${order.address || 'не указан'}\n👟 ${order.product}\n📏 Размер: ${order.size}${priceStr}\n📋 Статус: ${order.status}\n\n🔗 Telegram: @${user.username || user.telegram_id}`;
+  // Escape HTML to prevent injection via user-supplied data
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const priceStr = order.price ? `\n💰 Цена: ${esc(order.price)}₽` : '';
+  const text = `🆕 <b>Новый заказ #${order.id}</b>\n\n👤 ${esc(order.full_name || user.name)}\n📞 ${esc(order.phone || 'не указан')}\n📍 ${esc(order.address || 'не указан')}\n👟 ${esc(order.product)}\n📏 Размер: ${esc(order.size)}${priceStr}\n📋 Статус: ${order.status}\n\n🔗 Telegram: @${esc(user.username || user.telegram_id)}`;
 
-  await bot.notifyOwner(text, { parse_mode: 'HTML' });
+  try {
+    await bot.notifyOwner(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('notifyOwner error:', err.message);
+  }
 }
 
 /**

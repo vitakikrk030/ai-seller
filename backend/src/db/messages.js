@@ -19,7 +19,7 @@ const messages = {
 
   async getByUser(userId) {
     const result = await db.query(
-      'SELECT * FROM messages WHERE user_id = $1 ORDER BY created_at ASC',
+      'SELECT * FROM messages WHERE user_id = $1 ORDER BY created_at ASC LIMIT 200',
       [userId]
     );
     return result.rows;

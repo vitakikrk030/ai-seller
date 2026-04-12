@@ -42,6 +42,7 @@ async function analyzeImage(imageUrl) {
           Authorization: `Bearer ${config.get('OPENROUTER_API_KEY')}`,
           'Content-Type': 'application/json',
         },
+        timeout: 30000,
       }
     );
 

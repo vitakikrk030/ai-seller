@@ -116,11 +116,29 @@ body {
 
 .theme-toggle:hover { color: var(--text); background: var(--bg-hover); }
 
+/* ===== ACCESSIBILITY: Focus styles ===== */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Skip outline for mouse clicks */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* ===== LAYOUT ===== */
 .app {
   display: flex;
-  height: 100%;
+  flex: 1;
+  overflow: hidden;
   position: relative;
+  min-height: 0;
 }
 
 /* ===== SIDEBAR ===== */
@@ -226,9 +244,7 @@ body {
   align-items: center;
   gap: 12px;
   min-height: 48px;
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  flex-shrink: 0;
   background: var(--bg);
 }
 
@@ -862,3 +878,37 @@ body {
   color: var(--green);
   margin-top: 2px;
 }
+
+/* === SKELETON LOADING === */
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.skeleton-list { padding: 8px 12px; }
+
+.skeleton-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.skeleton-msg { max-width: 60%; }
+.skeleton-msg.left { align-self: flex-start; }
+.skeleton-msg.right { align-self: flex-end; }
+
+.skeleton-msg .skeleton-line { height: 36px; }
