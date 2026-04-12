@@ -40,8 +40,10 @@ const bot = {
         payload.business_connection_id = options.business_connection_id;
       }
       await tgRequest('sendMessage', payload);
+      try { require('../monitoring').recordSuccess('telegram'); } catch(e) {}
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);
+      try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed'); } catch(e) {}
     }
   },
 

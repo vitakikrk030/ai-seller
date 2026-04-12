@@ -912,3 +912,344 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .skeleton-msg.right { align-self: flex-end; }
 
 .skeleton-msg .skeleton-line { height: 36px; }
+
+/* ===== MONITORING ===== */
+.mon-page {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.mon-loading, .mon-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-dim);
+  font-size: 14px;
+  gap: 12px;
+}
+
+.mon-error-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.mon-error-text {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* Header */
+.mon-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mon-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mon-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+.mon-overall {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mon-overall.mon-ok { color: var(--green); }
+.mon-overall.mon-degraded { color: var(--yellow); }
+.mon-overall.mon-down { color: #ef4444; }
+.mon-overall.mon-unknown { color: var(--text-dim); }
+
+.mon-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mon-checked {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mon-refresh {
+  font-size: 11px;
+  gap: 4px;
+}
+
+/* Status grid */
+.mon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.mon-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+
+.mon-card:hover {
+  border-color: var(--text-dim);
+}
+
+.mon-card-selected {
+  border-color: var(--accent);
+}
+
+.mon-card.mon-down {
+  border-left: 3px solid #ef4444;
+}
+
+.mon-card.mon-degraded {
+  border-left: 3px solid var(--yellow);
+}
+
+.mon-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.mon-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mon-badge.mon-ok { color: var(--green); background: rgba(34,197,94,0.1); }
+.mon-badge.mon-degraded { color: var(--yellow); background: rgba(234,179,8,0.15); }
+.mon-badge.mon-down { color: #ef4444; background: rgba(239,68,68,0.1); }
+.mon-badge.mon-unknown { color: var(--text-dim); background: rgba(128,128,128,0.1); }
+
+.mon-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 16px;
+}
+
+.mon-latency {
+  color: var(--text-dim);
+}
+
+.mon-card-msg {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+
+.mon-card-time {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Detail panel */
+.mon-detail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  background: var(--bg);
+}
+
+.mon-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.mon-detail-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.mon-detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mon-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(128,128,128,0.08);
+}
+
+.mon-detail-label {
+  color: var(--text-dim);
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.mon-detail-msg {
+  color: var(--text-dim);
+  text-align: right;
+  word-break: break-word;
+}
+
+/* Incidents */
+.mon-incidents {
+  margin-top: 4px;
+}
+
+.mon-incidents-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 10px 0;
+  color: var(--text);
+}
+
+.mon-empty {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 20px 0;
+  text-align: center;
+}
+
+.mon-incident-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mon-incident {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.mon-incident-resolved {
+  opacity: 0.55;
+}
+
+.mon-incident-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.mon-severity {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.mon-severity-critical { color: #ef4444; background: rgba(239,68,68,0.1); }
+.mon-severity-warning { color: var(--yellow); background: rgba(234,179,8,0.15); }
+.mon-severity-info { color: var(--accent); background: rgba(99,102,241,0.1); }
+
+.mon-incident-source {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mon-incident-time {
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.mon-incident-status {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.mon-incident-msg {
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.mon-incident-resolved-at {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .mon-page {
+    padding: 14px 12px;
+  }
+
+  .mon-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mon-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .mon-card {
+    padding: 10px;
+  }
+
+  .mon-card-msg {
+    max-width: 80px;
+  }
+
+  .mon-detail {
+    padding: 12px;
+  }
+}

@@ -56,6 +56,7 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
 
   for (let attempt = 0; attempt <= 1; attempt++) {
     try {
+      const aiStart = Date.now();
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
@@ -73,6 +74,7 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
         }
       );
 
+      try { require('../monitoring').recordSuccess('ai', Date.now() - aiStart); } catch(e) {}
       return response.data.choices[0]?.message?.content || '';
     } catch (err) {
       const status = err.response?.status;
@@ -81,6 +83,7 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
         continue;
       }
       console.error('AI error:', err.response?.data || err.message);
+      try { require('../monitoring').recordError('ai', err.message || 'AI request failed'); } catch(e) {}
       return 'Извините, произошла ошибка. Попробуйте позже или напишите @admin';
     }
   }

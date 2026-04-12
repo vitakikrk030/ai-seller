@@ -5,6 +5,7 @@ const messages = require('../db/messages');
 const prompts = require('../db/prompts');
 const bot = require('../telegram/bot');
 const { generateResponse } = require('../ai');
+const monitoring = require('../monitoring');
 
 /**
  * Determine reactivation scenario based on user state & history.
@@ -62,6 +63,7 @@ const QUICK_NUDGES = {
 function start() {
   // Clear stale manager_active flags every 10 minutes
   cron.schedule('*/10 * * * *', async () => {
+    monitoring.schedulerHeartbeat();
     try {
       const cleared = await users.clearStaleManagers(30);
       if (cleared.length > 0) {

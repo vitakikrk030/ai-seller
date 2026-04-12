@@ -373,4 +373,25 @@ router.post('/settings/test-shop', async (req, res) => {
   }
 });
 
+// === MONITORING ===
+
+router.get('/monitoring', async (req, res) => {
+  try {
+    const monitoring = require('../monitoring');
+    res.json(monitoring.getStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/monitoring/check', async (req, res) => {
+  try {
+    const monitoring = require('../monitoring');
+    await monitoring.runAllChecks();
+    res.json(monitoring.getStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

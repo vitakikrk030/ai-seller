@@ -2285,6 +2285,77 @@ async function testWebhookDeduplication() {
   await cleanup(TG_ID);
 }
 
+async function testMonitoring() {
+  console.log('\n📊 53. MONITORING SYSTEM TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Test initial state
+  const status1 = monitoring.getStatus();
+  assert(status1.overall, 'getStatus returns overall');
+  assert(Array.isArray(status1.components), 'getStatus returns components array');
+  assert(Array.isArray(status1.incidents), 'getStatus returns incidents array');
+  assert(status1.checkedAt, 'getStatus returns checkedAt');
+
+  // Test component initialization
+  monitoring.recordSuccess('test_comp', 42);
+  const status2 = monitoring.getStatus();
+  const testComp = status2.components.find((c) => c.name === 'test_comp');
+  assert(testComp, 'recordSuccess creates component');
+  assert(testComp.status === 'OK', 'recordSuccess sets OK status');
+  assert(testComp.latencyMs === 42, 'recordSuccess stores latency');
+
+  // Test error recording
+  monitoring.recordError('test_comp', 'test failure', 'critical');
+  const status3 = monitoring.getStatus();
+  const testComp2 = status3.components.find((c) => c.name === 'test_comp');
+  assert(testComp2.status === 'DOWN', 'recordError sets DOWN status');
+  assert(testComp2.message === 'test failure', 'recordError stores message');
+
+  // Test incident creation
+  const incidents = monitoring.getIncidents(10);
+  const testIncident = incidents.find((i) => i.source === 'test_comp' && i.message === 'test failure');
+  assert(testIncident, 'Incident created on DOWN');
+  assert(testIncident.severity === 'critical', 'Incident severity is critical');
+  assert(!testIncident.resolved, 'Incident initially unresolved');
+
+  // Test auto-resolve on recovery
+  monitoring.recordSuccess('test_comp', 10);
+  const incidents2 = monitoring.getIncidents(10);
+  const resolved = incidents2.find((i) => i.source === 'test_comp' && i.message === 'test failure');
+  assert(resolved && resolved.resolved, 'Incident resolved after recordSuccess');
+  assert(resolved.resolvedAt, 'Incident has resolvedAt timestamp');
+
+  // Test degraded state
+  monitoring.recordError('test_comp', 'slow response', 'warning');
+  const status4 = monitoring.getStatus();
+  const testComp3 = status4.components.find((c) => c.name === 'test_comp');
+  assert(testComp3.status === 'DEGRADED', 'warning severity sets DEGRADED');
+
+  // Test scheduler heartbeat
+  monitoring.schedulerHeartbeat();
+  const status5 = monitoring.getStatus();
+  const sched = status5.components.find((c) => c.name === 'scheduler');
+  assert(sched && sched.status === 'OK', 'schedulerHeartbeat sets scheduler OK');
+
+  // Test addIncident directly
+  const inc = monitoring.addIncident('test_source', 'manual incident', 'warning');
+  assert(inc.id > 0, 'addIncident returns incident with id');
+  assert(inc.source === 'test_source', 'addIncident stores source');
+
+  // Test overall status computation
+  monitoring.recordSuccess('test_comp', 5);
+  const finalStatus = monitoring.getStatus();
+  assert(['OK', 'DEGRADED', 'DOWN', 'UNKNOWN'].includes(finalStatus.overall), 'overall is valid status');
+
+  // Test runAllChecks doesn't crash (DB check will work since we're connected)
+  await monitoring.runAllChecks();
+  const afterChecks = monitoring.getStatus();
+  const dbComp = afterChecks.components.find((c) => c.name === 'database');
+  assert(dbComp && dbComp.status === 'OK', 'Database check passes after runAllChecks');
+  assert(dbComp.latencyMs != null, 'Database check reports latency');
+}
+
 async function run() {
   console.log('🚀 Starting E2E tests...\n');
 
@@ -2348,6 +2419,7 @@ async function run() {
     await testBusinessWebhookRouting();
     await testBusinessDeepLink();
     await testWebhookDeduplication();
+    await testMonitoring();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);

@@ -131,4 +131,9 @@ export const api = {
     }),
   disconnectBot: () =>
     fetchAPI('/settings/disconnect-bot', { method: 'POST' }),
+
+  // Monitoring
+  getMonitoring: () => fetchAPI('/monitoring'),
+  monitoringCheck: () =>
+    fetchAPI('/monitoring/check', { method: 'POST' }),
 };

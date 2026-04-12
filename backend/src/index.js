@@ -8,6 +8,7 @@ const log = require('./logger');
 const telegramRoutes = require('./telegram/routes');
 const apiRoutes = require('./api/routes');
 const scheduler = require('./scheduler');
+const monitoring = require('./monitoring');
 const { authMiddleware, login, verify, refresh, logout } = require('./api/auth');
 
 const app = express();
@@ -126,6 +127,9 @@ async function start() {
 
   // Start scheduler
   scheduler.start();
+
+  // Start monitoring health checks
+  monitoring.startPeriodicChecks();
 }
 
 start().catch(console.error);
@@ -133,6 +137,7 @@ start().catch(console.error);
 // Graceful shutdown
 function shutdown(signal) {
   log.info(`${signal} received — shutting down...`);
+  monitoring.stopPeriodicChecks();
   if (server) server.close();
   db.pool.end().then(() => process.exit(0)).catch(() => process.exit(1));
   // Force kill after 10s
