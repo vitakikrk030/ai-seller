@@ -4,11 +4,13 @@ const db = require('../db');
 const bot = require('../telegram/bot');
 const settings = require('../db/settings');
 const messages = require('../db/messages');
+const memory = require('../db/memory');
 const { generateResponse } = require('../ai');
 const shop = require('../shop');
 const { validateResponse, getSafeFallback } = require('../ai/validator');
 const { detectOfftopic } = require('../ai/offtopic');
 const { analyzeImage } = require('../ai/vision');
+const safety = require('../ai/safety');
 
 // States: NEW -> WAITING_SIZE -> WAITING_FORM -> WAITING_PAYMENT -> PAID -> DONE
 
@@ -35,6 +37,10 @@ async function fetchCatalog() {
  * If AI fabricates data — returns safe fallback instead.
  */
 async function safeAIResponse(user, text, products, catalogAvailable) {
+  // Circuit breaker: if AI keeps failing, don't even call it
+  const cbCheck = safety.shouldCallAI(user.state);
+  if (!cbCheck.allowed) return cbCheck.fallback;
+
   const productContext = (catalogAvailable && products.length > 0)
     ? shop.formatForAI(products)
     : null;
@@ -196,6 +202,9 @@ async function handleWaitingSize(user, text, lower) {
       client.release();
     }
 
+    // Save size + brand + price to customer memory (non-blocking)
+    memory.saveOrderData(user.id, { product: product.name, size, brand: null, price: product.price }).catch(() => {});
+
     return `Отлично! Записал:\n👟 ${product.name}\n📏 Размер: ${size}\n💰 Стоимость: ${product.price}₽\n\nОсталось чуть-чуть — скинь одним сообщением: ФИО, телефон и адрес доставки 📝`;
   }
 
@@ -205,6 +214,16 @@ async function handleWaitingSize(user, text, lower) {
 }
 
 async function handleWaitingForm(user, text, lower) {
+  // Returning customer: check if memory has full data and user confirms
+  const customerMem = await memory.get(user.id).catch(() => null);
+  if (memory.hasFullDeliveryData(customerMem)) {
+    const confirmYes = ['да', 'ок', 'окей', 'ага', 'угу', 'конечно', 'давай', 'подтверж', 'те же', 'тот же', 'прошлые', 'старые', 'как раньше', 'как прошлый'];
+    if (confirmYes.some(kw => lower.includes(kw))) {
+      // Use saved data
+      text = `${customerMem.full_name} ${customerMem.phone} ${customerMem.address}`;
+    }
+  }
+
   const phoneMatch = text.match(/(\+?\d[\d\s\-()]{8,})/);
   const hasPhone = !!phoneMatch;
   const longEnough = text.length > 15;
@@ -222,7 +241,7 @@ async function handleWaitingForm(user, text, lower) {
     let order = await orders.getLatestByUser(user.id);
     if (!order) {
       // Should not happen — order should exist from handleWaitingSize
-      return 'Произошла ошибка с заказом. Давайте начнём сначала — что хотите заказать?';
+      return 'Давай начнём заново — что хотите заказать? 😊';
     }
 
     // Validate order has product and price before proceeding to payment
@@ -246,6 +265,9 @@ async function handleWaitingForm(user, text, lower) {
     } finally {
       client.release();
     }
+
+    // Save form data to customer memory (non-blocking)
+    memory.saveFormData(user.id, { fullName, phone, address }).catch(() => {});
 
     const cardNumber = await settings.get('payment_card_number');
     const cardName = await settings.get('payment_name');

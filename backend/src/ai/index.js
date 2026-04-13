@@ -2,17 +2,31 @@ const axios = require('axios');
 const config = require('../config');
 const prompts = require('../db/prompts');
 const messages = require('../db/messages');
+const memory = require('../db/memory');
 
 async function generateResponse(user, userMessage, { productContext, catalogAvailable, scenario } = {}) {
-  const [corePrompt, salesPrompt] = await Promise.all([
+  const [corePrompt, salesPrompt, customerMemory] = await Promise.all([
     prompts.get('core_prompt'),
     prompts.get('sales_prompt'),
+    memory.get(user.id).catch(() => null),
   ]);
 
   // Get conversation history
   const history = await messages.getHistory(user.id, 15);
 
   let systemMessage = `${corePrompt}\n\n${salesPrompt}\n\nТекущее состояние клиента: ${user.state}\nИмя клиента: ${user.name || 'неизвестно'}`;
+
+  // Inject customer memory for personalized responses
+  const memoryContext = memory.buildContextForAI(customerMemory);
+  if (memoryContext) {
+    systemMessage += `\n\n--- ПАМЯТЬ О КЛИЕНТЕ ---\n${memoryContext}\n--- КОНЕЦ ПАМЯТИ ---\n\nПРАВИЛА РАБОТЫ С ПАМЯТЬЮ:\n- НЕ спрашивай заново то, что уже знаешь (размер, имя, адрес, телефон).\n- Вместо этого УТОЧНЯЙ: «размер 44 оставляем?», «отправим на тот же адрес?»\n- НЕ утверждай, что данные точно те же — ВСЕГДА спрашивай «или что-то изменилось?»\n- Если чего-то не хватает — мягко запроси.`;
+  }
+
+  // Next action recommendation
+  const nextAction = memory.getNextAction(user, customerMemory);
+  if (nextAction) {
+    systemMessage += `\n\nРЕКОМЕНДАЦИЯ: ${nextAction}`;
+  }
 
   // State-specific behavior hints
   const stateHints = {
@@ -84,7 +98,7 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
       }
       console.error('AI error:', err.response?.data || err.message);
       try { require('../monitoring').recordError('ai', err.message || 'AI request failed'); } catch(e) {}
-      return 'Извините, произошла ошибка. Попробуйте позже или напишите @admin';
+      return '';
     }
   }
 }

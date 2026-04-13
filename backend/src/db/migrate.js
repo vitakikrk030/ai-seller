@@ -225,6 +225,100 @@ DO $$ BEGIN
     ALTER TABLE users ADD COLUMN manager_active_at TIMESTAMPTZ;
   END IF;
 END $$;
+
+-- Chat upgrade: last_read_at for real unread tracking
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_read_at') THEN
+    ALTER TABLE users ADD COLUMN last_read_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+-- Memory upgrade: last_order_summary, total_spent, order_count, vip
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='last_order_summary') THEN
+    ALTER TABLE customer_memory ADD COLUMN last_order_summary JSONB DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='total_spent') THEN
+    ALTER TABLE customer_memory ADD COLUMN total_spent NUMERIC DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='order_count') THEN
+    ALTER TABLE customer_memory ADD COLUMN order_count INTEGER DEFAULT 0;
+  END IF;
+END $$;
+
+-- Performance index for unread + wait time calculations
+CREATE INDEX IF NOT EXISTS idx_messages_user_role_created ON messages(user_id, role, created_at DESC);
+
+-- Simplified mode: 'ai' or 'manager' (replaces 4 ai_modes)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mode') THEN
+    ALTER TABLE users ADD COLUMN "mode" VARCHAR(10) DEFAULT 'ai';
+    -- Migrate existing ai_mode values
+    UPDATE users SET "mode" = CASE
+      WHEN ai_mode = 'OBSERVE' THEN 'manager'
+      ELSE 'ai'
+    END;
+  END IF;
+END $$;
+
+-- Customer memory: persistent memory for personalized sales
+CREATE TABLE IF NOT EXISTS customer_memory (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  full_name VARCHAR(255),
+  phone VARCHAR(50),
+  city VARCHAR(100),
+  address TEXT,
+  shoe_size VARCHAR(20),
+  insole_cm VARCHAR(20),
+  preferred_brand VARCHAR(100),
+  shoe_type VARCHAR(100),
+  behavior JSONB DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_memory_user ON customer_memory(user_id);
+
+-- Monitoring tables (persistent state, incidents, history)
+CREATE TABLE IF NOT EXISTS monitoring_components (
+  name VARCHAR(50) PRIMARY KEY,
+  label VARCHAR(100) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN',
+  severity VARCHAR(20) NOT NULL DEFAULT 'info',
+  last_ok TIMESTAMPTZ,
+  last_error TIMESTAMPTZ,
+  last_check TIMESTAMPTZ,
+  message TEXT DEFAULT '',
+  latency_ms INTEGER,
+  critical BOOLEAN DEFAULT true,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS monitoring_incidents (
+  id SERIAL PRIMARY KEY,
+  source VARCHAR(50) NOT NULL,
+  message TEXT NOT NULL,
+  severity VARCHAR(20) NOT NULL DEFAULT 'warning',
+  resolved BOOLEAN DEFAULT false,
+  resolved_at TIMESTAMPTZ,
+  notified BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mon_incidents_source ON monitoring_incidents(source);
+CREATE INDEX IF NOT EXISTS idx_mon_incidents_created ON monitoring_incidents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mon_incidents_open ON monitoring_incidents(resolved) WHERE resolved = false;
+
+CREATE TABLE IF NOT EXISTS monitoring_history (
+  id SERIAL PRIMARY KEY,
+  component VARCHAR(50) NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  latency_ms INTEGER,
+  recorded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mon_history_comp_time ON monitoring_history(component, recorded_at DESC);
 `;
 
 async function migrate() {

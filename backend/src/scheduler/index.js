@@ -6,6 +6,8 @@ const prompts = require('../db/prompts');
 const bot = require('../telegram/bot');
 const { generateResponse } = require('../ai');
 const monitoring = require('../monitoring');
+const memory = require('../db/memory');
+const safety = require('../ai/safety');
 
 /**
  * Determine reactivation scenario based on user state & history.
@@ -60,6 +62,27 @@ const QUICK_NUDGES = {
   WAITING_PAYMENT: 'Напоминаю — заказ ждёт оплаты. Переведи и скинь скрин 💳',
 };
 
+// Auto-nudge chain: escalating reminders
+// Level 1 (1h): soft check-in
+// Level 2 (24h): direct nudge
+// Level 3 (3d): reactivation offer
+const NUDGE_CHAIN = {
+  WAITING_PAYMENT: [
+    { afterMin: 60, msg: 'Привет! Всё ок? Заказ ждёт — если есть вопросы, пиши 😊' },
+    { afterMin: 1440, msg: 'Напоминаю про заказ 💳 Переведи и скинь скрин — отправим сразу!' },
+    { afterMin: 4320, msg: 'Заказ всё ещё ждёт! Может, оформим? Если что-то смущает — скажи, решим 🤝' },
+  ],
+  WAITING_FORM: [
+    { afterMin: 60, msg: 'Осталось совсем чуть-чуть! Скинь ФИО, телефон и адрес — и оформим 🚀' },
+    { afterMin: 1440, msg: 'Привет! Заказ на паузе — жду данные для доставки. Скинь одним сообщением 📝' },
+    { afterMin: 4320, msg: 'Заказ всё ещё можно оформить! Скинь ФИО, телефон и адрес — отправим 🎁' },
+  ],
+  WAITING_SIZE: [
+    { afterMin: 60, msg: 'Определился с размером? Если надо — помогу подобрать 👟' },
+    { afterMin: 1440, msg: 'Привет! Ещё думаешь? Могу показать популярные размеры и модели 😉' },
+  ],
+};
+
 function start() {
   // Clear stale manager_active flags every 10 minutes
   cron.schedule('*/10 * * * *', async () => {
@@ -74,34 +97,60 @@ function start() {
     }
   });
 
-  // Fast followup: every 30 min — nudge users stuck in order states
-  cron.schedule('*/30 * * * *', async () => {
+  // Fast followup: every 15 min — auto-nudge chain for stuck users
+  cron.schedule('*/15 * * * *', async () => {
     try {
-      const stuck = await users.getStuckInOrder(30);
+      const stuck = await users.getStuckInOrder(15);
 
       for (const user of stuck) {
         try {
-          const nudge = QUICK_NUDGES[user.state];
-          if (!nudge) continue;
+          if (!user.ai_enabled) continue;
+          if (user.manager_active) continue;
 
-          // Check if we already sent a nudge recently (avoid double-nudge)
-          const recentMsgs = await messages.getHistory(user.id, 1);
-          if (recentMsgs.length > 0 && recentMsgs[recentMsgs.length - 1].role === 'ai') {
-            // Last message is from AI — don't spam
-            const lastMsg = recentMsgs[recentMsgs.length - 1];
-            const msgAge = Date.now() - new Date(lastMsg.created_at).getTime();
-            if (msgAge < 25 * 60 * 1000) continue; // < 25 min ago
+          const chain = NUDGE_CHAIN[user.state];
+          if (!chain) continue;
+
+          // Find last AI message time to determine nudge level
+          const recentMsgs = await messages.getHistory(user.id, 5);
+          const lastAI = recentMsgs.filter(m => m.role === 'ai').pop();
+          const lastUser = recentMsgs.filter(m => m.role === 'user').pop();
+
+          // Don't nudge if user sent a message after our last nudge
+          if (lastUser && lastAI && new Date(lastUser.created_at) > new Date(lastAI.created_at)) {
+            continue; // User replied — stop nudging
           }
 
-          await messages.save(user.id, 'ai', nudge);
-          await bot.sendMessage(user.telegram_id, nudge);
-          console.log(`Quick nudge [${user.state}] sent to user ${user.id}`);
+          const lastAnyMsg = lastAI || lastUser;
+          if (!lastAnyMsg) continue;
+
+          const minutesSince = (Date.now() - new Date(lastAnyMsg.created_at).getTime()) / (1000 * 60);
+
+          // Count how many AI nudges we already sent in a row
+          let nudgesSent = 0;
+          for (let i = recentMsgs.length - 1; i >= 0; i--) {
+            if (recentMsgs[i].role === 'ai') nudgesSent++;
+            else break;
+          }
+
+          // Pick the right nudge level from chain
+          const nextNudge = chain.find((n, idx) => idx >= nudgesSent && minutesSince >= n.afterMin);
+          if (!nextNudge) continue;
+
+          // Don't send same level twice
+          if (nudgesSent > 0 && lastAI) {
+            const lastNudgeAge = (Date.now() - new Date(lastAI.created_at).getTime()) / (1000 * 60);
+            if (lastNudgeAge < 30) continue; // At least 30 min between nudges
+          }
+
+          await messages.save(user.id, 'ai', nextNudge.msg);
+          await bot.sendMessage(user.telegram_id, nextNudge.msg);
+          console.log(`Auto-nudge [${user.state} L${nudgesSent + 1}] to user ${user.id}`);
         } catch (err) {
-          console.error(`Quick nudge error for user ${user.id}:`, err.message);
+          console.error(`Auto-nudge error for user ${user.id}:`, err.message);
         }
       }
     } catch (err) {
-      console.error('Quick nudge scheduler error:', err.message);
+      console.error('Auto-nudge scheduler error:', err.message);
     }
   });
 
@@ -134,8 +183,9 @@ function start() {
           const message = await buildFollowup(user, scenario);
 
           if (message) {
-            await messages.save(user.id, 'ai', message);
-            await bot.sendMessage(user.telegram_id, message);
+            const safeResult = safety.enforce(message, { isScheduled: true, userState: 'FOLLOWUP' });
+            await messages.save(user.id, 'ai', safeResult.text);
+            await bot.sendMessage(user.telegram_id, safeResult.text);
             await db.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
             console.log(`Follow-up [${scenario}] sent to user ${user.id} (${daysSince}d inactive)`);
           }
@@ -151,4 +201,4 @@ function start() {
   console.log('Scheduler started');
 }
 
-module.exports = { start, getScenario, buildFollowup, QUICK_NUDGES };
+module.exports = { start, getScenario, buildFollowup, QUICK_NUDGES, NUDGE_CHAIN };

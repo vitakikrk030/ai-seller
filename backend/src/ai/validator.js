@@ -116,15 +116,15 @@ function validateResponse(aiResponse, products, catalogAvailable) {
  */
 function getSafeFallback(status, reason) {
   if (status === 'not_configured') {
-    return 'Каталог сейчас обновляется. Скинь что ищешь — передам менеджеру и он ответит 🙏';
+    return 'Скинь что ищешь — менеджер подберёт лучший вариант 🙏';
   }
 
   if (status === 'api_error') {
-    return 'Ой, информация о товарах временно недоступна. Скинь что интересует — менеджер поможет 🙏';
+    return 'Скинь что интересует — менеджер поможет 🙏';
   }
 
   if (status === 'empty_catalog') {
-    return 'Каталог пока пуст — возможно, обновляется. Напиши что ищешь, менеджер подскажет 🙏';
+    return 'Напиши что ищешь, менеджер подскажет 🙏';
   }
 
   if (reason === 'fabricated_price' || (reason && reason.startsWith('fabricated_price:'))) {
@@ -132,7 +132,7 @@ function getSafeFallback(status, reason) {
   }
 
   if (reason === 'price_without_catalog') {
-    return 'Сейчас не могу подтвердить цены. Менеджер уточнит. Что ищешь? 🙏';
+    return 'Сейчас уточню цену. Что ищешь? 🙏';
   }
 
   if (reason === 'robot_reveal') {

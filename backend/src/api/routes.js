@@ -5,6 +5,8 @@ const messages = require('../db/messages');
 const orders = require('../db/orders');
 const prompts = require('../db/prompts');
 const settings = require('../db/settings');
+const memory = require('../db/memory');
+const queue = require('../queue');
 const bot = require('../telegram/bot');
 const axios = require('axios');
 const shop = require('../shop');
@@ -61,6 +63,107 @@ router.patch('/users/:id/ai-mode', async (req, res) => {
   }
 });
 
+router.patch('/users/:id/mode', async (req, res) => {
+  try {
+    const { mode } = req.body;
+    const user = await users.setMode(req.params.id, mode);
+    res.json(user);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/users/:id/read', async (req, res) => {
+  try {
+    await users.markRead(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Quick-reply suggestions based on user state + memory
+router.get('/users/:id/quick-replies', async (req, res) => {
+  try {
+    const user = await users.getById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const mem = await memory.get(req.params.id).catch(() => null);
+    const replies = [];
+
+    switch (user.state) {
+      case 'NEW':
+        replies.push('Какой размер носите?', 'Что ищете? Кроссовки, одежду?', 'Показать популярные модели?');
+        break;
+      case 'WAITING_SIZE':
+        if (mem?.shoe_size) {
+          replies.push(`Размер ${mem.shoe_size} оставляем?`);
+        } else {
+          replies.push('Какой размер носите?');
+        }
+        replies.push('Обычно эта модель идет размер в размер', 'Показать похожие варианты?');
+        break;
+      case 'WAITING_FORM':
+        if (mem?.full_name && mem?.phone && mem?.address) {
+          replies.push('Доставить по тем же данным или что-то изменилось?');
+        } else {
+          replies.push('Отправьте ФИО, телефон и адрес одним сообщением');
+        }
+        if (mem?.phone && !mem?.address) {
+          replies.push('Подскажите адрес доставки');
+        }
+        replies.push('Доставка по всей России');
+        break;
+      case 'WAITING_PAYMENT':
+        replies.push('Скинуть реквизиты для оплаты?', 'Напоминаю — заказ ждет оплаты', 'После оплаты скиньте скрин');
+        break;
+      case 'PAID':
+        replies.push('Заказ принят, скоро отправим', 'Спасибо за покупку', 'Хотите что-то еще посмотреть?');
+        break;
+      case 'DONE':
+        replies.push('Как вам товар?', 'Подъехали новинки — посмотрите?', 'Рады видеть снова');
+        break;
+      default:
+        replies.push('Чем могу помочь?');
+    }
+    res.json(replies);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer memory
+router.get('/users/:id/memory', async (req, res) => {
+  try {
+    const user = await users.getById(req.params.id);
+    const mem = await memory.get(req.params.id);
+    const result = mem ? { ...mem } : {};
+    // Add computed fields
+    if (user && mem) {
+      result._next_action = memory.getNextAction(user, mem);
+      result._is_vip = memory.isVIP(mem);
+      result._has_full_delivery = memory.hasFullDeliveryData(mem);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/users/:id/memory', async (req, res) => {
+  try {
+    const allowedFields = ['full_name', 'phone', 'city', 'address', 'shoe_size', 'insole_cm', 'preferred_brand', 'shoe_type', 'notes'];
+    const data = {};
+    for (const f of allowedFields) {
+      if (req.body[f] !== undefined) data[f] = req.body[f];
+    }
+    const result = await memory.update(req.params.id, data);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/users/:id/state', async (req, res) => {
   try {
     const { state } = req.body;
@@ -97,6 +200,9 @@ router.post('/users/:id/messages', async (req, res) => {
 
     // Save admin message
     const msg = await messages.save(user.id, 'admin', text);
+
+    // Cancel any pending AI responses for this chat (manager takes over)
+    queue.cancelChat(user.telegram_id);
 
     // Mark manager as active (for AUTO_WITH_MANAGER_OVERRIDE mode)
     await users.setManagerActive(user.id, true);
@@ -384,11 +490,59 @@ router.get('/monitoring', async (req, res) => {
   }
 });
 
+router.get('/monitoring/history', async (req, res) => {
+  try {
+    const monitoring = require('../monitoring');
+    const component = req.query.component || null;
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+    const data = await monitoring.getHistory(component, hours);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/monitoring/incidents', async (req, res) => {
+  try {
+    const monitoring = require('../monitoring');
+    const { source, limit } = req.query;
+    const resolved = req.query.resolved === 'true' ? true : req.query.resolved === 'false' ? false : undefined;
+    const data = await monitoring.queryIncidents({
+      resolved,
+      source: source || null,
+      limit: Math.min(parseInt(limit) || 50, 200),
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/monitoring/check', async (req, res) => {
   try {
     const monitoring = require('../monitoring');
     await monitoring.runAllChecks();
     res.json(monitoring.getStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/monitoring/metrics', async (req, res) => {
+  try {
+    const monitoring = require('../monitoring');
+    const data = await monitoring.getBusinessMetrics();
+    if (!data) return res.status(500).json({ error: 'Failed to load metrics' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Queue metrics
+router.get('/monitoring/queue', async (req, res) => {
+  try {
+    res.json(queue.getMetrics());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

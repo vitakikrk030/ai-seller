@@ -1,10 +1,24 @@
 const users = require('../db/users');
 const messages = require('../db/messages');
+const memory = require('../db/memory');
 const config = require('../config');
 const bot = require('./bot');
 const { processMessage, processPhoto } = require('../logic/sales');
+const monitoring = require('../monitoring');
+const queue = require('../queue');
+const safety = require('../ai/safety');
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Configure queue: fallback sends "секунду..." if AI is slow
+queue.configure({
+  concurrency: 5,
+  onFallback: async (chatId) => {
+    try {
+      await bot.sendMessage(chatId, 'Секунду, подбираю варианты 👌');
+    } catch (e) { /* ignore */ }
+  },
+});
 
 // Webhook deduplication — prevents processing duplicate updates from Telegram
 const _processedUpdates = new Map();
@@ -24,7 +38,7 @@ function isDuplicate(msgId, chatId) {
   return false;
 }
 
-// AI mode constants
+// AI mode constants (legacy — kept for backward compat)
 const AI_MODES = {
   OBSERVE: 'OBSERVE',
   HYBRID: 'HYBRID',
@@ -51,9 +65,7 @@ const COMPLEX_PATTERNS = [
 
 function isSimpleMessage(text) {
   if (!text) return false;
-  // Short messages are generally simple
   if (text.length < 30) return true;
-  // Check patterns
   if (SIMPLE_PATTERNS.some((p) => p.test(text))) return true;
   return false;
 }
@@ -65,43 +77,43 @@ function isComplexMessage(text) {
 }
 
 /**
- * Check if AI should respond based on user's ai_mode.
- * Returns { shouldRespond: bool, reason: string }
+ * Check if AI should respond based on the new 2-mode system.
+ * mode = 'ai' | 'manager'
+ *
+ * 'ai': AI responds unless manager is in active pause (wrote recently).
+ *       Complex messages (complaints, requests for human) still bypass AI internally.
+ * 'manager': AI never responds.
  */
 function checkAiMode(user, text) {
-  const mode = user.ai_mode || 'AUTO';
+  const mode = user.mode || 'ai';
 
-  switch (mode) {
-    case AI_MODES.OBSERVE:
-      return { shouldRespond: false, reason: 'observe_mode' };
-
-    case AI_MODES.HYBRID:
-      if (isComplexMessage(text)) {
-        return { shouldRespond: false, reason: 'hybrid_complex' };
-      }
-      if (user.manager_active) {
-        return { shouldRespond: false, reason: 'hybrid_manager_active' };
-      }
-      if (!isSimpleMessage(text)) {
-        return { shouldRespond: false, reason: 'hybrid_not_simple' };
-      }
-      return { shouldRespond: true, reason: 'hybrid_simple' };
-
-    case AI_MODES.AUTO_WITH_MANAGER_OVERRIDE:
-      if (user.manager_active) {
-        return { shouldRespond: false, reason: 'manager_override' };
-      }
-      return { shouldRespond: true, reason: 'auto_manager_clear' };
-
-    case AI_MODES.AUTO:
-    default:
-      return { shouldRespond: true, reason: 'auto_mode' };
+  // Mode: manager — AI always silent
+  if (mode === 'manager') {
+    return { shouldRespond: false, reason: 'manager_mode' };
   }
+
+  // Mode: ai — check internal conditions
+  // 1. If manager is actively in chat (wrote within last 30 min), AI pauses
+  if (user.manager_active) {
+    return { shouldRespond: false, reason: 'manager_pause' };
+  }
+
+  // 2. Complex messages (complaints, requests for human) — escalate silently
+  if (isComplexMessage(text)) {
+    return { shouldRespond: false, reason: 'complex_escalation' };
+  }
+
+  // 3. AI responds
+  return { shouldRespond: true, reason: 'ai_mode' };
 }
 
 async function sendAIResponse(telegramId, user, response, businessConnectionId) {
-  const responseText = typeof response === 'object' ? response.text : response;
+  const rawText = typeof response === 'object' ? response.text : response;
   const paymentData = typeof response === 'object' ? response.sendPayment : null;
+
+  // Safety gate: sanitize + detect before sending to client
+  const safeResult = safety.enforce(rawText, { userState: user.state });
+  const responseText = safeResult.text;
 
   const delay = parseInt(await config.getSetting('response_delay') || '0', 10);
   if (delay > 0 && delay <= 30) await sleep(delay * 1000);
@@ -131,6 +143,9 @@ async function handleMessage(msg, businessConnectionId) {
   // Deduplicate: skip if we've seen this message already
   if (msg.message_id && isDuplicate(msg.message_id, telegramId)) return;
 
+  // Record activity for silent failure detection
+  monitoring.recordMessageActivity();
+
   const name = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
   const username = msg.from.username || null;
   const text = msg.text || msg.caption || null;
@@ -155,59 +170,63 @@ async function handleMessage(msg, businessConnectionId) {
   }
 
   try {
-    // Check global AI setting
+    // ── SYNCHRONOUS PART: save message immediately, never lose it ──
     const globalAi = await config.getSetting('global_ai_enabled');
-    if (globalAi === 'false') {
-      const user = await users.findOrCreate(telegramId, name, username);
-      if (text) await messages.save(user.id, 'user', text);
-      else if (photo) await messages.save(user.id, 'user', '[фото]');
-      return;
-    }
-
     const user = await users.findOrCreate(telegramId, name, username);
 
-    // Photo message handling
     if (photo && Array.isArray(photo) && photo.length > 0) {
       await messages.save(user.id, 'user', msg.caption || '[фото]');
-
-      if (!user.ai_enabled) return;
-      const autoReply = await config.getSetting('auto_reply');
-      if (autoReply === 'false') return;
-
-      // Check AI mode
-      const { shouldRespond } = checkAiMode(user, msg.caption || '[фото]');
-      if (!shouldRespond) return;
-
-      const largest = photo[photo.length - 1];
-      const fileUrl = await bot.getFileUrl(largest.file_id);
-
-      if (!fileUrl) return;
-      const response = await processPhoto(user, fileUrl, msg.caption || null);
-
-      await sendAIResponse(telegramId, user, response, businessConnectionId);
-      return;
+    } else if (text) {
+      await messages.save(user.id, 'user', text);
+      // Extract customer data (non-blocking)
+      memory.extractAndSave(user.id, text).catch(() => {});
     }
 
-    // Text message handling
-    await messages.save(user.id, 'user', text);
-
+    // ── CHECK: should AI respond? ──
+    if (globalAi === 'false') return;
     if (!user.ai_enabled) return;
 
     const autoReply = await config.getSetting('auto_reply');
     if (autoReply === 'false') return;
 
-    // Check AI mode
-    const { shouldRespond } = checkAiMode(user, text);
+    const msgContent = text || msg.caption || '[фото]';
+    const { shouldRespond } = checkAiMode(user, msgContent);
     if (!shouldRespond) return;
 
-    const response = await processMessage(user, text);
+    // Check if manager cancelled AI for this chat
+    if (queue.isCancelled(String(telegramId))) return;
 
-    if (response) {
-      await sendAIResponse(telegramId, user, response, businessConnectionId);
-    }
+    // ── ASYNC PART: enqueue AI response via queue ──
+    queue.enqueue(telegramId, async () => {
+      // Re-check cancel before AI call
+      if (queue.isCancelled(String(telegramId))) return;
+
+      // Re-fetch user in case state changed while queued
+      const freshUser = await users.getById(user.id);
+      if (!freshUser || !freshUser.ai_enabled) return;
+      if (freshUser.manager_active) return;
+
+      let response;
+      if (photo && Array.isArray(photo) && photo.length > 0) {
+        const largest = photo[photo.length - 1];
+        const fileUrl = await bot.getFileUrl(largest.file_id);
+        if (!fileUrl) return;
+        response = await processPhoto(freshUser, fileUrl, msg.caption || null);
+      } else {
+        response = await processMessage(freshUser, text);
+      }
+
+      // Final cancel check after AI call
+      if (queue.isCancelled(String(telegramId))) return;
+
+      if (response) {
+        await sendAIResponse(telegramId, freshUser, response, businessConnectionId);
+      }
+    }, { userState: user.state });
+
   } catch (err) {
     console.error(`Error handling message from ${telegramId}:`, err);
   }
 }
 
-module.exports = { handleMessage, checkAiMode, isSimpleMessage, isComplexMessage, AI_MODES };
+module.exports = { handleMessage, checkAiMode, isSimpleMessage, isComplexMessage, AI_MODES, queue };

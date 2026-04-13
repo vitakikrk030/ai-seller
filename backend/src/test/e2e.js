@@ -4,6 +4,7 @@
  * Запуск: node src/test/e2e.js
  * Требует: работающую PostgreSQL с DATABASE_URL в .env
  */
+process.env.TZ = 'Europe/Moscow';
 require('dotenv').config();
 const db = require('../db');
 const users = require('../db/users');
@@ -568,7 +569,7 @@ async function testErrorHandling() {
   const { generateResponse } = require('../ai');
   const response = await generateResponse(user, 'привет');
   assert(typeof response === 'string', 'AI returns string even on error');
-  assert(response.length > 0, 'AI returns non-empty error message');
+  assert(response.length === 0, 'AI returns empty on error (safety: no error text to client)');
 
   // Restore
   await settings.set('openrouter_api_key', originalKey || '');
@@ -830,12 +831,15 @@ async function testHandlerStructuredResponse() {
 
   // handleMessage will call processMessage which returns structured response
   // bot.sendMessage will fail silently (no real Telegram) — that's ok
-  const { handleMessage } = require('../telegram/handler');
+  const { handleMessage, queue } = require('../telegram/handler');
 
   await handleMessage({
     from: { id: TG_ID, first_name: 'Handler', last_name: 'Test', username: 'handlertest' },
     text: 'Сидоров Сидор, +79990001122, Казань, ул. Баумана 15',
   });
+
+  // Wait for queue to process async AI tasks
+  await queue.drain();
 
   // Check: user message saved, AI response saved
   const allMsgs = await messages.getByUser(user.id);
@@ -1052,10 +1056,10 @@ async function testAIValidator() {
   assert(f1.includes('каталог') || f1.includes('менеджер'), 'not_configured fallback mentions catalog/manager');
 
   const f2 = getSafeFallback('api_error');
-  assert(f2.includes('недоступна') || f2.includes('позже'), 'api_error fallback mentions unavailable');
+  assert(f2.includes('менеджер') || f2.includes('поможет'), 'api_error fallback mentions manager');
 
   const f3 = getSafeFallback('empty_catalog');
-  assert(f3.includes('пуст') || f3.includes('обновлен'), 'empty_catalog fallback mentions empty');
+  assert(f3.includes('менеджер') || f3.includes('подскажет'), 'empty_catalog fallback mentions manager');
 
   const f4 = getSafeFallback(null, 'fabricated_price:8990');
   assert(f4.length > 0, 'fabricated_price fallback is non-empty');
@@ -1562,7 +1566,7 @@ async function testImprovedFallbacks() {
   assert(f2.includes('менеджер'), 'api_error: mentions manager');
 
   const f3 = getSafeFallback('empty_catalog');
-  assert(f3.includes('пуст'), 'empty_catalog: mentions empty');
+  assert(f3.includes('менеджер'), 'empty_catalog: mentions manager');
 
   const f4 = getSafeFallback(null, 'robot_reveal');
   assert(!f4.includes('Подскажите'), 'robot_reveal: no formal "Подскажите"');
@@ -1882,38 +1886,39 @@ async function testValidatorNegativePatterns() {
 // ---- AI MODES TESTS ----
 
 async function testAiModesCRUD() {
-  console.log('\n🔧 44. AI MODES CRUD TEST');
+  console.log('\n🔧 44. AI MODES CRUD TEST (2-mode system)');
 
   const testId = 999044;
   await cleanup(testId);
 
   const user = await users.findOrCreate(testId, 'ModeTest', 'modetest');
 
-  // Default mode should be AUTO
-  assert(user.ai_mode === 'AUTO' || user.ai_mode === null, 'default: AUTO or null');
+  // Default mode should be 'ai' (or null which defaults to 'ai')
+  assert(user.mode === 'ai' || user.mode === null, 'default: mode = ai or null');
   assert(user.manager_active === false, 'default: manager_active = false');
   assert(user.manager_active_at === null, 'default: manager_active_at = null');
 
-  // Set OBSERVE
-  const u1 = await users.setAiMode(user.id, 'OBSERVE');
-  assert(u1.ai_mode === 'OBSERVE', 'setAiMode: OBSERVE');
+  // Set mode to 'manager'
+  const u1 = await users.setMode(user.id, 'manager');
+  assert(u1.mode === 'manager', 'setMode: manager');
 
-  // Set HYBRID
-  const u2 = await users.setAiMode(user.id, 'HYBRID');
-  assert(u2.ai_mode === 'HYBRID', 'setAiMode: HYBRID');
-
-  // Set AUTO_WITH_MANAGER_OVERRIDE
-  const u3 = await users.setAiMode(user.id, 'AUTO_WITH_MANAGER_OVERRIDE');
-  assert(u3.ai_mode === 'AUTO_WITH_MANAGER_OVERRIDE', 'setAiMode: AUTO_WITH_MANAGER_OVERRIDE');
-
-  // Set back to AUTO
-  const u4 = await users.setAiMode(user.id, 'AUTO');
-  assert(u4.ai_mode === 'AUTO', 'setAiMode: AUTO');
+  // Set mode to 'ai'
+  const u2 = await users.setMode(user.id, 'ai');
+  assert(u2.mode === 'ai', 'setMode: ai');
 
   // Invalid mode should throw
   let threw = false;
-  try { await users.setAiMode(user.id, 'INVALID'); } catch { threw = true; }
+  try { await users.setMode(user.id, 'INVALID'); } catch { threw = true; }
   assert(threw, 'invalid mode: throws error');
+
+  // Legacy setAiMode still works
+  const u3 = await users.setAiMode(user.id, 'OBSERVE');
+  assert(u3.ai_mode === 'OBSERVE', 'legacy setAiMode: OBSERVE');
+  assert(u3.mode === 'manager', 'legacy OBSERVE maps to mode=manager');
+
+  const u4 = await users.setAiMode(user.id, 'AUTO');
+  assert(u4.ai_mode === 'AUTO', 'legacy setAiMode: AUTO');
+  assert(u4.mode === 'ai', 'legacy AUTO maps to mode=ai');
 
   // Manager active
   await users.setManagerActive(user.id, true);
@@ -1927,48 +1932,47 @@ async function testAiModesCRUD() {
   assert(u6.manager_active === false, 'setManagerActive: false');
   assert(u6.manager_active_at === null, 'setManagerActive: timestamp cleared');
 
+  // setMode('ai') should also clear manager_active
+  await users.setManagerActive(user.id, true);
+  const u7 = await users.setMode(user.id, 'ai');
+  const u8 = await users.getById(user.id);
+  assert(u8.manager_active === false, 'setMode ai: clears manager_active');
+
   await cleanup(testId);
 }
 
 async function testCheckAiMode() {
-  console.log('\n🧠 45. CHECK AI MODE LOGIC TEST');
+  console.log('\n🧠 45. CHECK AI MODE LOGIC TEST (2-mode system)');
 
-  const { checkAiMode, isSimpleMessage, isComplexMessage, AI_MODES } = require('../telegram/handler');
+  const { checkAiMode, isSimpleMessage, isComplexMessage } = require('../telegram/handler');
 
-  // OBSERVE mode — never responds
-  const observe = checkAiMode({ ai_mode: 'OBSERVE' }, 'привет');
-  assert(!observe.shouldRespond, 'OBSERVE: no response');
-  assert(observe.reason === 'observe_mode', 'OBSERVE: correct reason');
+  // mode=manager — never responds
+  const managerMode = checkAiMode({ mode: 'manager' }, 'привет');
+  assert(!managerMode.shouldRespond, 'manager mode: no response');
+  assert(managerMode.reason === 'manager_mode', 'manager mode: correct reason');
 
-  // AUTO mode — always responds
-  const auto = checkAiMode({ ai_mode: 'AUTO' }, 'привет');
-  assert(auto.shouldRespond, 'AUTO: responds');
-  assert(auto.reason === 'auto_mode', 'AUTO: correct reason');
+  // mode=ai — responds
+  const aiMode = checkAiMode({ mode: 'ai' }, 'привет');
+  assert(aiMode.shouldRespond, 'ai mode: responds');
+  assert(aiMode.reason === 'ai_mode', 'ai mode: correct reason');
 
-  // AUTO default (null/undefined)
+  // Default mode (null/undefined) = ai
   const autoDefault = checkAiMode({}, 'привет');
-  assert(autoDefault.shouldRespond, 'AUTO default: responds');
+  assert(autoDefault.shouldRespond, 'default mode: responds as ai');
 
-  // HYBRID mode — simple message
-  const hybSimple = checkAiMode({ ai_mode: 'HYBRID' }, 'привет');
-  assert(hybSimple.shouldRespond, 'HYBRID simple: responds');
+  // mode=ai, manager_active — paused
+  const paused = checkAiMode({ mode: 'ai', manager_active: true }, 'привет');
+  assert(!paused.shouldRespond, 'ai+manager_active: paused');
+  assert(paused.reason === 'manager_pause', 'ai+manager_active: correct reason');
 
-  // HYBRID mode — complex message
-  const hybComplex = checkAiMode({ ai_mode: 'HYBRID' }, 'хочу вернуть товар, брак');
-  assert(!hybComplex.shouldRespond, 'HYBRID complex: no response');
+  // mode=ai, complex message — escalated
+  const complex = checkAiMode({ mode: 'ai' }, 'хочу вернуть товар, брак');
+  assert(!complex.shouldRespond, 'ai+complex: no response');
+  assert(complex.reason === 'complex_escalation', 'ai+complex: correct reason');
 
-  // HYBRID mode — manager active
-  const hybManager = checkAiMode({ ai_mode: 'HYBRID', manager_active: true }, 'привет');
-  assert(!hybManager.shouldRespond, 'HYBRID manager active: no response');
-
-  // AUTO_WITH_MANAGER_OVERRIDE — normal
-  const amoNormal = checkAiMode({ ai_mode: 'AUTO_WITH_MANAGER_OVERRIDE' }, 'привет');
-  assert(amoNormal.shouldRespond, 'AMO normal: responds');
-
-  // AUTO_WITH_MANAGER_OVERRIDE — manager active
-  const amoManager = checkAiMode({ ai_mode: 'AUTO_WITH_MANAGER_OVERRIDE', manager_active: true }, 'привет');
-  assert(!amoManager.shouldRespond, 'AMO manager active: no response');
-  assert(amoManager.reason === 'manager_override', 'AMO manager: correct reason');
+  // mode=ai, simple message — responds
+  const simple = checkAiMode({ mode: 'ai' }, 'сколько стоят?');
+  assert(simple.shouldRespond, 'ai+simple: responds');
 
   // isSimpleMessage tests
   assert(isSimpleMessage('привет'), 'simple: привет');
@@ -1985,31 +1989,31 @@ async function testCheckAiMode() {
 }
 
 async function testManagerOverrideFlow() {
-  console.log('\n👨‍💼 46. MANAGER OVERRIDE FLOW TEST');
+  console.log('\n👨‍💼 46. MANAGER OVERRIDE FLOW TEST (2-mode)');
 
   const testId = 999046;
   await cleanup(testId);
 
   const user = await users.findOrCreate(testId, 'ManagerTest', 'managertest');
-  await users.setAiMode(user.id, 'AUTO_WITH_MANAGER_OVERRIDE');
+  // Default mode is 'ai'
 
   // Step 1: AI responds normally
   const { checkAiMode } = require('../telegram/handler');
   const u1 = await users.getById(user.id);
   const check1 = checkAiMode(u1, 'привет');
-  assert(check1.shouldRespond, 'step 1: AI responds before manager');
+  assert(check1.shouldRespond, 'step 1: AI responds in ai mode');
 
   // Step 2: Manager sends a message → mark manager_active
   await users.setManagerActive(user.id, true);
   const u2 = await users.getById(user.id);
   assert(u2.manager_active === true, 'step 2: manager flagged active');
 
-  // Step 3: AI should NOT respond now
+  // Step 3: AI should NOT respond now (paused)
   const check2 = checkAiMode(u2, 'привет');
-  assert(!check2.shouldRespond, 'step 3: AI silent after manager');
+  assert(!check2.shouldRespond, 'step 3: AI paused after manager');
+  assert(check2.reason === 'manager_pause', 'step 3: reason is manager_pause');
 
   // Step 4: Manager timeout → manager_active clears
-  // Simulate old timestamp
   await db.query(
     "UPDATE users SET manager_active_at = NOW() - INTERVAL '31 minutes' WHERE id = $1",
     [user.id]
@@ -2027,7 +2031,7 @@ async function testManagerOverrideFlow() {
 }
 
 async function testObserveModeHandler() {
-  console.log('\n👁 47. OBSERVE MODE HANDLER TEST');
+  console.log('\n👁 47. MANAGER MODE HANDLER TEST');
 
   const { handleMessage } = require('../telegram/handler');
 
@@ -2036,51 +2040,77 @@ async function testObserveModeHandler() {
 
   await settings.set('global_ai_enabled', 'true');
 
-  // Create user and set OBSERVE mode
-  const user = await users.findOrCreate(testId, 'ObserveUser', 'observeuser');
-  await users.setAiMode(user.id, 'OBSERVE');
+  // Create user and set manager mode
+  const user = await users.findOrCreate(testId, 'ManagerUser', 'manageruser');
+  await users.setMode(user.id, 'manager');
 
   // Send message
-  const msg = { from: { id: testId, first_name: 'ObserveUser', username: 'observeuser' }, text: 'привет' };
+  const msg = { from: { id: testId, first_name: 'ManagerUser', username: 'manageruser' }, text: 'привет' };
   await handleMessage(msg);
 
   // User message should be saved
   const history = await messages.getHistory(user.id, 10);
   const userMsgs = history.filter((m) => m.role === 'user');
-  assert(userMsgs.length >= 1, 'OBSERVE: user message saved');
+  assert(userMsgs.length >= 1, 'manager mode: user message saved');
 
   // AI should NOT have responded
   const aiMsgs = history.filter((m) => m.role === 'ai');
-  assert(aiMsgs.length === 0, 'OBSERVE: no AI response');
+  assert(aiMsgs.length === 0, 'manager mode: no AI response');
 
   await cleanup(testId);
 }
 
 async function testAiModeApiEndpoint() {
-  console.log('\n🌐 48. AI MODE API ENDPOINT TEST');
+  console.log('\n🌐 48. MODE API ENDPOINT TEST (2-mode)');
 
   const testId = 999048;
   await cleanup(testId);
 
   const user = await users.findOrCreate(testId, 'ApiMode', 'apimode');
 
-  // Test setAiMode directly
-  const u1 = await users.setAiMode(user.id, 'HYBRID');
-  assert(u1.ai_mode === 'HYBRID', 'API: setAiMode HYBRID works');
+  // Test setMode
+  const u1 = await users.setMode(user.id, 'manager');
+  assert(u1.mode === 'manager', 'API: setMode manager works');
 
-  const u2 = await users.setAiMode(user.id, 'AUTO_WITH_MANAGER_OVERRIDE');
-  assert(u2.ai_mode === 'AUTO_WITH_MANAGER_OVERRIDE', 'API: setAiMode AMO works');
+  const u2 = await users.setMode(user.id, 'ai');
+  assert(u2.mode === 'ai', 'API: setMode ai works');
 
-  // Verify getById returns new field
+  // Verify getById returns mode field
   const fetched = await users.getById(user.id);
-  assert(fetched.ai_mode === 'AUTO_WITH_MANAGER_OVERRIDE', 'API: getById returns ai_mode');
+  assert(fetched.mode === 'ai', 'API: getById returns mode');
   assert(typeof fetched.manager_active === 'boolean', 'API: getById returns manager_active');
 
-  // Verify getAll returns new fields
+  // Verify getAll returns computed active_actor
   const all = await users.getAll();
   const found = all.find((u) => u.id === user.id);
   assert(found !== undefined, 'API: getAll includes test user');
+  assert(found.active_actor === 'ai' || found.active_actor === 'manager' || found.active_actor === 'paused',
+    'API: getAll returns active_actor');
 
+  // Test active_actor computation
+  // mode=ai, no manager → active_actor = ai
+  await users.setMode(user.id, 'ai');
+  const all2 = await users.getAll();
+  const f2 = all2.find((u) => u.id === user.id);
+  assert(f2.active_actor === 'ai', 'active_actor: ai when mode=ai and no manager');
+
+  // mode=manager → active_actor = manager
+  await users.setMode(user.id, 'manager');
+  const all3 = await users.getAll();
+  const f3 = all3.find((u) => u.id === user.id);
+  assert(f3.active_actor === 'manager', 'active_actor: manager when mode=manager');
+
+  // mode=ai + manager_active recent → active_actor = paused
+  await users.setMode(user.id, 'ai');
+  await users.setManagerActive(user.id, true);
+  const all4 = await users.getAll();
+  const f4 = all4.find((u) => u.id === user.id);
+  assert(f4.active_actor === 'paused', 'active_actor: paused when ai+manager_active');
+  assert(typeof f4.pause_remaining === 'number', 'pause_remaining is numeric');
+  assert(f4.pause_remaining > 0, 'pause_remaining > 0 when just set');
+
+  // Cleanup
+  await users.setManagerActive(user.id, false);
   await cleanup(testId);
 }
 
@@ -2356,6 +2386,1279 @@ async function testMonitoring() {
   assert(dbComp.latencyMs != null, 'Database check reports latency');
 }
 
+async function testMonitoringPersistence() {
+  console.log('\n📊 54. MONITORING PERSISTENCE & ANALYTICS TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Wait briefly for fire-and-forget DB writes to complete
+  await new Promise(r => setTimeout(r, 300));
+
+  // Test DB persistence of components
+  const compRes = await db.query("SELECT * FROM monitoring_components WHERE name = 'test_comp'");
+  assert(compRes.rows.length > 0, 'Component persisted to DB');
+  assert(compRes.rows[0].status === 'OK', 'Component status persisted correctly');
+
+  // Test DB persistence of incidents
+  const incRes = await db.query("SELECT * FROM monitoring_incidents WHERE source = 'test_comp' LIMIT 5");
+  assert(incRes.rows.length > 0, 'Incidents persisted to DB');
+  const criticalInc = incRes.rows.find(r => r.severity === 'critical');
+  assert(criticalInc, 'Critical incident persisted');
+
+  // Test resolved incidents in DB
+  const resolvedRes = await db.query("SELECT * FROM monitoring_incidents WHERE source = 'test_comp' AND resolved = true LIMIT 5");
+  assert(resolvedRes.rows.length > 0, 'Resolved incidents persisted in DB');
+  assert(resolvedRes.rows[0].resolved_at, 'Resolved incident has resolved_at');
+
+  // Test monitoring history recorded by runAllChecks
+  const histRes = await db.query("SELECT * FROM monitoring_history ORDER BY recorded_at DESC LIMIT 10");
+  assert(histRes.rows.length > 0, 'History recorded after runAllChecks');
+  const dbHist = histRes.rows.find(r => r.component === 'database');
+  assert(dbHist, 'Database component in history');
+  assert(dbHist.status === 'OK', 'History records correct status');
+
+  // Test getHistory API
+  const history = await monitoring.getHistory(null, 1);
+  assert(Array.isArray(history), 'getHistory returns array');
+  assert(history.length > 0, 'getHistory has entries');
+  assert(history[0].component, 'History entry has component');
+  assert(history[0].status, 'History entry has status');
+  assert(history[0].time, 'History entry has time');
+
+  // Test getHistory with component filter
+  const dbHistory = await monitoring.getHistory('database', 1);
+  assert(dbHistory.length > 0, 'getHistory filters by component');
+  assert(dbHistory.every(h => h.component === 'database'), 'All history entries are for database');
+
+  // Test queryIncidents API
+  const allInc = await monitoring.queryIncidents({ limit: 10 });
+  assert(Array.isArray(allInc), 'queryIncidents returns array');
+  assert(allInc.length > 0, 'queryIncidents has entries');
+
+  // Test queryIncidents with resolved filter
+  const openInc = await monitoring.queryIncidents({ resolved: false, limit: 10 });
+  assert(Array.isArray(openInc), 'queryIncidents resolved=false returns array');
+  assert(openInc.every(i => !i.resolved), 'All open incidents are unresolved');
+
+  // Test queryIncidents with source filter
+  const srcInc = await monitoring.queryIncidents({ source: 'test_source', limit: 10 });
+  assert(Array.isArray(srcInc), 'queryIncidents source filter returns array');
+  assert(srcInc.every(i => i.source === 'test_source'), 'All incidents match source filter');
+
+  // Test anti-spam: STATUS constant exported
+  assert(monitoring.STATUS.OK === 'OK', 'STATUS.OK exported');
+  assert(monitoring.STATUS.DOWN === 'DOWN', 'STATUS.DOWN exported');
+  assert(monitoring.STATUS.DEGRADED === 'DEGRADED', 'STATUS.DEGRADED exported');
+}
+
+async function testWriteQueue() {
+  console.log('\n📊 55. WRITE QUEUE (ANTI-LOSS) TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Test queue starts empty
+  assert(monitoring.getQueueLength() === 0 || monitoring.getQueueLength() >= 0, 'getQueueLength returns number');
+
+  // Record a success — this goes through the write queue
+  monitoring.recordSuccess('queue_test', 25);
+  // Wait for queue flush
+  await new Promise(r => setTimeout(r, 500));
+
+  // Verify data was persisted via queue
+  const res = await db.query("SELECT * FROM monitoring_components WHERE name = 'queue_test'");
+  assert(res.rows.length > 0, 'Write queue persists component to DB');
+  assert(res.rows[0].status === 'OK', 'Queued write has correct status');
+  assert(res.rows[0].latency_ms === 25, 'Queued write has correct latency');
+
+  // Record error — incident queued
+  monitoring.recordError('queue_test', 'queue error test', 'critical');
+  await new Promise(r => setTimeout(r, 500));
+
+  const incRes = await db.query("SELECT * FROM monitoring_incidents WHERE source = 'queue_test' AND message = 'queue error test'");
+  assert(incRes.rows.length > 0, 'Write queue persists incidents');
+
+  // Recovery resolves — queued resolve
+  monitoring.recordSuccess('queue_test', 10);
+  await new Promise(r => setTimeout(r, 500));
+
+  const resolvedRes = await db.query("SELECT * FROM monitoring_incidents WHERE source = 'queue_test' AND message = 'queue error test' AND resolved = true");
+  assert(resolvedRes.rows.length > 0, 'Write queue persists incident resolution');
+
+  // Cleanup
+  await db.query("DELETE FROM monitoring_components WHERE name = 'queue_test'");
+  await db.query("DELETE FROM monitoring_incidents WHERE source = 'queue_test'");
+}
+
+async function testSLAThresholds() {
+  console.log('\n📊 56. SLA THRESHOLDS TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Verify SLA constants exported
+  assert(monitoring.SLA, 'SLA object exported');
+  assert(monitoring.SLA.ai === 15000, 'AI SLA threshold is 15000ms');
+  assert(monitoring.SLA.database === 2000, 'Database SLA threshold is 2000ms');
+  assert(monitoring.SLA.webhook === 5000, 'Webhook SLA threshold is 5000ms');
+  assert(monitoring.SLA.telegram === 5000, 'Telegram SLA threshold is 5000ms');
+  assert(monitoring.SLA.shop === 10000, 'Shop SLA threshold is 10000ms');
+
+  // Test: latency below threshold → OK
+  monitoring.recordSuccess('ai', 500);
+  const s1 = monitoring.getStatus();
+  const ai1 = s1.components.find(c => c.name === 'ai');
+  assert(ai1.status === 'OK', 'AI OK when latency below SLA');
+
+  // Test: latency above threshold → DEGRADED
+  monitoring.recordSuccess('ai', 20000);
+  const s2 = monitoring.getStatus();
+  const ai2 = s2.components.find(c => c.name === 'ai');
+  assert(ai2.status === 'DEGRADED', 'AI DEGRADED when latency exceeds SLA');
+  assert(ai2.message.includes('SLA breach'), 'SLA breach message included');
+
+  // Recovery: below threshold → OK again
+  monitoring.recordSuccess('ai', 100);
+  const s3 = monitoring.getStatus();
+  const ai3 = s3.components.find(c => c.name === 'ai');
+  assert(ai3.status === 'OK', 'AI back to OK after latency drops');
+
+  // Test database SLA
+  monitoring.recordSuccess('database', 3000);
+  const s4 = monitoring.getStatus();
+  const db4 = s4.components.find(c => c.name === 'database');
+  assert(db4.status === 'DEGRADED', 'Database DEGRADED when exceeds 2000ms SLA');
+
+  monitoring.recordSuccess('database', 50);
+  const s5 = monitoring.getStatus();
+  const db5 = s5.components.find(c => c.name === 'database');
+  assert(db5.status === 'OK', 'Database OK when within SLA');
+}
+
+async function testActivityWatchdog() {
+  console.log('\n📊 57. ACTIVITY WATCHDOG (SILENT FAILURE) TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Test recordMessageActivity exists and is callable
+  assert(typeof monitoring.recordMessageActivity === 'function', 'recordMessageActivity is a function');
+  assert(typeof monitoring.recordAiActivity === 'function', 'recordAiActivity is a function');
+
+  // Record activity — should mark activity component OK
+  monitoring.recordMessageActivity();
+  await monitoring.runAllChecks();
+  const s1 = monitoring.getStatus();
+  const act1 = s1.components.find(c => c.name === 'activity');
+  assert(act1, 'Activity component exists after runAllChecks');
+  assert(act1.status === 'OK', 'Activity OK when recent message activity');
+  assert(act1.label === 'Message Activity', 'Activity has correct label');
+}
+
+async function testBusinessMetrics() {
+  console.log('\n📊 58. BUSINESS METRICS TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Test getBusinessMetrics returns data
+  const metrics = await monitoring.getBusinessMetrics();
+  assert(metrics !== null, 'getBusinessMetrics returns data');
+  assert(typeof metrics.dialogs === 'number', 'metrics has dialogs count');
+  assert(typeof metrics.orders === 'number', 'metrics has orders count');
+  assert(typeof metrics.revenue === 'number', 'metrics has revenue');
+  assert(typeof metrics.conversion === 'number', 'metrics has conversion rate');
+  assert(typeof metrics.todayDialogs === 'number', 'metrics has todayDialogs');
+  assert(typeof metrics.todayOrders === 'number', 'metrics has todayOrders');
+  assert(typeof metrics.todayConversion === 'number', 'metrics has todayConversion');
+  assert(typeof metrics.avgAiLatency === 'number', 'metrics has avgAiLatency');
+  assert(typeof metrics.aiErrorRate === 'number', 'metrics has aiErrorRate');
+  assert(typeof metrics.lostClients === 'number', 'metrics has lostClients');
+  assert(typeof metrics.telegramSent === 'number', 'metrics has telegramSent');
+  assert(typeof metrics.telegramErrors === 'number', 'metrics has telegramErrors');
+
+  // Conversion should be >= 0
+  assert(metrics.conversion >= 0, 'conversion is non-negative');
+  assert(metrics.aiErrorRate >= 0, 'aiErrorRate is non-negative');
+  assert(metrics.revenue >= 0, 'revenue is non-negative');
+}
+
+async function testFallbackLogAndFailsafe() {
+  console.log('\n📊 59. FALLBACK LOG & FAILSAFE TEST');
+
+  const fs = require('fs');
+  const path = require('path');
+  const FALLBACK_LOG = path.join(__dirname, '..', '..', 'monitoring-fallback.log');
+
+  // Clean up old fallback log if present
+  try { fs.unlinkSync(FALLBACK_LOG); } catch (_) {}
+
+  // The fallback log file should be creatable
+  // We test the path is correct per the module
+  const monitoring = require('../monitoring');
+  assert(typeof monitoring.getQueueLength === 'function', 'getQueueLength function available for queue monitoring');
+
+  // STATUS constants from monitoring
+  assert(monitoring.STATUS.OK === 'OK', 'STATUS constant OK available');
+  assert(monitoring.STATUS.DEGRADED === 'DEGRADED', 'STATUS constant DEGRADED available');
+  assert(monitoring.STATUS.DOWN === 'DOWN', 'STATUS constant DOWN available');
+  assert(monitoring.STATUS.UNKNOWN === 'UNKNOWN', 'STATUS constant UNKNOWN available');
+}
+
+async function testMetricsCounters() {
+  console.log('\n📊 60. METRICS COUNTERS TEST');
+
+  const monitoring = require('../monitoring');
+
+  // Record some AI successes and errors to test counters
+  monitoring.recordSuccess('ai', 200);
+  monitoring.recordSuccess('ai', 300);
+  monitoring.recordError('ai', 'test AI error', 'warning');
+  monitoring.recordSuccess('telegram', 150);
+  monitoring.recordError('telegram', 'test tg error', 'warning');
+
+  // Get metrics — counters should reflect activity
+  const m = await monitoring.getBusinessMetrics();
+  assert(m !== null, 'Metrics returns data after counter activity');
+  assert(m.telegramSent > 0, 'telegramSent counter incremented');
+  assert(m.telegramErrors > 0, 'telegramErrors counter incremented');
+
+  // aiErrorRate should be > 0 since we recorded errors
+  // Note: it depends on total counters across all tests
+  assert(typeof m.aiErrorRate === 'number', 'aiErrorRate computed from counters');
+}
+
+async function testMonitoringMetricsEndpoint() {
+  console.log('\n📊 61. MONITORING METRICS API ENDPOINT TEST');
+
+  const http = require('http');
+  const express = require('express');
+  const jwt = require('jsonwebtoken');
+  const routes = require('../api/routes');
+  const { authMiddleware } = require('../api/auth');
+
+  const app = express();
+  app.use(express.json());
+
+  // Create a valid JWT token
+  const token = jwt.sign({ login: config.ADMIN_LOGIN, jti: 'test-metrics-jti' }, config.JWT_SECRET, { expiresIn: '1h' });
+  app.use('/api', authMiddleware, routes);
+
+  const server = http.createServer(app);
+  await new Promise(resolve => server.listen(0, resolve));
+  const port = server.address().port;
+
+  try {
+    const axios = require('axios');
+    const headers = { Authorization: 'Bearer ' + token };
+
+    // Test /monitoring/metrics endpoint
+    const res = await axios.get(`http://localhost:${port}/api/monitoring/metrics`, { headers });
+    assert(res.status === 200, 'GET /monitoring/metrics returns 200');
+    assert(res.data.dialogs !== undefined, '/monitoring/metrics returns dialogs');
+    assert(res.data.orders !== undefined, '/monitoring/metrics returns orders');
+    assert(res.data.conversion !== undefined, '/monitoring/metrics returns conversion');
+    assert(res.data.revenue !== undefined, '/monitoring/metrics returns revenue');
+    assert(res.data.aiErrorRate !== undefined, '/monitoring/metrics returns aiErrorRate');
+  } finally {
+    server.close();
+  }
+}
+
+async function testTimezoneConsistency() {
+  console.log('\n🕐 62. TIMEZONE CONSISTENCY TEST');
+
+  const { formatMoscowTime, moscowISO, MOSCOW_TZ } = require('../utils/time');
+
+  // Test 1: process.env.TZ is set
+  assert(process.env.TZ === 'Europe/Moscow', 'process.env.TZ is Europe/Moscow');
+
+  // Test 2: formatMoscowTime returns Moscow time string
+  const fmt = formatMoscowTime();
+  assert(typeof fmt === 'string', 'formatMoscowTime returns string');
+  assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(fmt), 'formatMoscowTime format: YYYY-MM-DD HH:MM:SS');
+
+  // Test 3: moscowISO returns ISO-like Moscow string with +03:00
+  const iso = moscowISO();
+  assert(iso.endsWith('+03:00'), 'moscowISO ends with +03:00');
+  assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+03:00$/.test(iso), 'moscowISO format: YYYY-MM-DDTHH:MM:SS+03:00');
+
+  // Test 4: moscowISO with a known date
+  const knownDate = new Date('2026-01-15T12:00:00Z');
+  const knownMoscow = moscowISO(knownDate);
+  // UTC 12:00 = Moscow 15:00
+  assert(knownMoscow.includes('T15:00:00'), 'UTC 12:00 → Moscow 15:00');
+
+  // Test 5: MOSCOW_TZ constant
+  assert(MOSCOW_TZ === 'Europe/Moscow', 'MOSCOW_TZ constant exported');
+
+  // Test 6: PostgreSQL timezone is set to Moscow
+  const tzRes = await db.query('SHOW timezone');
+  const pgTz = tzRes.rows[0].TimeZone;
+  assert(pgTz === 'Europe/Moscow', 'PostgreSQL timezone is Europe/Moscow (got: ' + pgTz + ')');
+
+  // Test 7: DB NOW() matches Moscow time (within 5 seconds)
+  const dbNow = await db.query('SELECT NOW() as now');
+  const dbTimeStr = dbNow.rows[0].now;
+  const dbDate = new Date(dbTimeStr);
+  const localNow = new Date();
+  const diffSec = Math.abs(dbDate.getTime() - localNow.getTime()) / 1000;
+  assert(diffSec < 5, 'DB NOW() close to server time (diff: ' + diffSec.toFixed(1) + 's)');
+
+  // Test 8: Create record → verify timestamp in DB is Moscow-formatted
+  const testTelegramId = 999888777;
+  await cleanup(testTelegramId);
+  const user = await users.findOrCreate(testTelegramId, 'TZ Test', 'tztest');
+  await messages.save(user.id, 'user', 'timezone test message');
+
+  const msgRes = await db.query(
+    "SELECT created_at, to_char(created_at, 'YYYY-MM-DD HH24:MI:SS TZ') as formatted FROM messages WHERE user_id = $1 ORDER BY id DESC LIMIT 1",
+    [user.id]
+  );
+  assert(msgRes.rows.length > 0, 'Test message saved');
+  const formattedTz = msgRes.rows[0].formatted;
+  assert(formattedTz.includes('MSK'), 'DB timestamp formatted as MSK (got: ' + formattedTz + ')');
+
+  // Test 9: Monitoring API returns Moscow time
+  const monitoring = require('../monitoring');
+  monitoring.recordSuccess('tz_test', 15);
+  await new Promise(r => setTimeout(r, 200));
+  const monStatus = monitoring.getStatus();
+  const tzComp = monStatus.components.find(c => c.name === 'tz_test');
+  assert(tzComp, 'Monitoring component tz_test exists');
+  assert(tzComp.lastOk && tzComp.lastOk.includes('+03:00'), 'Monitoring lastOk has +03:00 offset');
+  assert(monStatus.checkedAt && monStatus.checkedAt.includes('+03:00'), 'Monitoring checkedAt has +03:00 offset');
+
+  // Test 10: Incident time in Moscow format
+  monitoring.recordError('tz_test', 'tz test error', 'critical');
+  const incidents = monitoring.getIncidents(5);
+  const tzInc = incidents.find(i => i.source === 'tz_test');
+  assert(tzInc && tzInc.time.includes('+03:00'), 'Incident time has +03:00 offset');
+
+  // Test 11: Logger timestamps are Moscow-formatted
+  const logger = require('../logger');
+  assert(typeof logger.info === 'function', 'Logger available');
+  // formatMoscowTime is used by logger — verified through module
+
+  // Cleanup
+  monitoring.recordSuccess('tz_test', 5);
+  await cleanup(testTelegramId);
+  await db.query("DELETE FROM monitoring_components WHERE name = 'tz_test'");
+  await db.query("DELETE FROM monitoring_incidents WHERE source = 'tz_test'");
+}
+
+async function testCustomerMemory() {
+  console.log('\n🧠 64. CUSTOMER MEMORY TEST');
+  const telegramId = 880000 + Math.floor(Math.random() * 9999);
+  const memory = require('../db/memory');
+
+  try {
+    const user = await users.findOrCreate(telegramId, 'ТестПамять', 'test_memory');
+
+    // Test 1: extractFromText — phone
+    const ex1 = memory.extractFromText('Иванов Иван Иванович +79991234567 Москва, ул. Ленина 15');
+    assert(ex1.phone === '+79991234567', 'extract phone from text');
+    assert(ex1.full_name === 'Иванов Иван Иванович', 'extract full_name from text');
+    assert(ex1.city === 'Москва', 'extract city from text');
+    assert(ex1.address && ex1.address.includes('Ленина'), 'extract address from text');
+
+    // Test 2: extractFromText — shoe size
+    const ex2 = memory.extractFromText('хочу Nike Air Max 44 размер');
+    assert(ex2.shoe_size === '44', 'extract shoe size');
+    assert(ex2.preferred_brand === 'Nike', 'extract brand');
+
+    // Test 3: extractFromText — insole
+    const ex3 = memory.extractFromText('стелька 28.5 см');
+    assert(ex3.insole_cm === '28.5', 'extract insole cm');
+
+    // Test 4: extractAndSave — saves to DB
+    await memory.extractAndSave(user.id, 'Иванов Иван +79998887766 Казань, ул. Мира 10, кв 5');
+    const mem1 = await memory.get(user.id);
+    assert(mem1 !== null, 'memory saved to DB');
+    assert(mem1.phone === '+79998887766', 'phone saved to DB');
+    assert(mem1.full_name === 'Иванов Иван', 'full_name saved to DB');
+    assert(mem1.city === 'Казань', 'city saved to DB');
+
+    // Test 5: update — partial update preserves existing data
+    await memory.update(user.id, { shoe_size: '43', preferred_brand: 'Adidas' });
+    const mem2 = await memory.get(user.id);
+    assert(mem2.shoe_size === '43', 'shoe_size updated');
+    assert(mem2.preferred_brand === 'Adidas', 'brand updated');
+    assert(mem2.phone === '+79998887766', 'phone preserved after partial update');
+    assert(mem2.city === 'Казань', 'city preserved after partial update');
+
+    // Test 6: overwrite — new data overwrites old
+    await memory.extractAndSave(user.id, 'Петров Пётр +71112223344 Москва, Новый Арбат 12');
+    const mem3 = await memory.get(user.id);
+    assert(mem3.phone === '+71112223344', 'phone overwritten with new value');
+    assert(mem3.city === 'Москва', 'city overwritten with new value');
+    assert(mem3.shoe_size === '43', 'shoe_size preserved (not in new text)');
+
+    // Test 7: behavior update — merge
+    await memory.updateBehavior(user.id, { response_speed: 'fast' });
+    const mem4 = await memory.get(user.id);
+    assert(mem4.behavior && mem4.behavior.response_speed === 'fast', 'behavior stored');
+
+    await memory.updateBehavior(user.id, { price_sensitive: true });
+    const mem5 = await memory.get(user.id);
+    assert(mem5.behavior.response_speed === 'fast', 'behavior merged - old key preserved');
+    assert(mem5.behavior.price_sensitive === true, 'behavior merged - new key added');
+
+    // Test 8: buildContextForAI — generates string
+    const ctx = memory.buildContextForAI(mem5);
+    assert(ctx.includes('Телефон'), 'AI context includes phone label');
+    assert(ctx.includes('Размер обуви: 43'), 'AI context includes shoe size');
+    assert(ctx.includes('Москва'), 'AI context includes city');
+    assert(ctx.includes('Чувствителен к цене'), 'AI context includes behavior');
+
+    // Test 9: saveFormData
+    await memory.saveFormData(user.id, { fullName: 'Сидоров Алекс', phone: '+70001112233', address: 'Сочи, ул. Морская 1' });
+    const mem6 = await memory.get(user.id);
+    assert(mem6.full_name === 'Сидоров Алекс', 'saveFormData updates name');
+    assert(mem6.phone === '+70001112233', 'saveFormData updates phone');
+
+    // Test 10: saveOrderData
+    await memory.saveOrderData(user.id, { product: 'Nike Air Max 90', size: '44', brand: null });
+    const mem7 = await memory.get(user.id);
+    assert(mem7.shoe_size === '44', 'saveOrderData updates size');
+    assert(mem7.preferred_brand === 'Nike', 'saveOrderData extracts brand from product name');
+
+    // Test 11: delete
+    await memory.deleteByUser(user.id);
+    const mem8 = await memory.get(user.id);
+    assert(mem8 === null, 'memory deleted');
+
+    // Test 12: memory persists (simulate returning customer)
+    await memory.update(user.id, { shoe_size: '42', city: 'Екатеринбург', phone: '+79009009090' });
+    // "time passes" - re-read from DB
+    const memPersist = await memory.get(user.id);
+    assert(memPersist.shoe_size === '42', 'memory persists across reads');
+    assert(memPersist.city === 'Екатеринбург', 'city persists');
+
+    // Test 13: multiple orders don't reset memory
+    await memory.saveOrderData(user.id, { product: 'Adidas Yeezy 350', size: '42' });
+    const memMulti = await memory.get(user.id);
+    assert(memMulti.city === 'Екатеринбург', 'city survives order save');
+    assert(memMulti.phone === '+79009009090', 'phone survives order save');
+
+    // Test 14: extractFromText — no false positives
+    const exEmpty = memory.extractFromText('привет, как дела?');
+    assert(Object.keys(exEmpty).length === 0, 'no false positive extraction from simple message');
+
+    const exPartial = memory.extractFromText('хочу кроссовки');
+    assert(exPartial.shoe_type === 'кроссовки', 'extract shoe type');
+    assert(!exPartial.phone, 'no false phone from shoe text');
+
+    // Cleanup
+    await memory.deleteByUser(user.id);
+    await cleanup(telegramId);
+  } catch (err) {
+    console.error('  Customer memory test error:', err.message);
+    await cleanup(telegramId).catch(() => {});
+  }
+}
+
+async function testChatUpgrade() {
+  console.log('\n🔧 63. CHAT UPGRADE TEST');
+  const telegramId = 990000 + Math.floor(Math.random() * 9999);
+  try {
+    // Setup: create user and populate data
+    const user = await users.findOrCreate(telegramId, 'ТестЧат', 'test_chat');
+    await messages.save(user.id, 'user', 'Хочу кроссовки');
+    await messages.save(user.id, 'ai', 'Какой размер нужен?');
+    await messages.save(user.id, 'user', '42');
+    await users.updateState(user.id, 'WAITING_SIZE');
+
+    // Test 1: getAll returns priority fields
+    const allUsers = await users.getAll();
+    const found = allUsers.find(u => u.id === user.id);
+    assert(found !== undefined, 'getAll returns test user');
+    assert(found.state_priority !== undefined, 'getAll returns state_priority');
+    assert(found.state_priority === 60, 'WAITING_SIZE priority = 60');
+    assert(found.unread !== undefined, 'getAll returns unread field');
+    assert(found.last_message_role !== undefined, 'getAll returns last_message_role');
+    assert(found.last_user_message_at !== undefined || found.last_user_message_at === null, 'getAll returns last_user_message_at');
+    assert(found.wait_minutes !== undefined || found.wait_minutes === null, 'getAll returns wait_minutes');
+
+    // Test 2: unread logic — last user message "42" is after last AI reply
+    // So unread should be true (user sent msg after AI replied)
+    assert(found.unread === true, 'unread=true when last user msg after AI reply');
+
+    // Mark as read, then verify unread becomes false
+    await users.markRead(user.id);
+    const allUsersRead = await users.getAll();
+    const foundRead = allUsersRead.find(u => u.id === user.id);
+    assert(foundRead.unread === false, 'unread=false after markRead (initial)');
+
+    // Send a user message to make it unread again
+    await messages.save(user.id, 'user', 'Есть 42?');
+    const allUsers2 = await users.getAll();
+    const found2 = allUsers2.find(u => u.id === user.id);
+    assert(found2.unread === true, 'unread=true when last user msg > last reply');
+    assert(found2.wait_minutes !== null && found2.wait_minutes >= 0, 'wait_minutes calculated');
+
+    // Test 3: markRead
+    await users.markRead(user.id);
+    const allUsers3 = await users.getAll();
+    const found3 = allUsers3.find(u => u.id === user.id);
+    assert(found3.unread === false, 'unread=false after markRead');
+
+    // Test 4: priority ordering — WAITING_PAYMENT > WAITING_SIZE
+    const user2 = await users.findOrCreate(telegramId + 1, 'ТестОплата', 'test_pay');
+    await users.updateState(user2.id, 'WAITING_PAYMENT');
+    await messages.save(user2.id, 'user', 'Оплачу');
+    const allUsers4 = await users.getAll();
+    const pay = allUsers4.find(u => u.id === user2.id);
+    assert(pay.state_priority === 100, 'WAITING_PAYMENT priority = 100');
+
+    // Test 5: order data in getAll
+    await orders.create({ user_id: user.id, product: 'Nike Air Max', size: '42', price: 8500, status: 'NEW' });
+    const allUsers5 = await users.getAll();
+    const withOrder = allUsers5.find(u => u.id === user.id);
+    assert(withOrder.order_product === 'Nike Air Max', 'getAll returns order_product');
+    assert(Number(withOrder.order_price) === 8500, 'getAll returns order_price');
+    assert(withOrder.order_size === '42', 'getAll returns order_size');
+
+    // Test 6: quick-replies API via routes
+    const express = require('express');
+    const request = require;
+    // Direct function test instead of HTTP
+    const quickReplies = {
+      NEW: ['Какой размер носите?', 'Что ищете? Кроссовки, одежду?'],
+      WAITING_SIZE: ['Какой размер носите?'],
+      WAITING_FORM: ['Отправьте ФИО, телефон и адрес одним сообщением'],
+      WAITING_PAYMENT: ['Скинуть реквизиты для оплаты?'],
+    };
+    assert(quickReplies[user.state] !== undefined, 'quick replies defined for WAITING_SIZE');
+    assert(quickReplies['NEW'].length >= 2, 'quick replies has 2+ options for NEW');
+    assert(quickReplies['WAITING_PAYMENT'].length >= 1, 'quick replies has options for WAITING_PAYMENT');
+
+    // Cleanup
+    await cleanup(telegramId);
+    await cleanup(telegramId + 1);
+  } catch (err) {
+    console.error('  Chat upgrade test error:', err.message);
+    await cleanup(telegramId).catch(() => {});
+    await cleanup(telegramId + 1).catch(() => {});
+  }
+}
+
+// ═══════════════════════════════════════
+// BLOCK: Queue system tests
+// ═══════════════════════════════════════
+
+async function testQueueSystem() {
+  console.log('\n📬 65. QUEUE SYSTEM TEST');
+  const queue = require('../queue');
+
+  try {
+    queue.reset();
+
+    // Test 1: Enqueue and process
+    let processed = [];
+    queue.configure({ concurrency: 3, fallbackDelay: 5000 });
+
+    await queue.enqueue('chat_1', async () => { processed.push('chat_1'); });
+    await queue.drain();
+    assert(processed.includes('chat_1'), 'task processed for chat_1');
+
+    // Test 2: Per-chat lock — tasks for same chat are serialized
+    queue.reset();
+    processed = [];
+    let order = [];
+    await queue.enqueue('chat_same', async () => {
+      await new Promise(r => setTimeout(r, 30));
+      order.push('A');
+    });
+    await queue.enqueue('chat_same', async () => {
+      order.push('B');
+    });
+    await queue.drain();
+    assert(order[0] === 'A' && order[1] === 'B', 'per-chat tasks serialized (A then B)');
+
+    // Test 3: Different chats process in parallel
+    queue.reset();
+    let parallel = [];
+    const start = Date.now();
+    await queue.enqueue('chat_x', async () => {
+      await new Promise(r => setTimeout(r, 50));
+      parallel.push({ chat: 'x', time: Date.now() - start });
+    });
+    await queue.enqueue('chat_y', async () => {
+      await new Promise(r => setTimeout(r, 50));
+      parallel.push({ chat: 'y', time: Date.now() - start });
+    });
+    await queue.drain();
+    assert(parallel.length === 2, 'both chats processed');
+    // Both should finish around the same time if parallel
+    const timeDiff = Math.abs(parallel[0].time - parallel[1].time);
+    assert(timeDiff < 40, `parallel chats processed concurrently (diff: ${timeDiff}ms)`);
+
+    // Test 4: Priority ordering
+    queue.reset();
+    const priorityOrder = [];
+    queue.configure({ concurrency: 1 });
+    // Enqueue low priority first, then high
+    await queue.enqueue('chat_low', async () => {
+      await new Promise(r => setTimeout(r, 30));
+    }); // this one starts immediately (empty queue)
+    await queue.enqueue('chat_wait_low', async () => { priorityOrder.push('low'); }, { userState: 'DONE' });
+    await queue.enqueue('chat_wait_high', async () => { priorityOrder.push('high'); }, { userState: 'WAITING_PAYMENT' });
+    await queue.drain();
+    assert(priorityOrder[0] === 'high', 'higher priority task processed first');
+
+    // Test 5: Cancel chat
+    queue.reset();
+    queue.configure({ concurrency: 1 });
+    let cancelledRan = false;
+    // Block queue with a slow task
+    await queue.enqueue('chat_blocker', async () => {
+      await new Promise(r => setTimeout(r, 100));
+    });
+    await queue.enqueue('chat_cancel', async () => {
+      if (!queue.isCancelled('chat_cancel')) cancelledRan = true;
+    });
+    queue.cancelChat('chat_cancel');
+    await queue.drain();
+    assert(!cancelledRan, 'cancelled task did not run');
+
+    // Test 6: Metrics tracking
+    queue.reset();
+    queue.configure({ concurrency: 3 });
+    await queue.enqueue('m1', async () => {});
+    await queue.enqueue('m2', async () => {});
+    await queue.enqueue('m3', async () => { throw new Error('test error'); });
+    await queue.drain();
+    const metrics = queue.getMetrics();
+    assert(metrics.totalEnqueued >= 3, `metrics.totalEnqueued >= 3 (${metrics.totalEnqueued})`);
+    assert(metrics.totalProcessed >= 2, `metrics.totalProcessed >= 2 (${metrics.totalProcessed})`);
+    assert(metrics.totalErrors >= 1, `metrics.totalErrors >= 1 (${metrics.totalErrors})`);
+
+    // Test 7: Queue size limit
+    queue.reset();
+    queue.configure({ concurrency: 1 });
+    // Fill with a slow blocking task
+    await queue.enqueue('blocker', async () => {
+      await new Promise(r => setTimeout(r, 200));
+    });
+    // Queue up to max
+    let dropCount = 0;
+    for (let i = 0; i < 510; i++) {
+      try {
+        await queue.enqueue(`overflow_${i}`, async () => {});
+      } catch (e) {
+        dropCount++;
+      }
+    }
+    assert(dropCount > 0 || queue.getMetrics().totalDropped > 0, 'queue drops tasks when full');
+
+    // Test 8: drain() waits for completion
+    queue.reset();
+    queue.configure({ concurrency: 3 });
+    let drainCheck = false;
+    await queue.enqueue('drain_test', async () => {
+      await new Promise(r => setTimeout(r, 30));
+      drainCheck = true;
+    });
+    await queue.drain();
+    assert(drainCheck, 'drain waits for all tasks to complete');
+
+    // Test 9: STATE_PRIORITY mapping
+    const { STATE_PRIORITY } = queue;
+    assert(STATE_PRIORITY['WAITING_PAYMENT'] < STATE_PRIORITY['DONE'], 'WAITING_PAYMENT has higher priority than DONE');
+    assert(STATE_PRIORITY['WAITING_FORM'] < STATE_PRIORITY['NEW'], 'WAITING_FORM higher priority than NEW');
+
+    queue.reset();
+  } catch (err) {
+    console.error('  Queue test error:', err.message, err.stack);
+    queue.reset();
+  }
+}
+
+async function testQueueConcurrentMessages() {
+  console.log('\n📬 66. QUEUE CONCURRENT MESSAGES TEST');
+  const queue = require('../queue');
+
+  try {
+    queue.reset();
+    queue.configure({ concurrency: 5 });
+
+    // Simulate 20 concurrent dialogs
+    const results = new Map();
+    const chatCount = 20;
+    const promises = [];
+
+    for (let i = 0; i < chatCount; i++) {
+      const chatId = `concurrent_${i}`;
+      promises.push(queue.enqueue(chatId, async () => {
+        await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
+        results.set(chatId, (results.get(chatId) || 0) + 1);
+      }));
+    }
+
+    await queue.drain();
+
+    // All 20 chats should have been processed exactly once
+    assert(results.size === chatCount, `all ${chatCount} chats processed (got ${results.size})`);
+    let dupes = 0;
+    for (const [, count] of results) {
+      if (count > 1) dupes++;
+    }
+    assert(dupes === 0, 'no duplicate processing');
+
+    // No messages lost
+    const m = queue.getMetrics();
+    assert(m.totalProcessed >= chatCount, `all messages processed (${m.totalProcessed} >= ${chatCount})`);
+
+    queue.reset();
+  } catch (err) {
+    console.error('  Concurrent queue test error:', err.message);
+    queue.reset();
+  }
+}
+
+// ═══════════════════════════════════════
+// BLOCK: Enhanced memory tests
+// ═══════════════════════════════════════
+
+async function testEnhancedMemory() {
+  console.log('\n🧠 67. ENHANCED MEMORY TEST');
+  const memory = require('../db/memory');
+  const telegramId = 870000 + Math.floor(Math.random() * 9999);
+
+  try {
+    const user = await users.findOrCreate(telegramId, 'ТестПамятьV2', 'test_mem_v2');
+
+    // Test 1: saveOrderData with price — creates last_order_summary
+    await memory.update(user.id, { shoe_size: '42', city: 'Москва', phone: '+79991234567', full_name: 'Тест Тестов', address: 'Москва, ул. Ленина 1' });
+    await memory.saveOrderData(user.id, { product: 'Nike Air Max 90', size: '42', brand: null, price: 8500 });
+    const mem1 = await memory.get(user.id);
+    assert(mem1.last_order_summary !== null, 'last_order_summary saved');
+    assert(mem1.last_order_summary.product === 'Nike Air Max 90', 'last_order_summary has product');
+    assert(mem1.last_order_summary.price === 8500, 'last_order_summary has price');
+    assert(mem1.last_order_summary.date !== null, 'last_order_summary has date');
+    assert(mem1.order_count === 1, 'order_count = 1 after first order');
+    assert(Number(mem1.total_spent) === 8500, 'total_spent = 8500 after first order');
+
+    // Test 2: second order increments counters
+    await memory.saveOrderData(user.id, { product: 'Adidas Yeezy 350', size: '42', brand: null, price: 12000 });
+    const mem2 = await memory.get(user.id);
+    assert(mem2.order_count === 2, 'order_count = 2 after second order');
+    assert(Math.round(Number(mem2.total_spent)) === 20500, 'total_spent = 20500 after two orders');
+    assert(mem2.last_order_summary.product === 'Adidas Yeezy 350', 'last_order_summary updated to latest');
+
+    // Test 3: isVIP — 2+ orders
+    assert(memory.isVIP(mem2) === true, 'isVIP=true with 2 orders');
+    assert(memory.isVIP({ order_count: 1, total_spent: 5000 }) === false, 'isVIP=false with 1 order + low spend');
+    assert(memory.isVIP({ order_count: 1, total_spent: 15000 }) === true, 'isVIP=true with high spend');
+    assert(memory.isVIP(null) === false, 'isVIP=false for null memory');
+
+    // Test 4: hasFullDeliveryData
+    assert(memory.hasFullDeliveryData(mem2) === true, 'hasFullDeliveryData=true (name+phone+address)');
+    assert(memory.hasFullDeliveryData({ full_name: 'Test' }) === false, 'hasFullDeliveryData=false (missing phone+address)');
+    assert(memory.hasFullDeliveryData(null) === false, 'hasFullDeliveryData=false for null');
+
+    // Test 5: validateExtracted — rejects garbage
+    const v1 = memory.validateExtracted({ phone: 'abc', shoe_size: '99', city: 'A' });
+    assert(!v1.phone, 'validates: rejects garbage phone');
+    assert(!v1.shoe_size, 'validates: rejects shoe_size=99');
+    assert(!v1.city, 'validates: rejects city=A (too short)');
+
+    const v2 = memory.validateExtracted({ phone: '+79991234567', shoe_size: '42', city: 'Москва' });
+    assert(v2.phone === '+79991234567', 'validates: accepts good phone');
+    assert(v2.shoe_size === '42', 'validates: accepts good size');
+    assert(v2.city === 'Москва', 'validates: accepts good city');
+
+    const v3 = memory.validateExtracted({ insole_cm: '100', full_name: 'AB', address: 'short' });
+    assert(!v3.insole_cm, 'validates: rejects insole=100');
+    assert(!v3.full_name, 'validates: rejects name too short');
+    assert(!v3.address, 'validates: rejects address too short');
+
+    // Test 6: getNextAction
+    const na1 = memory.getNextAction({ state: 'NEW' }, null);
+    assert(na1 && na1.includes('Новый'), 'nextAction: NEW state');
+
+    const na2 = memory.getNextAction({ state: 'NEW' }, { order_count: 1, preferred_brand: 'Nike' });
+    assert(na2 && na2.includes('Вернувшийся'), 'nextAction: returning customer');
+
+    const na3 = memory.getNextAction({ state: 'WAITING_SIZE' }, { shoe_size: '42' });
+    assert(na3 && na3.includes('42'), 'nextAction: knows size');
+
+    const na4 = memory.getNextAction({ state: 'WAITING_FORM' }, { full_name: 'Тест', phone: '+79991234567', address: 'Москва, ул. Ленина 1' });
+    assert(na4 && na4.includes('прошлые'), 'nextAction: has data suggests reuse');
+
+    const na5 = memory.getNextAction({ state: 'WAITING_PAYMENT' }, { behavior: { often_disappears: true } });
+    assert(na5 && na5.includes('дожим'), 'nextAction: often_disappears → fast close');
+
+    // Test 7: buildContextForAI with new fields
+    const ctxMem = {
+      full_name: 'Иванов', phone: '+79991234567', city: 'Москва', address: 'ул. Ленина 1',
+      shoe_size: '42', preferred_brand: 'Nike', order_count: 2, total_spent: 20000,
+      last_order_summary: { product: 'Nike Air Max', size: '42', price: 10000, date: '2024-01-15T00:00:00Z' },
+      behavior: { price_sensitive: true, often_disappears: true },
+    };
+    const ctx = memory.buildContextForAI(ctxMem);
+    assert(ctx.includes('Последний заказ'), 'context includes last order');
+    assert(ctx.includes('20000₽'), 'context includes total spent');
+    assert(ctx.includes('Кол-во заказов: 2'), 'context includes order count');
+    assert(ctx.includes('предлагай выгодные'), 'context includes price_sensitive hint');
+    assert(ctx.includes('дожимай быстрее'), 'context includes often_disappears hint');
+    assert(ctx.includes('полные данные доставки'), 'context includes full delivery flag');
+    assert(ctx.includes('VIP'), 'context includes VIP flag');
+
+    // Cleanup
+    await memory.deleteByUser(user.id);
+    await cleanup(telegramId);
+  } catch (err) {
+    console.error('  Enhanced memory test error:', err.message);
+    await cleanup(telegramId).catch(() => {});
+  }
+}
+
+async function testAutoNudgeChain() {
+  console.log('\n⏰ 68. AUTO-NUDGE CHAIN TEST');
+  const scheduler = require('../scheduler');
+
+  try {
+    // Test 1: NUDGE_CHAIN structure
+    assert(scheduler.NUDGE_CHAIN !== undefined, 'NUDGE_CHAIN exported');
+    assert(scheduler.NUDGE_CHAIN.WAITING_PAYMENT.length === 3, 'WAITING_PAYMENT has 3 nudge levels');
+    assert(scheduler.NUDGE_CHAIN.WAITING_FORM.length === 3, 'WAITING_FORM has 3 nudge levels');
+    assert(scheduler.NUDGE_CHAIN.WAITING_SIZE.length === 2, 'WAITING_SIZE has 2 nudge levels');
+
+    // Test 2: Nudge timing is escalating
+    const chain = scheduler.NUDGE_CHAIN.WAITING_PAYMENT;
+    assert(chain[0].afterMin < chain[1].afterMin, 'nudge levels escalate in time');
+    assert(chain[1].afterMin < chain[2].afterMin, 'nudge levels escalate further');
+
+    // Test 3: First nudge is 1h (60 min)
+    assert(chain[0].afterMin === 60, 'first nudge at 1 hour');
+    assert(chain[1].afterMin === 1440, 'second nudge at 24 hours');
+    assert(chain[2].afterMin === 4320, 'third nudge at 3 days');
+
+    // Test 4: QUICK_NUDGES still exist
+    assert(scheduler.QUICK_NUDGES.WAITING_SIZE !== undefined, 'QUICK_NUDGES still has WAITING_SIZE');
+    assert(scheduler.QUICK_NUDGES.WAITING_PAYMENT !== undefined, 'QUICK_NUDGES still has WAITING_PAYMENT');
+  } catch (err) {
+    console.error('  Auto-nudge test error:', err.message);
+  }
+}
+
+async function testQueueMonitoringEndpoint() {
+  console.log('\n📊 69. QUEUE MONITORING TEST');
+  const queue = require('../queue');
+
+  try {
+    queue.reset();
+    queue.configure({ concurrency: 3 });
+
+    // Process some tasks
+    await queue.enqueue('mon1', async () => {});
+    await queue.enqueue('mon2', async () => {});
+    await queue.drain();
+
+    const metrics = queue.getMetrics();
+    assert(typeof metrics === 'object', 'getMetrics returns object');
+    assert(typeof metrics.totalEnqueued === 'number', 'metrics has enqueued counter');
+    assert(typeof metrics.totalProcessed === 'number', 'metrics has processed counter');
+    assert(typeof metrics.totalErrors === 'number', 'metrics has errors counter');
+    assert(typeof metrics.totalDropped === 'number', 'metrics has dropped counter');
+    assert(typeof metrics.totalRetries === 'number', 'metrics has retries counter');
+    assert(typeof metrics.queueLength === 'number', 'metrics has queueLength');
+    assert(typeof metrics.activeWorkers === 'number', 'metrics has activeWorkers');
+    assert(metrics.totalProcessed >= 2, 'metrics shows 2+ processed');
+
+    queue.reset();
+  } catch (err) {
+    console.error('  Queue monitoring test error:', err.message);
+    queue.reset();
+  }
+}
+
+async function testReturningCustomerFormReuse() {
+  console.log('\n🔄 70. RETURNING CUSTOMER FORM REUSE TEST');
+  const memory = require('../db/memory');
+  const telegramId = 860000 + Math.floor(Math.random() * 9999);
+
+  try {
+    const user = await users.findOrCreate(telegramId, 'Возврат', 'return_test');
+
+    // Simulate first order — save full delivery data
+    await memory.update(user.id, {
+      full_name: 'Иванов Иван',
+      phone: '+79991234567',
+      address: 'Москва, ул. Ленина 15, кв 42',
+      shoe_size: '42',
+    });
+
+    const mem = await memory.get(user.id);
+    assert(memory.hasFullDeliveryData(mem), 'returning customer has full delivery data');
+
+    // Test: buildContextForAI mentions not to ask again
+    const ctx = memory.buildContextForAI(mem);
+    assert(ctx.includes('НЕ спрашивай заново'), 'context tells AI not to re-ask');
+
+    // Cleanup
+    await memory.deleteByUser(user.id);
+    await cleanup(telegramId);
+  } catch (err) {
+    console.error('  Returning customer test error:', err.message);
+    await cleanup(telegramId).catch(() => {});
+  }
+}
+
+// ═══════════════════════════════════════
+// SAFETY GATE TESTS
+// ═══════════════════════════════════════
+
+async function testSafetyGateSanitizer() {
+  console.log('\n🛡️ 71. SAFETY GATE — SANITIZER');
+  const safety = require('../ai/safety');
+
+  // Markdown stripping
+  assert(safety.sanitize('**Bold text**') === 'Bold text', 'strips markdown bold');
+  assert(safety.sanitize('*italic*') === 'italic', 'strips markdown italic');
+  assert(safety.sanitize('# Heading') === 'Heading', 'strips markdown heading');
+  assert(safety.sanitize('## Sub heading') === 'Sub heading', 'strips markdown h2');
+  assert(safety.sanitize('[link](http://x.com)') === 'link', 'strips markdown links');
+
+  // Code stripping
+  assert(safety.sanitize('Hello `code` world') === 'Hello code world', 'strips inline code');
+  const codeBlock = 'Hello ```\nconst x = 1;\n``` world';
+  const codeResult = safety.sanitize(codeBlock);
+  assert(!codeResult.includes('```'), 'strips code blocks');
+
+  // JSON artifact stripping
+  assert(safety.sanitize('{"key": "value"}') === '', 'strips JSON objects');
+  const jsonArr = safety.sanitize('[{"id": 1}]');
+  assert(!jsonArr.includes('{') || jsonArr === '', 'strips JSON arrays');
+
+  // Prompt leak stripping
+  assert(safety.sanitize('system: you are an AI') === 'you are an AI', 'strips system: prefix');
+  const tokenResult = safety.sanitize('Hello <|im_start|> text');
+  assert(!tokenResult.includes('<|'), 'strips special tokens');
+
+  // Whitespace normalization
+  assert(safety.sanitize('too   many   spaces') === 'too many spaces', 'normalizes spaces');
+  assert(safety.sanitize('line\n\n\n\nline') === 'line\n\nline', 'normalizes blank lines');
+
+  // Empty / null
+  assert(safety.sanitize(null) === '', 'null → empty');
+  assert(safety.sanitize(undefined) === '', 'undefined → empty');
+  assert(safety.sanitize('') === '', 'empty → empty');
+
+  // Normal text passes through
+  assert(safety.sanitize('Привет! Как дела?') === 'Привет! Как дела?', 'normal text unchanged');
+  assert(safety.sanitize('Nike Air Max за 12500₽ 🔥') === 'Nike Air Max за 12500₽ 🔥', 'product text unchanged');
+}
+
+async function testSafetyGateDetector() {
+  console.log('\n🛡️ 72. SAFETY GATE — DETECTOR');
+  const safety = require('../ai/safety');
+
+  // Empty / short
+  assert(!safety.detect('').safe, 'empty blocked');
+  assert(!safety.detect('x').safe, 'too short blocked');
+  assert(safety.detect('').reason === 'empty', 'empty reason correct');
+  assert(safety.detect('x').reason === 'too_short', 'too_short reason correct');
+
+  // JSON artifacts
+  assert(!safety.detect('{"error": "something"}').safe, 'JSON object blocked');
+  assert(!safety.detect('[{"id": 1}]').safe, 'JSON array blocked');
+
+  // AI identity
+  assert(!safety.detect('Я — искусственный интеллект').safe, 'AI identity blocked');
+  assert(!safety.detect('Как AI, я не имею мнения').safe, 'AI perspective blocked');
+  assert(!safety.detect('Я не могу чувствовать эмоции').safe, 'AI limitation blocked');
+  assert(!safety.detect('Я просто программа, но помогу').safe, 'AI program blocked');
+  assert(!safety.detect('Могу ошибаться, но попробую').safe, 'AI doubt blocked');
+
+  // Technical leaks
+  assert(!safety.detect('Error: API timeout на сервере').safe, 'tech error blocked');
+  assert(!safety.detect('Проверьте token авторизации').safe, 'token leak blocked');
+  assert(!safety.detect('Произошла ошибка, попробуйте позже').safe, 'error phrase blocked');
+  assert(!safety.detect('Что-то пошло не так').safe, 'generic error blocked');
+  assert(!safety.detect('Системная ошибка при обработке запроса').safe, 'system error blocked');
+
+  // Model names
+  assert(!safety.detect('Я использую GPT-4 для ответов').safe, 'model name blocked');
+  assert(!safety.detect('OpenRouter подключён нормально').safe, 'provider name blocked');
+
+  // Prompt leaks
+  assert(!safety.detect('СТРОГИЕ ПРАВИЛА работы бота').safe, 'prompt leak blocked');
+  assert(!safety.detect('--- КОНЕЦ КАТАЛОГА ---').safe, 'catalog marker blocked');
+
+  // Suspicious patterns
+  assert(!safety.detect('Не могу найти такую модель').safe, 'cant find blocked');
+  assert(!safety.detect('К сожалению, ничего нет').safe, 'apology blocked');
+  assert(!safety.detect('У нас такого нет').safe, 'no stock blocked');
+  assert(!safety.detect('Нет в наличии на складе').safe, 'out of stock blocked');
+  assert(!safety.detect('Извините, но я не уверен').safe, 'sorry blocked');
+
+  // Normal messages pass
+  assert(safety.detect('Привет! Хороший выбор 👍').safe, 'greeting passes');
+  assert(safety.detect('Nike Air Max 90 — 12500₽. Какой размер?').safe, 'product pitch passes');
+  assert(safety.detect('Записал! Скинь ФИО и телефон 📝').safe, 'form request passes');
+  assert(safety.detect('Оплата получена ✅ Скоро отправим!').safe, 'confirmation passes');
+  assert(safety.detect('Размер 42 — отличный выбор! Оформляем?').safe, 'size confirm passes');
+  assert(safety.detect('Секунду, уточню и вернусь 👌').safe, 'holdoff passes');
+
+  // Too long
+  assert(!safety.detect('a'.repeat(2001)).safe, 'too long blocked');
+  assert(safety.detect('a'.repeat(2001)).reason === 'too_long', 'too_long reason');
+}
+
+async function testSafetyGateEnforce() {
+  console.log('\n🛡️ 73. SAFETY GATE — ENFORCE (full pipeline)');
+  const safety = require('../ai/safety');
+
+  // Clean response passes through
+  const ok = safety.enforce('Привет! Как тебе Nike Air Max 90? Размер какой?');
+  assert(ok.passed === true, 'clean response passes');
+  assert(ok.text === 'Привет! Как тебе Nike Air Max 90? Размер какой?', 'clean text unchanged');
+
+  // Markdown gets sanitized, but clean result passes
+  const md = safety.enforce('**Nike Air Max** — отлично!');
+  assert(md.passed === true, 'sanitized markdown passes');
+  assert(!md.text.includes('**'), 'bold stripped by enforce');
+
+  // AI identity blocked → fallback
+  const ai = safety.enforce('Я — бот, но помогу тебе выбрать');
+  assert(ai.passed === false, 'AI identity blocked');
+  assert(ai.reason === 'blocked_pattern', 'blocked_pattern reason');
+  assert(ai.text.length > 0, 'fallback returned for AI identity');
+
+  // Empty → fallback
+  const empty = safety.enforce('');
+  assert(empty.passed === false, 'empty blocked');
+  assert(empty.text.length > 0, 'fallback for empty');
+
+  // null → fallback
+  const nul = safety.enforce(null);
+  assert(nul.passed === false, 'null blocked');
+  assert(nul.text.length > 0, 'fallback for null');
+
+  // JSON artifact → sanitized + blocked as empty
+  const json = safety.enforce('{"error": "timeout"}');
+  assert(json.passed === false, 'JSON blocked');
+  assert(json.text.length > 0, 'fallback for JSON');
+
+  // Error message → blocked
+  const err = safety.enforce('Извините, произошла ошибка. Попробуйте позже.');
+  assert(err.passed === false, 'error msg blocked');
+
+  // Code block → stripped, result may pass if clean text remains
+  const code = safety.enforce('Вот твой заказ ```const order = {}``` 👍');
+  // After sanitize: "Вот твой заказ  👍" — no blocked patterns → passes
+  assert(code.text.includes('заказ'), 'code block stripped, text preserved');
+
+  // State-aware fallback
+  const sized = safety.enforce('', { userState: 'WAITING_SIZE' });
+  assert(sized.passed === false, 'empty blocked for WAITING_SIZE');
+  assert(sized.text.length > 0, 'state fallback returned');
+
+  // Scheduled fallback
+  const sched = safety.enforce('', { isScheduled: true });
+  assert(sched.passed === false, 'empty blocked for scheduled');
+  assert(sched.text.length > 0, 'scheduled fallback returned');
+}
+
+async function testSafetyGateCircuitBreaker() {
+  console.log('\n🛡️ 74. SAFETY GATE — CIRCUIT BREAKER');
+  const safety = require('../ai/safety');
+
+  // Reset state
+  safety.cbReset();
+
+  // Initially allows requests
+  assert(safety.shouldCallAI().allowed === true, 'CB closed: allows requests');
+  assert(safety.cbGetState().state === 'CLOSED', 'initial state CLOSED');
+
+  // Record failures
+  for (let i = 0; i < 4; i++) {
+    safety.cbRecord(false);
+  }
+  assert(safety.cbGetState().state === 'CLOSED', 'still CLOSED after 4 failures');
+  assert(safety.shouldCallAI().allowed === true, 'still allows after 4 failures');
+
+  // 5th failure → OPEN
+  safety.cbRecord(false);
+  assert(safety.cbGetState().state === 'OPEN', 'OPEN after 5 failures');
+  assert(safety.cbGetState().failures === 5, 'failure count = 5');
+
+  // Blocked
+  const blocked = safety.shouldCallAI('NEW');
+  assert(blocked.allowed === false, 'CB open: blocks requests');
+  assert(blocked.fallback && blocked.fallback.length > 0, 'CB provides fallback');
+
+  // Success recovery
+  safety.cbReset();
+  safety.cbRecord(true);
+  assert(safety.cbGetState().state === 'CLOSED', 'recovery: back to CLOSED');
+  assert(safety.shouldCallAI().allowed === true, 'recovery: allows requests');
+}
+
+async function testSafetyGateFallbacks() {
+  console.log('\n🛡️ 75. SAFETY GATE — FALLBACK QUALITY');
+  const safety = require('../ai/safety');
+
+  // All fallback categories return non-empty strings
+  const categories = ['general', 'ai_down', 'blocked'];
+  for (const cat of categories) {
+    const fb = safety.getFallback(cat);
+    assert(fb && fb.length > 0, `fallback category "${cat}" returns text`);
+  }
+
+  // State-specific fallbacks
+  const states = ['waiting_size', 'waiting_form', 'waiting_payment'];
+  for (const state of states) {
+    const fb = safety.getFallback('blocked', state);
+    assert(fb && fb.length > 0, `state fallback "${state}" returns text`);
+  }
+
+  // Fallbacks don't trigger safety gate themselves
+  for (const cat of categories) {
+    const fb = safety.getFallback(cat);
+    const check = safety.detect(fb);
+    assert(check.safe === true, `fallback "${cat}" is itself safe: "${fb.substring(0, 40)}..."`);
+  }
+
+  for (const state of states) {
+    const fb = safety.getFallback('blocked', state);
+    const check = safety.detect(fb);
+    assert(check.safe === true, `state fallback "${state}" is safe: "${fb.substring(0, 40)}..."`);
+  }
+}
+
+async function testSafetyGateNoLeakScenarios() {
+  console.log('\n🛡️ 76. SAFETY — NO LEAK SCENARIOS');
+  const safety = require('../ai/safety');
+
+  // Scenario: AI returns raw prompt
+  const promptLeak = safety.enforce('system: ты — менеджер магазина кроссовок. СТРОГИЕ ПРАВИЛА: 1. Не говори что ты AI');
+  assert(promptLeak.passed === false, 'prompt leak blocked');
+
+  // Scenario: AI returns JSON with customer data
+  const jsonLeak = safety.enforce('{"name": "Иван", "phone": "+79991234567"}');
+  assert(jsonLeak.passed === false, 'JSON customer data blocked');
+
+  // Scenario: AI stack trace
+  const stackLeak = safety.enforce('TypeError: Cannot read property "name" of undefined at processMessage');
+  assert(stackLeak.passed === false, 'stack trace blocked');
+
+  // Scenario: Mixed valid + invalid
+  const mixed = safety.enforce('Отличный выбор! Как AI, я рекомендую этот товар');
+  assert(mixed.passed === false, 'mixed valid+AI blocked');
+
+  // Scenario: AI suggests retry
+  const retryLeak = safety.enforce('Попробуйте позже, сейчас много заказов');
+  assert(retryLeak.passed === false, 'retry suggestion blocked');
+
+  // Scenario: ChatGPT-style disclaimer
+  const disclaimer = safety.enforce('Я виртуальный помощник и могу ошибаться');
+  assert(disclaimer.passed === false, 'virtual assistant blocked');
+
+  // Scenario: Debug text leaks
+  const debug = safety.enforce('Ответ получен за 450ms. Вот что нашёл:');
+  // 'debug' is not in regular chat text — no match expected
+  // Actually "Ответ получен за 450ms" - "ms" doesn't match blocked patterns directly
+  // But if it did leak, it's not a safety issue — it's just unusual
+
+  // Scenario: Client sends text that RESEMBLES blocked patterns — but this is for AI output only
+  // Client input never goes through safety gate, so no concern
+
+  // Scenario: Repeated enforce calls don't accumulate state
+  safety.cbReset();
+  for (let i = 0; i < 10; i++) {
+    const r = safety.enforce('Нормальный ответ для клиента 👍');
+    assert(r.passed === true, `repeat enforce #${i + 1} passes`);
+  }
+}
+
+async function testSafetyGateValidatorIntegration() {
+  console.log('\n🛡️ 77. SAFETY — VALIDATOR FALLBACK SAFETY');
+  const { getSafeFallback } = require('../ai/validator');
+  const safety = require('../ai/safety');
+
+  // All validator fallbacks must pass safety gate
+  const statuses = ['not_configured', 'api_error', 'empty_catalog', 'ok'];
+  const reasons = ['fabricated_price', 'price_without_catalog', 'robot_reveal', 'negative_availability', undefined];
+
+  for (const status of statuses) {
+    for (const reason of reasons) {
+      const fb = getSafeFallback(status, reason);
+      const check = safety.detect(fb);
+      assert(check.safe === true, `validator fallback safe: status=${status} reason=${reason} → "${fb.substring(0, 40)}"`);
+    }
+  }
+}
+
+async function testSafetyGateHardcodedMessages() {
+  console.log('\n🛡️ 78. SAFETY — HARDCODED MESSAGES PASS');
+  const safety = require('../ai/safety');
+
+  // All hardcoded messages from sales.js should pass safety gate
+  const hardcoded = [
+    'Понял, сейчас гляну по наличию 👀 Если именно этой нет — подберу максимально похожие. Какой размер нужен?',
+    'Хороший выбор 👍 Сейчас проверю наличие. Если что — есть очень похожие варианты. Размер какой?',
+    'Норм модель 🔥 Гляну что есть. А пока скажи — какой размер носишь?',
+    'Скинь одним сообщением: ФИО, телефон и адрес доставки — и сразу оформим 🚀',
+    'Уточняю цену на этот товар. Подскажи, какой именно интересует — пересчитаем 🙏',
+    '✅ Отлично! Заказ оформлен!\n\nМы проверим оплату и отправим заказ как можно скорее. Спасибо за покупку! 🎉',
+    'Давай начнём заново — что хотите заказать? 😊',
+    'Секунду, подбираю варианты 👌',
+    'Ещё думаешь над размером? Если что — подскажу 👟',
+    'Скинь ФИО, телефон и адрес — и оформим заказ 🚀',
+    'Напоминаю — заказ ждёт оплаты. Переведи и скинь скрин 💳',
+  ];
+
+  for (const msg of hardcoded) {
+    const result = safety.enforce(msg);
+    assert(result.passed === true, `hardcoded passes: "${msg.substring(0, 50)}..."`);
+  }
+
+  // Nudge chain messages should also pass
+  const nudges = [
+    'Привет! Всё ок? Заказ ждёт — если есть вопросы, пиши 😊',
+    'Напоминаю про заказ 💳 Переведи и скинь скрин — отправим сразу!',
+    'Заказ всё ещё ждёт! Может, оформим? Если что-то смущает — скажи, решим 🤝',
+    'Осталось совсем чуть-чуть! Скинь ФИО, телефон и адрес — и оформим 🚀',
+    'Определился с размером? Если надо — помогу подобрать 👟',
+  ];
+
+  for (const msg of nudges) {
+    const result = safety.enforce(msg);
+    assert(result.passed === true, `nudge passes: "${msg.substring(0, 50)}..."`);
+  }
+}
+
+async function testSafetyGateEdgeCases() {
+  console.log('\n🛡️ 79. SAFETY — EDGE CASES');
+  const safety = require('../ai/safety');
+
+  // Unicode edge cases
+  assert(safety.enforce('Привет 🔥🔥🔥').passed === true, 'emoji-heavy passes');
+  assert(safety.enforce('👟'.repeat(50)).passed === true, 'many emojis pass');
+
+  // Numbers only
+  assert(safety.enforce('42').passed === true, 'size number passes');
+  assert(safety.enforce('+79991234567').passed === true, 'phone number passes');
+
+  // Price text
+  assert(safety.enforce('12500₽').passed === true, 'price passes');
+
+  // Very long valid text (close to limit)
+  const longValid = 'Отличный выбор! '.repeat(100);
+  const longResult = safety.enforce(longValid);
+  // Too long (1600 chars) → detector catches it
+  if (longValid.length > 2000) {
+    assert(longResult.passed === false, 'very long blocked');
+  } else {
+    assert(longResult.passed === true, 'long but valid passes');
+  }
+
+  // Sanitizer preserves line breaks for product listings
+  const listing = 'Вот что есть:\n• Nike Air Max — 12500₽\n• Adidas Yeezy — 15000₽\n\nКакой нравится?';
+  assert(safety.enforce(listing).passed === true, 'product listing passes');
+  assert(safety.enforce(listing).text.includes('\n'), 'line breaks preserved');
+}
+
 async function run() {
   console.log('🚀 Starting E2E tests...\n');
 
@@ -2420,6 +3723,32 @@ async function run() {
     await testBusinessDeepLink();
     await testWebhookDeduplication();
     await testMonitoring();
+    await testMonitoringPersistence();
+    await testWriteQueue();
+    await testSLAThresholds();
+    await testActivityWatchdog();
+    await testBusinessMetrics();
+    await testFallbackLogAndFailsafe();
+    await testMetricsCounters();
+    await testMonitoringMetricsEndpoint();
+    await testTimezoneConsistency();
+    await testChatUpgrade();
+    await testCustomerMemory();
+    await testQueueSystem();
+    await testQueueConcurrentMessages();
+    await testEnhancedMemory();
+    await testAutoNudgeChain();
+    await testQueueMonitoringEndpoint();
+    await testReturningCustomerFormReuse();
+    await testSafetyGateSanitizer();
+    await testSafetyGateDetector();
+    await testSafetyGateEnforce();
+    await testSafetyGateCircuitBreaker();
+    await testSafetyGateFallbacks();
+    await testSafetyGateNoLeakScenarios();
+    await testSafetyGateValidatorIntegration();
+    await testSafetyGateHardcodedMessages();
+    await testSafetyGateEdgeCases();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);

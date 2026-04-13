@@ -77,6 +77,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ mode }),
     }),
+  setMode: (id, mode) =>
+    fetchAPI(`/users/${id}/mode`, {
+      method: 'PATCH',
+      body: JSON.stringify({ mode }),
+    }),
   updateState: (id, state) =>
     fetchAPI(`/users/${id}/state`, {
       method: 'PATCH',
@@ -84,6 +89,17 @@ export const api = {
     }),
   deleteUser: (id) =>
     fetchAPI(`/users/${id}`, { method: 'DELETE' }),
+  markRead: (id) =>
+    fetchAPI(`/users/${id}/read`, { method: 'POST' }),
+  getQuickReplies: (id) =>
+    fetchAPI(`/users/${id}/quick-replies`),
+  getMemory: (id) =>
+    fetchAPI(`/users/${id}/memory`),
+  updateMemory: (id, data) =>
+    fetchAPI(`/users/${id}/memory`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 
   // Messages
   getMessages: (userId) => fetchAPI(`/users/${userId}/messages`),
@@ -136,4 +152,7 @@ export const api = {
   getMonitoring: () => fetchAPI('/monitoring'),
   monitoringCheck: () =>
     fetchAPI('/monitoring/check', { method: 'POST' }),
+  getMonitoringHistory: (params) => fetchAPI(`/monitoring/history?${params}`),
+  getMonitoringIncidents: (params) => fetchAPI(`/monitoring/incidents?${params}`),
+  getBusinessMetrics: () => fetchAPI('/monitoring/metrics'),
 };

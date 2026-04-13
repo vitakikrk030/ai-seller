@@ -1,3 +1,6 @@
+// Set timezone globally BEFORE any other imports
+process.env.TZ = 'Europe/Moscow';
+
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
