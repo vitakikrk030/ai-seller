@@ -150,6 +150,7 @@ function start() {
           if (!msg) continue;
 
           await messages.save(user.id, 'ai', msg);
+          console.log(`SEND TO (nudge): ${user.telegram_id} (user.id=${user.id}, state=${user.state})`);
           await bot.sendMessage(user.telegram_id, msg);
           console.log(`Auto-nudge [${user.state} L${nudgesSent + 1}] to user ${user.id}`);
         } catch (err) {

@@ -143,6 +143,8 @@ async function sendAIResponse(telegramId, user, response, businessConnectionId) 
 
   const sendOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
 
+  console.log(`SEND TO: ${telegramId} (user.id=${user.id}, state=${user.state})`);
+
   const aiMsg = await messages.save(user.id, 'ai', responseText);
   _broadcast('message', { userId: user.id, message: aiMsg });
   await bot.sendMessage(telegramId, responseText, sendOpts);
@@ -176,14 +178,15 @@ async function sendAIResponse(telegramId, user, response, businessConnectionId) 
 }
 
 async function handleMessage(msg, businessConnectionId) {
-  const telegramId = msg.from.id;
+  // Use chat.id as the destination for replies (correct for DMs and Business chats)
+  const telegramId = msg.chat?.id || msg.from.id;
 
   if (msg.message_id && isDuplicate(msg.message_id, telegramId)) return;
 
   monitoring.recordMessageActivity();
 
-  const name = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ');
-  const username = msg.from.username || null;
+  const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || 'Unknown';
+  const username = msg.from?.username || null;
   const text = msg.text || msg.caption || null;
   const photo = msg.photo;
 

@@ -248,6 +248,7 @@ router.post('/users/:id/messages', async (req, res) => {
     await users.setManagerActive(user.id, true);
 
     // Send via Telegram
+    console.log(`SEND TO (CRM): ${user.telegram_id} (user.id=${user.id})`);
     await bot.sendMessage(user.telegram_id, text);
 
     // Обучение от менеджера (non-blocking)
