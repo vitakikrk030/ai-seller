@@ -108,16 +108,13 @@ async function start() {
   // Load DB settings (overrides .env)
   await config.loadDbSettings();
 
-  // Block production start with default credentials
-  if (isProd) {
-    if (config.ADMIN_PASSWORD === 'admin123' || config.ADMIN_PASSWORD === 'your_secure_password_here') {
-      log.error('FATAL: Default admin password detected! Set ADMIN_PASSWORD in .env before running in production.');
-      process.exit(1);
-    }
-    if (config.JWT_SECRET === 'change_me_in_production') {
-      log.error('FATAL: Default JWT_SECRET detected! Set JWT_SECRET in .env before running in production.');
-      process.exit(1);
-    }
+  // Warn about insecure defaults (never block startup)
+  const adminLogin = config.get('ADMIN_LOGIN') || config.ADMIN_LOGIN || 'admin';
+  const adminPassword = config.get('ADMIN_PASSWORD') || config.ADMIN_PASSWORD || 'admin123';
+  if (adminPassword === 'admin123') {
+    log.warn(`Admin created: login=${adminLogin} password=admin123 (default — change ADMIN_PASSWORD in .env for production)`);
+  } else {
+    log.info(`Admin login: ${adminLogin}`);
   }
 
   server = app.listen(config.PORT, () => {

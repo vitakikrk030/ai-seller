@@ -58,14 +58,14 @@ async function login(req, res) {
   if (!loginInput || !password) {
     return res.status(400).json({ error: 'Login and password required' });
   }
-  const adminLogin = config.get('ADMIN_LOGIN') || config.ADMIN_LOGIN;
+  const adminLogin = config.get('ADMIN_LOGIN') || config.ADMIN_LOGIN || 'admin';
   if (loginInput !== adminLogin) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Неверный логин или пароль' });
   }
   const hash = await getPasswordHash();
   const valid = await bcrypt.compare(password, hash);
   if (!valid) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Неверный логин или пароль' });
   }
   const jti = crypto.randomUUID();
   const token = jwt.sign({ login: loginInput, jti }, config.JWT_SECRET, { expiresIn: '2h' });
