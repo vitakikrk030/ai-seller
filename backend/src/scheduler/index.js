@@ -8,12 +8,12 @@ const { generateResponse } = require('../ai');
 const monitoring = require('../monitoring');
 const memory = require('../db/memory');
 const safety = require('../ai/safety');
+const aiSettings = require('../db/ai_settings');
 
 /**
  * Determine reactivation scenario based on user state & history.
  */
 async function getScenario(user) {
-  // Check if user has any completed orders
   const orderResult = await db.query(
     `SELECT status FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [user.id]
@@ -24,18 +24,13 @@ async function getScenario(user) {
     return 'post_purchase';
   }
 
-  // Count days inactive
   const daysSince = Math.floor((Date.now() - new Date(user.last_seen).getTime()) / (1000 * 60 * 60 * 24));
 
-  // Abandoned order (started but didn't finish)
   if (['WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT'].includes(user.state)) {
     return 'abandoned_7d';
   }
 
-  if (daysSince <= 5) {
-    return 'warm_3d';
-  }
-
+  if (daysSince <= 5) return 'warm_3d';
   return 'cold_14d';
 }
 
@@ -55,35 +50,41 @@ async function buildFollowup(user, scenario) {
   return message;
 }
 
-// Quick nudge messages for stuck-in-order users
-const QUICK_NUDGES = {
-  WAITING_SIZE: 'Ещё думаешь над размером? Если что — подскажу 👟',
-  WAITING_FORM: 'Скинь ФИО, телефон и адрес — и оформим заказ 🚀',
-  WAITING_PAYMENT: 'Напоминаю — заказ ждёт оплаты. Переведи и скинь скрин 💳',
-};
-
-// Auto-nudge chain: escalating reminders
-// Level 1 (1h): soft check-in
-// Level 2 (24h): direct nudge
-// Level 3 (3d): reactivation offer
-const NUDGE_CHAIN = {
+/**
+ * Nudge chain config — тексты берутся из AI Settings по ключу.
+ * afterMin — через сколько минут отправлять.
+ */
+const NUDGE_CHAIN_CONFIG = {
   WAITING_PAYMENT: [
-    { afterMin: 60, msg: 'Привет! Всё ок? Заказ ждёт — если есть вопросы, пиши 😊' },
-    { afterMin: 1440, msg: 'Напоминаю про заказ 💳 Переведи и скинь скрин — отправим сразу!' },
-    { afterMin: 4320, msg: 'Заказ всё ещё ждёт! Может, оформим? Если что-то смущает — скажи, решим 🤝' },
+    { afterMin: 60,   key: 'nudge_payment_1h',   closerKey: 'nudge_payment_closer_1h' },
+    { afterMin: 1440, key: 'nudge_payment_24h',  closerKey: 'nudge_payment_closer_24h' },
+    { afterMin: 4320, key: 'nudge_payment_3d' },
   ],
   WAITING_FORM: [
-    { afterMin: 60, msg: 'Осталось совсем чуть-чуть! Скинь ФИО, телефон и адрес — и оформим 🚀' },
-    { afterMin: 1440, msg: 'Привет! Заказ на паузе — жду данные для доставки. Скинь одним сообщением 📝' },
-    { afterMin: 4320, msg: 'Заказ всё ещё можно оформить! Скинь ФИО, телефон и адрес — отправим 🎁' },
+    { afterMin: 60,   key: 'nudge_form_1h',      closerKey: 'nudge_form_closer_1h' },
+    { afterMin: 1440, key: 'nudge_form_24h' },
+    { afterMin: 4320, key: 'nudge_form_3d' },
   ],
   WAITING_SIZE: [
-    { afterMin: 60, msg: 'Определился с размером? Если надо — помогу подобрать 👟' },
-    { afterMin: 1440, msg: 'Привет! Ещё думаешь? Могу показать популярные размеры и модели 😉' },
+    { afterMin: 60,   key: 'nudge_size_1h' },
+    { afterMin: 1440, key: 'nudge_size_24h' },
   ],
 };
 
 function start() {
+  // Self Learning Loop — каждый час авто-оптимизация A/B тестов
+  cron.schedule('0 * * * *', async () => {
+    try {
+      const { runSelfLearningLoop } = require('../ai/optimizer');
+      const result = await runSelfLearningLoop();
+      if (result.ab_optimization?.some(r => r.status === 'optimized')) {
+        console.log('Self-learning: A/B optimized', result.ab_optimization.filter(r => r.status === 'optimized'));
+      }
+    } catch (err) {
+      console.error('Self-learning loop error:', err.message);
+    }
+  });
+
   // Clear stale manager_active flags every 10 minutes
   cron.schedule('*/10 * * * *', async () => {
     monitoring.schedulerHeartbeat();
@@ -99,6 +100,10 @@ function start() {
 
   // Fast followup: every 15 min — auto-nudge chain for stuck users
   cron.schedule('*/15 * * * *', async () => {
+    // Проверяем тумблер напоминаний
+    const remindersEnabled = await aiSettings.isEnabled('toggle_reminders').catch(() => true);
+    if (!remindersEnabled) return;
+
     try {
       const stuck = await users.getStuckInOrder(15);
 
@@ -107,17 +112,15 @@ function start() {
           if (!user.ai_enabled) continue;
           if (user.manager_active) continue;
 
-          const chain = NUDGE_CHAIN[user.state];
+          const chain = NUDGE_CHAIN_CONFIG[user.state];
           if (!chain) continue;
 
-          // Find last AI message time to determine nudge level
           const recentMsgs = await messages.getHistory(user.id, 5);
           const lastAI = recentMsgs.filter(m => m.role === 'ai').pop();
           const lastUser = recentMsgs.filter(m => m.role === 'user').pop();
 
-          // Don't nudge if user sent a message after our last nudge
           if (lastUser && lastAI && new Date(lastUser.created_at) > new Date(lastAI.created_at)) {
-            continue; // User replied — stop nudging
+            continue;
           }
 
           const lastAnyMsg = lastAI || lastUser;
@@ -125,25 +128,29 @@ function start() {
 
           const minutesSince = (Date.now() - new Date(lastAnyMsg.created_at).getTime()) / (1000 * 60);
 
-          // Count how many AI nudges we already sent in a row
           let nudgesSent = 0;
           for (let i = recentMsgs.length - 1; i >= 0; i--) {
             if (recentMsgs[i].role === 'ai') nudgesSent++;
             else break;
           }
 
-          // Pick the right nudge level from chain
-          const nextNudge = chain.find((n, idx) => idx >= nudgesSent && minutesSince >= n.afterMin);
-          if (!nextNudge) continue;
+          const nextNudgeCfg = chain.find((n, idx) => idx >= nudgesSent && minutesSince >= n.afterMin);
+          if (!nextNudgeCfg) continue;
 
-          // Don't send same level twice
           if (nudgesSent > 0 && lastAI) {
             const lastNudgeAge = (Date.now() - new Date(lastAI.created_at).getTime()) / (1000 * 60);
-            if (lastNudgeAge < 30) continue; // At least 30 min between nudges
+            if (lastNudgeAge < 30) continue;
           }
 
-          await messages.save(user.id, 'ai', nextNudge.msg);
-          await bot.sendMessage(user.telegram_id, nextNudge.msg);
+          // Получаем текст из AI Settings — closer режим использует агрессивные дожимы
+          const closerActive = await aiSettings.isEnabled('closer_mode_enabled').catch(() => false)
+            || (await aiSettings.getRaw('sales_style_preset').catch(() => '')) === 'closer';
+          const nudgeKey = (closerActive && nextNudgeCfg.closerKey) ? nextNudgeCfg.closerKey : nextNudgeCfg.key;
+          const msg = await aiSettings.getNudge(nudgeKey) || await aiSettings.getNudge(nextNudgeCfg.key);
+          if (!msg) continue;
+
+          await messages.save(user.id, 'ai', msg);
+          await bot.sendMessage(user.telegram_id, msg);
           console.log(`Auto-nudge [${user.state} L${nudgesSent + 1}] to user ${user.id}`);
         } catch (err) {
           console.error(`Auto-nudge error for user ${user.id}:`, err.message);
@@ -156,13 +163,14 @@ function start() {
 
   // Run every day at 12:00 — multi-tier reactivation
   cron.schedule('0 12 * * *', async () => {
+    // Проверяем тумблер повторных продаж
+    const repeatSalesEnabled = await aiSettings.isEnabled('toggle_repeat_sales').catch(() => true);
+    if (!repeatSalesEnabled) return;
+
     console.log('Running daily follow-up...');
 
     try {
-      // Tier 1: warm clients (3+ days inactive, were recently active)
       const warm = await users.getInactive(3);
-      // Tier 2: cold clients (14+ days) already included in warm since 14 > 3
-      // Filter by tiers
       const now = Date.now();
 
       for (const user of warm) {
@@ -170,20 +178,15 @@ function start() {
 
         try {
           const daysSince = Math.floor((now - new Date(user.last_seen).getTime()) / (1000 * 60 * 60 * 24));
-
-          // Only send one followup per tier per day
-          // Warm: 3-6 days, Abandoned: 7-13 days (and in order states), Cold: 14+
           const scenario = await getScenario(user);
 
-          // Skip warm clients older than 6 days (they'll get abandoned/cold)
           if (scenario === 'warm_3d' && daysSince > 6) continue;
-          // Skip abandoned older than 13 days (they'll get cold)
           if (scenario === 'abandoned_7d' && daysSince > 13) continue;
 
           const message = await buildFollowup(user, scenario);
 
           if (message) {
-            const safeResult = safety.enforce(message, { isScheduled: true, userState: 'FOLLOWUP' });
+            const safeResult = await safety.enforce(message, { isScheduled: true, userState: 'FOLLOWUP' });
             await messages.save(user.id, 'ai', safeResult.text);
             await bot.sendMessage(user.telegram_id, safeResult.text);
             await db.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
@@ -201,4 +204,4 @@ function start() {
   console.log('Scheduler started');
 }
 
-module.exports = { start, getScenario, buildFollowup, QUICK_NUDGES, NUDGE_CHAIN };
+module.exports = { start, getScenario, buildFollowup, NUDGE_CHAIN_CONFIG };

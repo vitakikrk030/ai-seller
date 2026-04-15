@@ -2,11 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, Settings, Plug, Sun, Moon, LogOut, Activity } from 'lucide-react';
+import { MessageSquare, Plug, Sun, Moon, LogOut, Activity, Bot } from 'lucide-react';
 import ChatView from '../components/ChatView';
-import SettingsView from '../components/SettingsView';
 import IntegrationsView from '../components/IntegrationsView';
 import MonitoringView from '../components/MonitoringView';
+import AISettingsView from '../components/AISettingsView';
 import StatsBar from '../components/StatsBar';
 import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
@@ -17,10 +17,8 @@ export default function Home() {
   const { token, logout, loading } = useAuth();
   const router = useRouter();
 
-  // Show nothing while checking auth
   if (loading) return null;
 
-  // Redirect to login if not authenticated
   if (!token) {
     router.push('/login');
     return null;
@@ -37,11 +35,11 @@ export default function Home() {
           <MessageSquare size={15} /> Чаты
         </button>
         <button
-          className={`nav-tab ${tab === 'settings' ? 'active' : ''}`}
-          onClick={() => setTab('settings')}
-          aria-current={tab === 'settings' ? 'page' : undefined}
+          className={`nav-tab ${tab === 'ai-settings' ? 'active' : ''}`}
+          onClick={() => setTab('ai-settings')}
+          aria-current={tab === 'ai-settings' ? 'page' : undefined}
         >
-          <Settings size={15} /> Настройки
+          <Bot size={15} /> Настройки AI
         </button>
         <button
           className={`nav-tab ${tab === 'integrations' ? 'active' : ''}`}
@@ -69,7 +67,7 @@ export default function Home() {
       </nav>
 
       {tab === 'chats' && <ChatView />}
-      {tab === 'settings' && <SettingsView />}
+      {tab === 'ai-settings' && <AISettingsView />}
       {tab === 'integrations' && <IntegrationsView />}
       {tab === 'monitoring' && <MonitoringView />}
     </div>

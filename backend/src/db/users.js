@@ -71,7 +71,7 @@ const users = {
           ELSE 20
         END as state_priority,
         CASE
-          WHEN um.created_at IS NOT NULL 
+          WHEN um.created_at IS NOT NULL
             AND (u.last_read_at IS NULL OR um.created_at > u.last_read_at)
             AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
           THEN true ELSE false
@@ -81,7 +81,53 @@ const users = {
             AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
           THEN EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60
           ELSE NULL
-        END as wait_minutes
+        END as wait_minutes,
+        -- needs_attention: override OR auto-detect
+        CASE
+          WHEN u.attention_override = true THEN u.needs_attention
+          -- no reply for 2+ min and client is waiting
+          WHEN um.created_at IS NOT NULL
+            AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
+            AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 2
+            AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW')
+          THEN true
+          -- stuck on payment for 30+ min
+          WHEN u.state = 'WAITING_PAYMENT'
+            AND um.created_at IS NOT NULL
+            AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 30
+          THEN true
+          ELSE false
+        END as needs_attention,
+        CASE
+          WHEN u.attention_override = true THEN u.attention_reason
+          WHEN um.created_at IS NOT NULL
+            AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
+            AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 2
+            AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW')
+          THEN 'Нет ответа ' || EXTRACT(EPOCH FROM (NOW() - um.created_at))::int / 60 || ' мин'
+          WHEN u.state = 'WAITING_PAYMENT'
+            AND um.created_at IS NOT NULL
+            AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 30
+          THEN 'Завис на оплате'
+          ELSE NULL
+        END as attention_reason,
+        -- computed_priority score: pinned=1000, needs_attention=500, unread=100
+        CASE
+          WHEN u.pinned THEN 1000
+          WHEN (
+            CASE
+              WHEN u.attention_override = true THEN u.needs_attention
+              WHEN um.created_at IS NOT NULL AND um.created_at > COALESCE(lr.created_at,'1970-01-01')
+                AND EXTRACT(EPOCH FROM (NOW()-um.created_at))/60 >= 2
+                AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW') THEN true
+              ELSE false
+            END
+          ) THEN 500
+          WHEN um.created_at IS NOT NULL
+            AND (u.last_read_at IS NULL OR um.created_at > u.last_read_at)
+            AND um.created_at > COALESCE(lr.created_at,'1970-01-01') THEN 100
+          ELSE 0
+        END as computed_priority
       FROM users u
       LEFT JOIN LATERAL (
         SELECT text, created_at, role FROM messages WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
@@ -99,10 +145,7 @@ const users = {
         SELECT product, size, price, status FROM orders WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
       ) lo ON true
       ORDER BY
-        CASE WHEN um.created_at IS NOT NULL 
-          AND (u.last_read_at IS NULL OR um.created_at > u.last_read_at)
-          AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
-        THEN 1 ELSE 0 END DESC,
+        computed_priority DESC,
         state_priority DESC,
         u.last_seen DESC
       LIMIT 500

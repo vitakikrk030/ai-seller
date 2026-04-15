@@ -103,28 +103,39 @@ export const api = {
 
   // Messages
   getMessages: (userId) => fetchAPI(`/users/${userId}/messages`),
+  getMessagesPaginated: (userId, limit = 50, before = null) =>
+    fetchAPI(`/users/${userId}/messages/paginated?limit=${limit}${before ? `&before=${before}` : ''}`),
+  searchMessages: (userId, q) =>
+    fetchAPI(`/users/${userId}/messages/search?q=${encodeURIComponent(q)}`),
   sendMessage: (userId, text) =>
     fetchAPI(`/users/${userId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
+  deleteMessage: (id) =>
+    fetchAPI(`/messages/${id}`, { method: 'DELETE' }),
+  editMessage: (id, text) =>
+    fetchAPI(`/messages/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text }),
+    }),
+  clearMessages: (userId) =>
+    fetchAPI(`/users/${userId}/messages`, { method: 'DELETE' }),
+  pinUser: (id, pinned) =>
+    fetchAPI(`/users/${id}/pin`, {
+      method: 'POST',
+      body: JSON.stringify({ pinned }),
+    }),
+  setAttention: (id, needs_attention, reason) =>
+    fetchAPI(`/users/${id}/attention`, {
+      method: 'PATCH',
+      body: JSON.stringify({ needs_attention, reason }),
+    }),
+  clearAttention: (id) =>
+    fetchAPI(`/users/${id}/attention`, { method: 'DELETE' }),
 
   // Orders
-  getOrders: () => fetchAPI('/orders'),
   getUserOrders: (userId) => fetchAPI(`/users/${userId}/orders`),
-  updateOrderStatus: (id, status) =>
-    fetchAPI(`/orders/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    }),
-
-  // Prompts
-  getPrompts: () => fetchAPI('/prompts'),
-  updatePrompt: (key, value) =>
-    fetchAPI(`/prompts/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value }),
-    }),
 
   // Stats
   getStats: () => fetchAPI('/stats'),
@@ -149,10 +160,45 @@ export const api = {
     fetchAPI('/settings/disconnect-bot', { method: 'POST' }),
 
   // Monitoring
-  getMonitoring: () => fetchAPI('/monitoring'),
-  monitoringCheck: () =>
-    fetchAPI('/monitoring/check', { method: 'POST' }),
-  getMonitoringHistory: (params) => fetchAPI(`/monitoring/history?${params}`),
-  getMonitoringIncidents: (params) => fetchAPI(`/monitoring/incidents?${params}`),
-  getBusinessMetrics: () => fetchAPI('/monitoring/metrics'),
+  getMonitoringSummary: () => fetchAPI('/monitoring/summary'),
+
+  // AI Settings
+  getAiSettings: () => fetchAPI('/ai-settings'),
+  updateAiSetting: (key, data) =>
+    fetchAPI(`/ai-settings/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  bulkUpdateAiSettings: (entries) =>
+    fetchAPI('/ai-settings/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
+    }),
+
+  // AI Preview
+  previewAiResponse: (message, scenario, userState) =>
+    fetchAPI('/ai-settings/preview', {
+      method: 'POST',
+      body: JSON.stringify({ message, scenario, userState }),
+    }),
+
+  // Integrations status
+  getIntegrationsStatus: () => fetchAPI('/integrations/status'),
+
+  // Reset integration
+  resetIntegration: (type) =>
+    fetchAPI('/integrations/reset', {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    }),
+
+  // AI Usage
+  getAiUsage: (days = 30) => fetchAPI(`/ai/usage?days=${days}`),
+
+  // AI Provider test
+  testAiProvider: (base_url, api_key) =>
+    fetchAPI('/ai/test-provider', {
+      method: 'POST',
+      body: JSON.stringify({ base_url, api_key }),
+    }),
 };

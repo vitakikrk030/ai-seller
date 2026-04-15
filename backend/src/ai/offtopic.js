@@ -1,23 +1,19 @@
 /**
  * Off-topic detector — определяет, уходит ли клиент от темы покупки.
  * Возвращает { offtopic: bool, redirect: string|null }
+ * Тексты редиректов берутся из AI Settings (ai_speech_settings).
  */
 
-// Паттерны оффтопных тем (без \b — не работает с кириллицей в JS)
+const aiSettings = require('../db/ai_settings');
+
+// Паттерны оффтопных тем
 const OFFTOPIC_PATTERNS = [
-  // Погода
   /погод[аеуы]|дождь|снег|солнц[еоа]|температур|жарк[оа]|холодн[оа]|мороз/i,
-  // Политика
   /политик|выбор[ыа]|депутат|президент|правительств|партия/i,
-  // Личные вопросы боту
   /как тебя зовут|сколько тебе лет|ты (бот|робот|человек|живой|настоящий)|кто ты|ты (парень|девушка)/i,
-  // Развлечения/оффтоп
   /анекдот|шутк[аиу]|расскажи (историю|сказку|что-нибудь)|поиграем|поболтаем/i,
-  // Помощь не по теме
   /помоги с (домашк|уроком|задач|математик|физик|химии)/i,
-  // Новости
   /новост[ия]|что нового в мире|что происходит/i,
-  // Философия / абстракция
   /смысл жизни|зачем мы живём|что такое (счастье|любовь|дружба)/i,
 ];
 
@@ -32,21 +28,12 @@ const SALES_KEYWORDS = [
   'чёрн', 'бел', 'крас', 'сини', 'зелён',
 ];
 
-// Мягкие редиректы (рандомный выбор)
-const REDIRECTS = [
-  'Кстати, у нас новинки подъехали — глянешь? 🔥',
-  'Хорош) А по кроссам — что-нибудь ищешь?',
-  'Ладно, а если по делу — чё присматриваешь? 👟',
-  'Давай лучше тебе что-нибудь крутое подберём 😎',
-  'Я по кроссам и одежде спец — давай помогу выбрать?',
-];
-
 /**
  * Проверяет, является ли сообщение оффтопом.
  * @param {string} text — сообщение пользователя
- * @returns {{ offtopic: boolean, redirect: string|null }}
+ * @returns {Promise<{ offtopic: boolean, redirect: string|null }>}
  */
-function detectOfftopic(text) {
+async function detectOfftopic(text) {
   if (!text || text.trim().length === 0) {
     return { offtopic: false, redirect: null };
   }
@@ -62,11 +49,11 @@ function detectOfftopic(text) {
   // Проверяем оффтоп-паттерны
   const isOfftopic = OFFTOPIC_PATTERNS.some((pattern) => pattern.test(text));
   if (isOfftopic) {
-    const redirect = REDIRECTS[Math.floor(Math.random() * REDIRECTS.length)];
+    const redirect = await aiSettings.pickOfftopicRedirect();
     return { offtopic: true, redirect };
   }
 
   return { offtopic: false, redirect: null };
 }
 
-module.exports = { detectOfftopic, OFFTOPIC_PATTERNS, SALES_KEYWORDS, REDIRECTS };
+module.exports = { detectOfftopic, OFFTOPIC_PATTERNS, SALES_KEYWORDS };

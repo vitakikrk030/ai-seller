@@ -676,11 +676,14 @@ async function getBusinessMetrics() {
     const results = await Promise.all([
       db.query("SELECT COUNT(DISTINCT user_id) as cnt FROM messages WHERE role = 'user'"),
       db.query('SELECT COUNT(*) as cnt FROM orders'),
-      db.query("SELECT COALESCE(SUM(price), 0) as total FROM orders WHERE status != 'CANCELLED'"),
+      db.query("SELECT COALESCE(SUM(price), 0) as total FROM orders WHERE paid_at IS NOT NULL"),
       db.query("SELECT COUNT(DISTINCT user_id) as cnt FROM messages WHERE role = 'user' AND created_at > NOW() - INTERVAL '24 hours'"),
       db.query("SELECT COUNT(*) as cnt FROM orders WHERE created_at > NOW() - INTERVAL '24 hours'"),
       db.query("SELECT AVG(latency_ms) as avg_ms FROM monitoring_history WHERE component = 'ai' AND latency_ms IS NOT NULL AND recorded_at > NOW() - INTERVAL '24 hours'"),
-      db.query("SELECT COUNT(*) as cnt FROM users WHERE last_seen < NOW() - INTERVAL '7 days' AND state NOT IN ('DONE', 'PAID')"),
+      db.query("SELECT COUNT(*) as cnt FROM users WHERE last_seen < NOW() - INTERVAL '48 hours' AND state NOT IN ('DONE', 'PAID')"),
+      // aiErrorRate from DB — survives restarts
+      db.query("SELECT COUNT(*) as errors FROM ai_errors WHERE created_at > NOW() - INTERVAL '24 hours'"),
+      db.query("SELECT COUNT(*) as total FROM messages WHERE role = 'ai' AND created_at > NOW() - INTERVAL '24 hours'"),
     ]);
 
     var dialogs = parseInt(results[0].rows[0].cnt);
@@ -690,10 +693,13 @@ async function getBusinessMetrics() {
     var todayOrders = parseInt(results[4].rows[0].cnt);
     var avgAiLatency = Math.round(parseFloat(results[5].rows[0].avg_ms) || 0);
     var lostClients = parseInt(results[6].rows[0].cnt);
+    var aiErrorsDb = parseInt(results[7].rows[0].errors) || 0;
+    var aiTotalDb = parseInt(results[8].rows[0].total) || 0;
 
     var conversion = dialogs > 0 ? ((orders / dialogs) * 100).toFixed(1) : '0.0';
     var todayConversion = todayDialogs > 0 ? ((todayOrders / todayDialogs) * 100).toFixed(1) : '0.0';
-    var aiErrorRate = _metrics.aiRequests > 0 ? ((_metrics.aiErrors / _metrics.aiRequests) * 100).toFixed(1) : '0.0';
+    // aiErrorRate from DB (persistent across restarts)
+    var aiErrorRate = aiTotalDb > 0 ? ((aiErrorsDb / aiTotalDb) * 100).toFixed(1) : '0.0';
 
     return {
       dialogs: dialogs,

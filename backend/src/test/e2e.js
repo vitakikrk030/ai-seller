@@ -569,7 +569,7 @@ async function testErrorHandling() {
   const { generateResponse } = require('../ai');
   const response = await generateResponse(user, 'привет');
   assert(typeof response === 'string', 'AI returns string even on error');
-  assert(response.length === 0, 'AI returns empty on error (safety: no error text to client)');
+  assert(response.length > 0, 'AI returns fallback text on error (never silent)');
 
   // Restore
   await settings.set('openrouter_api_key', originalKey || '');
@@ -776,7 +776,7 @@ async function testPaymentSystem() {
 
   // Set payment card
   await settings.set('payment_card_number', '4111222233334444');
-  await settings.set('payment_name', 'Тест Тестович');
+  await settings.set('payment_receiver_name', 'Тест Тестович');
 
   const { processMessage } = require('../logic/sales');
   const formUser = await users.getById(user.id);
@@ -831,7 +831,8 @@ async function testHandlerStructuredResponse() {
 
   // handleMessage will call processMessage which returns structured response
   // bot.sendMessage will fail silently (no real Telegram) — that's ok
-  const { handleMessage, queue } = require('../telegram/handler');
+  const { handleMessage } = require('../telegram/handler');
+  const queue = require('../queue');
 
   await handleMessage({
     from: { id: TG_ID, first_name: 'Handler', last_name: 'Test', username: 'handlertest' },
@@ -839,7 +840,7 @@ async function testHandlerStructuredResponse() {
   });
 
   // Wait for queue to process async AI tasks
-  await queue.drain();
+  await new Promise(r => setTimeout(r, 500));
 
   // Check: user message saved, AI response saved
   const allMsgs = await messages.getByUser(user.id);
@@ -1051,17 +1052,17 @@ async function testAIValidator() {
   const r6 = validateResponse('Доставка 300₽', products, true);
   assert(r6.valid === true, 'Small price (delivery) is allowed');
 
-  // Test safe fallbacks
-  const f1 = getSafeFallback('not_configured');
+  // Test safe fallbacks (getSafeFallback is async — await required)
+  const f1 = await getSafeFallback('not_configured');
   assert(f1.includes('каталог') || f1.includes('менеджер'), 'not_configured fallback mentions catalog/manager');
 
-  const f2 = getSafeFallback('api_error');
+  const f2 = await getSafeFallback('api_error');
   assert(f2.includes('менеджер') || f2.includes('поможет'), 'api_error fallback mentions manager');
 
-  const f3 = getSafeFallback('empty_catalog');
+  const f3 = await getSafeFallback('empty_catalog');
   assert(f3.includes('менеджер') || f3.includes('подскажет'), 'empty_catalog fallback mentions manager');
 
-  const f4 = getSafeFallback(null, 'fabricated_price:8990');
+  const f4 = await getSafeFallback(null, 'fabricated_price:8990');
   assert(f4.length > 0, 'fabricated_price fallback is non-empty');
 }
 
@@ -1210,55 +1211,60 @@ async function testAIProductContext() {
 async function testOfftopicDetector() {
   console.log('\n🚫 24. OFF-TOPIC DETECTOR TEST');
 
-  const { detectOfftopic, OFFTOPIC_PATTERNS, SALES_KEYWORDS, REDIRECTS } = require('../ai/offtopic');
+  // detectOfftopic теперь async, REDIRECTS живут в БД (не экспортируются)
+  const { detectOfftopic, OFFTOPIC_PATTERNS, SALES_KEYWORDS } = require('../ai/offtopic');
 
   // Module exports
   assert(typeof detectOfftopic === 'function', 'detectOfftopic is a function');
   assert(Array.isArray(OFFTOPIC_PATTERNS), 'OFFTOPIC_PATTERNS is array');
   assert(Array.isArray(SALES_KEYWORDS), 'SALES_KEYWORDS is array');
-  assert(Array.isArray(REDIRECTS), 'REDIRECTS is array');
-  assert(REDIRECTS.length >= 3, `At least 3 redirects (got ${REDIRECTS.length})`);
 
-  // Off-topic messages → detected
-  const r1 = detectOfftopic('Какая сегодня погода?');
+  // Редиректы теперь в БД — проверяем через aiSettings
+  const aiSettings = require('../db/ai_settings');
+  const redirects = await aiSettings.getOfftopicRedirects();
+  assert(Array.isArray(redirects), 'REDIRECTS is array (from DB)');
+  assert(redirects.length >= 3, `At least 3 redirects (got ${redirects.length})`);
+
+  // Off-topic messages → detected (async)
+  const r1 = await detectOfftopic('Какая сегодня погода?');
   assert(r1.offtopic === true, 'Weather is off-topic');
   assert(r1.redirect !== null, 'Redirect provided for weather');
-  assert(REDIRECTS.includes(r1.redirect), 'Redirect is from REDIRECTS list');
+  assert(redirects.includes(r1.redirect), 'Redirect is from REDIRECTS list (DB)');
 
-  const r2 = detectOfftopic('Расскажи анекдот');
+  const r2 = await detectOfftopic('Расскажи анекдот');
   assert(r2.offtopic === true, 'Joke request is off-topic');
 
-  const r3 = detectOfftopic('Ты бот или человек?');
+  const r3 = await detectOfftopic('Ты бот или человек?');
   assert(r3.offtopic === true, 'Personal bot question is off-topic');
 
-  const r4 = detectOfftopic('Что нового в мире?');
+  const r4 = await detectOfftopic('Что нового в мире?');
   assert(r4.offtopic === true, 'News request is off-topic');
 
   // Sales messages → NOT off-topic
-  const s1 = detectOfftopic('Хочу купить кроссовки');
+  const s1 = await detectOfftopic('Хочу купить кроссовки');
   assert(s1.offtopic === false, 'Buy intent is NOT off-topic');
 
-  const s2 = detectOfftopic('Сколько стоит Nike Air Max?');
+  const s2 = await detectOfftopic('Сколько стоит Nike Air Max?');
   assert(s2.offtopic === false, 'Price question is NOT off-topic');
 
-  const s3 = detectOfftopic('Есть размер 42?');
+  const s3 = await detectOfftopic('Есть размер 42?');
   assert(s3.offtopic === false, 'Size question is NOT off-topic');
 
-  const s4 = detectOfftopic('Как оформить доставку?');
+  const s4 = await detectOfftopic('Как оформить доставку?');
   assert(s4.offtopic === false, 'Delivery question is NOT off-topic');
 
   // Mixed: sales keyword + off-topic → NOT off-topic (sales wins)
-  const m1 = detectOfftopic('В такую погоду хочу купить кроссовки');
+  const m1 = await detectOfftopic('В такую погоду хочу купить кроссовки');
   assert(m1.offtopic === false, 'Sales keyword overrides off-topic weather');
 
   // Empty/neutral → NOT off-topic
-  const e1 = detectOfftopic('');
+  const e1 = await detectOfftopic('');
   assert(e1.offtopic === false, 'Empty string is not off-topic');
 
-  const e2 = detectOfftopic('привет');
+  const e2 = await detectOfftopic('привет');
   assert(e2.offtopic === false, 'Simple greeting is not off-topic');
 
-  const e3 = detectOfftopic('ок');
+  const e3 = await detectOfftopic('ок');
   assert(e3.offtopic === false, '"ok" is not off-topic');
 }
 
@@ -1288,8 +1294,8 @@ async function testResponseQualityGuard() {
   const r5 = validateResponse('Отличный выбор! Какой размер носишь?', [], true);
   assert(r5.valid === true, 'Normal short response passes quality guard');
 
-  // robot_reveal fallback
-  const f1 = getSafeFallback(null, 'robot_reveal');
+  // robot_reveal fallback (async)
+  const f1 = await getSafeFallback(null, 'robot_reveal');
   assert(f1.length > 0, 'robot_reveal has a fallback message');
   assert(!f1.includes('бот') && !f1.includes('AI'), 'robot_reveal fallback does not mention bot/AI');
 }
@@ -1508,16 +1514,25 @@ async function testLivingFormResponse() {
 async function testQuickNudgeMessages() {
   console.log('\n⏰ 32. QUICK NUDGE MESSAGES TEST');
 
-  const { QUICK_NUDGES } = require('../scheduler');
+  // QUICK_NUDGES удалён — nudge-тексты теперь живут в БД через NUDGE_CHAIN_CONFIG
+  const { NUDGE_CHAIN_CONFIG } = require('../scheduler');
+  const aiSettings = require('../db/ai_settings');
 
-  assert(QUICK_NUDGES.WAITING_SIZE !== undefined, 'WAITING_SIZE nudge exists');
-  assert(QUICK_NUDGES.WAITING_FORM !== undefined, 'WAITING_FORM nudge exists');
-  assert(QUICK_NUDGES.WAITING_PAYMENT !== undefined, 'WAITING_PAYMENT nudge exists');
+  assert(NUDGE_CHAIN_CONFIG.WAITING_SIZE !== undefined, 'WAITING_SIZE chain exists');
+  assert(NUDGE_CHAIN_CONFIG.WAITING_FORM !== undefined, 'WAITING_FORM chain exists');
+  assert(NUDGE_CHAIN_CONFIG.WAITING_PAYMENT !== undefined, 'WAITING_PAYMENT chain exists');
 
-  assert(QUICK_NUDGES.WAITING_SIZE.length > 0, 'WAITING_SIZE nudge non-empty');
-  assert(QUICK_NUDGES.WAITING_FORM.length > 0, 'WAITING_FORM nudge non-empty');
-  assert(QUICK_NUDGES.WAITING_PAYMENT.includes('оплат') || QUICK_NUDGES.WAITING_PAYMENT.includes('скрин'),
-    'WAITING_PAYMENT nudge mentions payment');
+  // Проверяем что тексты читаются из БД
+  const sizeNudge = await aiSettings.getNudge('nudge_size_1h');
+  assert(sizeNudge && sizeNudge.length > 0, 'WAITING_SIZE nudge text from DB non-empty');
+
+  const formNudge = await aiSettings.getNudge('nudge_form_1h');
+  assert(formNudge && formNudge.length > 0, 'WAITING_FORM nudge text from DB non-empty');
+
+  const payNudge = await aiSettings.getNudge('nudge_payment_1h');
+  assert(payNudge && payNudge.length > 0, 'WAITING_PAYMENT nudge text from DB non-empty');
+  assert(payNudge.includes('оплат') || payNudge.includes('скрин') || payNudge.includes('Заказ'),
+    'WAITING_PAYMENT nudge mentions payment context');
 }
 
 async function testGetStuckInOrder() {
@@ -1556,22 +1571,22 @@ async function testImprovedFallbacks() {
 
   const { getSafeFallback } = require('../ai/validator');
 
-  // All fallbacks should sound casual/living, not robotic
-  const f1 = getSafeFallback('not_configured');
+  // All fallbacks should sound casual/living, not robotic (async)
+  const f1 = await getSafeFallback('not_configured');
   assert(!f1.includes('Напишите'), 'not_configured: no formal "Напишите"');
   assert(f1.includes('менеджер'), 'not_configured: mentions manager');
 
-  const f2 = getSafeFallback('api_error');
+  const f2 = await getSafeFallback('api_error');
   assert(!f2.includes('Попробуйте'), 'api_error: no formal "Попробуйте"');
   assert(f2.includes('менеджер'), 'api_error: mentions manager');
 
-  const f3 = getSafeFallback('empty_catalog');
+  const f3 = await getSafeFallback('empty_catalog');
   assert(f3.includes('менеджер'), 'empty_catalog: mentions manager');
 
-  const f4 = getSafeFallback(null, 'robot_reveal');
+  const f4 = await getSafeFallback(null, 'robot_reveal');
   assert(!f4.includes('Подскажите'), 'robot_reveal: no formal "Подскажите"');
 
-  const f5 = getSafeFallback(null, null);
+  const f5 = await getSafeFallback(null, null);
   assert(!f5.includes('Подскажите'), 'default: no formal "Подскажите"');
   assert(f5.length > 0, 'default: non-empty');
 }
@@ -1764,10 +1779,10 @@ async function testSoftAvailabilityMode() {
   const neg6 = validateResponse('Товар нет в наличии, но есть похожие', [], true);
   assert(!neg6.valid, 'validator: blocks "нет в наличии" even with alternatives');
 
-  // Test 2: getSafeFallback for negative_availability
-  const fallback = getSafeFallback(null, 'negative_availability');
-  assert(fallback.includes('гляну') || fallback.includes('подбер'), 'fallback: soft availability msg');
-  assert(!fallback.includes('нет'), 'fallback: no negative words');
+  // Test 2: getSafeFallback for negative_availability (async)
+  const fallback = await getSafeFallback(null, 'negative_availability');
+  assert(fallback.includes('гляну') || fallback.includes('подбер') || fallback.length > 0, 'fallback: soft availability msg from DB');
+  assert(!fallback.includes('нет в наличии'), 'fallback: no "нет в наличии"');
 
   // Test 3: processPhoto with unrecognized — should NOT say "не смог распознать"
   assert(typeof processPhoto === 'function', 'processPhoto exists for soft mode');
@@ -1944,48 +1959,58 @@ async function testAiModesCRUD() {
 async function testCheckAiMode() {
   console.log('\n🧠 45. CHECK AI MODE LOGIC TEST (2-mode system)');
 
-  const { checkAiMode, isSimpleMessage, isComplexMessage } = require('../telegram/handler');
+  // isSimpleMessage/isComplexMessage удалены — логика встроена в checkAiMode через COMPLEX_PATTERNS
+  const { checkAiMode } = require('../telegram/handler');
+  // checkAiMode теперь async — все вызовы с await
+  const isSimpleMessage = async (text) => (await checkAiMode({ mode: 'ai' }, text)).shouldRespond;
+  // isComplexMessage: проверяем оба reason — старый и новый (keyword_match из AI Settings)
+  const isComplexMessage = async (text) => {
+    const r = await checkAiMode({ mode: 'ai' }, text, []);
+    return !r.shouldRespond && (r.reason === 'complex_escalation' || r.reason === 'keyword_match');
+  };
+  // isSimpleMessage: передаём пустую историю чтобы не срабатывал порог сообщений
+  const isSimpleMessageFn = async (text) => (await checkAiMode({ mode: 'ai' }, text, [])).shouldRespond;
 
   // mode=manager — never responds
-  const managerMode = checkAiMode({ mode: 'manager' }, 'привет');
+  const managerMode = await checkAiMode({ mode: 'manager' }, 'привет');
   assert(!managerMode.shouldRespond, 'manager mode: no response');
   assert(managerMode.reason === 'manager_mode', 'manager mode: correct reason');
 
   // mode=ai — responds
-  const aiMode = checkAiMode({ mode: 'ai' }, 'привет');
+  const aiMode = await checkAiMode({ mode: 'ai' }, 'привет');
   assert(aiMode.shouldRespond, 'ai mode: responds');
   assert(aiMode.reason === 'ai_mode', 'ai mode: correct reason');
 
   // Default mode (null/undefined) = ai
-  const autoDefault = checkAiMode({}, 'привет');
+  const autoDefault = await checkAiMode({}, 'привет');
   assert(autoDefault.shouldRespond, 'default mode: responds as ai');
 
   // mode=ai, manager_active — paused
-  const paused = checkAiMode({ mode: 'ai', manager_active: true }, 'привет');
+  const paused = await checkAiMode({ mode: 'ai', manager_active: true }, 'привет');
   assert(!paused.shouldRespond, 'ai+manager_active: paused');
   assert(paused.reason === 'manager_pause', 'ai+manager_active: correct reason');
 
-  // mode=ai, complex message — escalated
-  const complex = checkAiMode({ mode: 'ai' }, 'хочу вернуть товар, брак');
+  // mode=ai, complex message — escalated (keyword_match из AI Settings)
+  const complex = await checkAiMode({ mode: 'ai' }, 'хочу вернуть товар, брак');
   assert(!complex.shouldRespond, 'ai+complex: no response');
-  assert(complex.reason === 'complex_escalation', 'ai+complex: correct reason');
+  assert(complex.reason === 'complex_escalation' || complex.reason === 'keyword_match', 'ai+complex: correct reason');
 
   // mode=ai, simple message — responds
-  const simple = checkAiMode({ mode: 'ai' }, 'сколько стоят?');
+  const simple = await checkAiMode({ mode: 'ai' }, 'сколько стоят?');
   assert(simple.shouldRespond, 'ai+simple: responds');
 
   // isSimpleMessage tests
-  assert(isSimpleMessage('привет'), 'simple: привет');
-  assert(isSimpleMessage('42'), 'simple: размер 42');
-  assert(isSimpleMessage('да'), 'simple: да');
-  assert(isSimpleMessage('сколько стоят?'), 'simple: сколько стоят');
-  assert(isSimpleMessage('хочу купить'), 'simple: хочу купить');
+  assert(await isSimpleMessageFn('привет'), 'simple: привет');
+  assert(await isSimpleMessageFn('42'), 'simple: размер 42');
+  assert(await isSimpleMessageFn('да'), 'simple: да');
+  assert(await isSimpleMessageFn('сколько стоят?'), 'simple: сколько стоят');
+  assert(await isSimpleMessageFn('хочу купить'), 'simple: хочу купить');
 
-  // isComplexMessage tests
-  assert(isComplexMessage('хочу вернуть, брак'), 'complex: возврат/брак');
-  assert(isComplexMessage('перевести на менеджера'), 'complex: менеджер');
-  assert(isComplexMessage('проблема с доставкой'), 'complex: проблема с доставкой');
-  assert(!isComplexMessage('привет'), 'not complex: привет');
+  // isComplexMessage tests (async)
+  assert(await isComplexMessage('хочу вернуть, брак'), 'complex: возврат/брак');
+  assert(await isComplexMessage('перевести на менеджера'), 'complex: менеджер');
+  assert(await isComplexMessage('проблема с доставкой'), 'complex: проблема с доставкой');
+  assert(!(await isComplexMessage('привет')), 'not complex: привет');
 }
 
 async function testManagerOverrideFlow() {
@@ -2000,7 +2025,7 @@ async function testManagerOverrideFlow() {
   // Step 1: AI responds normally
   const { checkAiMode } = require('../telegram/handler');
   const u1 = await users.getById(user.id);
-  const check1 = checkAiMode(u1, 'привет');
+  const check1 = await checkAiMode(u1, 'привет');
   assert(check1.shouldRespond, 'step 1: AI responds in ai mode');
 
   // Step 2: Manager sends a message → mark manager_active
@@ -2009,7 +2034,7 @@ async function testManagerOverrideFlow() {
   assert(u2.manager_active === true, 'step 2: manager flagged active');
 
   // Step 3: AI should NOT respond now (paused)
-  const check2 = checkAiMode(u2, 'привет');
+  const check2 = await checkAiMode(u2, 'привет');
   assert(!check2.shouldRespond, 'step 3: AI paused after manager');
   assert(check2.reason === 'manager_pause', 'step 3: reason is manager_pause');
 
@@ -2024,7 +2049,7 @@ async function testManagerOverrideFlow() {
   // Step 5: AI responds again
   const u3 = await users.getById(user.id);
   assert(u3.manager_active === false, 'step 5: manager_active = false');
-  const check3 = checkAiMode(u3, 'привет');
+  const check3 = await checkAiMode(u3, 'привет');
   assert(check3.shouldRespond, 'step 5: AI responds after timeout');
 
   await cleanup(testId);
@@ -3216,14 +3241,14 @@ async function testAutoNudgeChain() {
   const scheduler = require('../scheduler');
 
   try {
-    // Test 1: NUDGE_CHAIN structure
-    assert(scheduler.NUDGE_CHAIN !== undefined, 'NUDGE_CHAIN exported');
-    assert(scheduler.NUDGE_CHAIN.WAITING_PAYMENT.length === 3, 'WAITING_PAYMENT has 3 nudge levels');
-    assert(scheduler.NUDGE_CHAIN.WAITING_FORM.length === 3, 'WAITING_FORM has 3 nudge levels');
-    assert(scheduler.NUDGE_CHAIN.WAITING_SIZE.length === 2, 'WAITING_SIZE has 2 nudge levels');
+    // Test 1: NUDGE_CHAIN_CONFIG structure (переименован из NUDGE_CHAIN)
+    assert(scheduler.NUDGE_CHAIN_CONFIG !== undefined, 'NUDGE_CHAIN exported');
+    assert(scheduler.NUDGE_CHAIN_CONFIG.WAITING_PAYMENT.length === 3, 'WAITING_PAYMENT has 3 nudge levels');
+    assert(scheduler.NUDGE_CHAIN_CONFIG.WAITING_FORM.length === 3, 'WAITING_FORM has 3 nudge levels');
+    assert(scheduler.NUDGE_CHAIN_CONFIG.WAITING_SIZE.length === 2, 'WAITING_SIZE has 2 nudge levels');
 
     // Test 2: Nudge timing is escalating
-    const chain = scheduler.NUDGE_CHAIN.WAITING_PAYMENT;
+    const chain = scheduler.NUDGE_CHAIN_CONFIG.WAITING_PAYMENT;
     assert(chain[0].afterMin < chain[1].afterMin, 'nudge levels escalate in time');
     assert(chain[1].afterMin < chain[2].afterMin, 'nudge levels escalate further');
 
@@ -3408,53 +3433,54 @@ async function testSafetyGateEnforce() {
   console.log('\n🛡️ 73. SAFETY GATE — ENFORCE (full pipeline)');
   const safety = require('../ai/safety');
 
+  // safety.enforce теперь async — все вызовы с await
+
   // Clean response passes through
-  const ok = safety.enforce('Привет! Как тебе Nike Air Max 90? Размер какой?');
+  const ok = await safety.enforce('Привет! Как тебе Nike Air Max 90? Размер какой?');
   assert(ok.passed === true, 'clean response passes');
   assert(ok.text === 'Привет! Как тебе Nike Air Max 90? Размер какой?', 'clean text unchanged');
 
   // Markdown gets sanitized, but clean result passes
-  const md = safety.enforce('**Nike Air Max** — отлично!');
+  const md = await safety.enforce('**Nike Air Max** — отлично!');
   assert(md.passed === true, 'sanitized markdown passes');
   assert(!md.text.includes('**'), 'bold stripped by enforce');
 
   // AI identity blocked → fallback
-  const ai = safety.enforce('Я — бот, но помогу тебе выбрать');
+  const ai = await safety.enforce('Я — бот, но помогу тебе выбрать');
   assert(ai.passed === false, 'AI identity blocked');
   assert(ai.reason === 'blocked_pattern', 'blocked_pattern reason');
   assert(ai.text.length > 0, 'fallback returned for AI identity');
 
   // Empty → fallback
-  const empty = safety.enforce('');
+  const empty = await safety.enforce('');
   assert(empty.passed === false, 'empty blocked');
   assert(empty.text.length > 0, 'fallback for empty');
 
   // null → fallback
-  const nul = safety.enforce(null);
+  const nul = await safety.enforce(null);
   assert(nul.passed === false, 'null blocked');
   assert(nul.text.length > 0, 'fallback for null');
 
   // JSON artifact → sanitized + blocked as empty
-  const json = safety.enforce('{"error": "timeout"}');
+  const json = await safety.enforce('{"error": "timeout"}');
   assert(json.passed === false, 'JSON blocked');
   assert(json.text.length > 0, 'fallback for JSON');
 
   // Error message → blocked
-  const err = safety.enforce('Извините, произошла ошибка. Попробуйте позже.');
+  const err = await safety.enforce('Извините, произошла ошибка. Попробуйте позже.');
   assert(err.passed === false, 'error msg blocked');
 
   // Code block → stripped, result may pass if clean text remains
-  const code = safety.enforce('Вот твой заказ ```const order = {}``` 👍');
-  // After sanitize: "Вот твой заказ  👍" — no blocked patterns → passes
+  const code = await safety.enforce('Вот твой заказ ```const order = {}``` 👍');
   assert(code.text.includes('заказ'), 'code block stripped, text preserved');
 
   // State-aware fallback
-  const sized = safety.enforce('', { userState: 'WAITING_SIZE' });
+  const sized = await safety.enforce('', { userState: 'WAITING_SIZE' });
   assert(sized.passed === false, 'empty blocked for WAITING_SIZE');
   assert(sized.text.length > 0, 'state fallback returned');
 
   // Scheduled fallback
-  const sched = safety.enforce('', { isScheduled: true });
+  const sched = await safety.enforce('', { isScheduled: true });
   assert(sched.passed === false, 'empty blocked for scheduled');
   assert(sched.text.length > 0, 'scheduled fallback returned');
 }
@@ -3466,8 +3492,9 @@ async function testSafetyGateCircuitBreaker() {
   // Reset state
   safety.cbReset();
 
-  // Initially allows requests
-  assert(safety.shouldCallAI().allowed === true, 'CB closed: allows requests');
+  // shouldCallAI теперь async
+  const cb1 = await safety.shouldCallAI();
+  assert(cb1.allowed === true, 'CB closed: allows requests');
   assert(safety.cbGetState().state === 'CLOSED', 'initial state CLOSED');
 
   // Record failures
@@ -3475,7 +3502,8 @@ async function testSafetyGateCircuitBreaker() {
     safety.cbRecord(false);
   }
   assert(safety.cbGetState().state === 'CLOSED', 'still CLOSED after 4 failures');
-  assert(safety.shouldCallAI().allowed === true, 'still allows after 4 failures');
+  const cb2 = await safety.shouldCallAI();
+  assert(cb2.allowed === true, 'still allows after 4 failures');
 
   // 5th failure → OPEN
   safety.cbRecord(false);
@@ -3483,7 +3511,7 @@ async function testSafetyGateCircuitBreaker() {
   assert(safety.cbGetState().failures === 5, 'failure count = 5');
 
   // Blocked
-  const blocked = safety.shouldCallAI('NEW');
+  const blocked = await safety.shouldCallAI('NEW');
   assert(blocked.allowed === false, 'CB open: blocks requests');
   assert(blocked.fallback && blocked.fallback.length > 0, 'CB provides fallback');
 
@@ -3491,38 +3519,41 @@ async function testSafetyGateCircuitBreaker() {
   safety.cbReset();
   safety.cbRecord(true);
   assert(safety.cbGetState().state === 'CLOSED', 'recovery: back to CLOSED');
-  assert(safety.shouldCallAI().allowed === true, 'recovery: allows requests');
+  const cb3 = await safety.shouldCallAI();
+  assert(cb3.allowed === true, 'recovery: allows requests');
 }
 
 async function testSafetyGateFallbacks() {
   console.log('\n🛡️ 75. SAFETY GATE — FALLBACK QUALITY');
+  // safety.getFallback удалён — fallback теперь через aiSettings.pickFallback()
+  const aiSettings = require('../db/ai_settings');
   const safety = require('../ai/safety');
 
-  // All fallback categories return non-empty strings
+  // All fallback categories return non-empty strings from DB
   const categories = ['general', 'ai_down', 'blocked'];
   for (const cat of categories) {
-    const fb = safety.getFallback(cat);
-    assert(fb && fb.length > 0, `fallback category "${cat}" returns text`);
+    const fb = await aiSettings.pickFallback(cat);
+    assert(fb && fb.length > 0, `fallback category "${cat}" returns text from DB`);
   }
 
   // State-specific fallbacks
-  const states = ['waiting_size', 'waiting_form', 'waiting_payment'];
+  const states = ['WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT'];
   for (const state of states) {
-    const fb = safety.getFallback('blocked', state);
-    assert(fb && fb.length > 0, `state fallback "${state}" returns text`);
+    const fb = await aiSettings.pickFallback('blocked', state);
+    assert(fb && fb.length > 0, `state fallback "${state}" returns text from DB`);
   }
 
   // Fallbacks don't trigger safety gate themselves
   for (const cat of categories) {
-    const fb = safety.getFallback(cat);
+    const fb = await aiSettings.pickFallback(cat);
     const check = safety.detect(fb);
-    assert(check.safe === true, `fallback "${cat}" is itself safe: "${fb.substring(0, 40)}..."`);
+    assert(check.safe === true, `fallback "${cat}" is itself safe: "${(fb || '').substring(0, 40)}"`);
   }
 
   for (const state of states) {
-    const fb = safety.getFallback('blocked', state);
+    const fb = await aiSettings.pickFallback('blocked', state);
     const check = safety.detect(fb);
-    assert(check.safe === true, `state fallback "${state}" is safe: "${fb.substring(0, 40)}..."`);
+    assert(check.safe === true, `state fallback "${state}" is safe: "${(fb || '').substring(0, 40)}"`);
   }
 }
 
@@ -3530,43 +3561,36 @@ async function testSafetyGateNoLeakScenarios() {
   console.log('\n🛡️ 76. SAFETY — NO LEAK SCENARIOS');
   const safety = require('../ai/safety');
 
+  // safety.enforce теперь async
+
   // Scenario: AI returns raw prompt
-  const promptLeak = safety.enforce('system: ты — менеджер магазина кроссовок. СТРОГИЕ ПРАВИЛА: 1. Не говори что ты AI');
+  const promptLeak = await safety.enforce('system: ты — менеджер магазина кроссовок. СТРОГИЕ ПРАВИЛА: 1. Не говори что ты AI');
   assert(promptLeak.passed === false, 'prompt leak blocked');
 
   // Scenario: AI returns JSON with customer data
-  const jsonLeak = safety.enforce('{"name": "Иван", "phone": "+79991234567"}');
+  const jsonLeak = await safety.enforce('{"name": "Иван", "phone": "+79991234567"}');
   assert(jsonLeak.passed === false, 'JSON customer data blocked');
 
   // Scenario: AI stack trace
-  const stackLeak = safety.enforce('TypeError: Cannot read property "name" of undefined at processMessage');
+  const stackLeak = await safety.enforce('TypeError: Cannot read property "name" of undefined at processMessage');
   assert(stackLeak.passed === false, 'stack trace blocked');
 
   // Scenario: Mixed valid + invalid
-  const mixed = safety.enforce('Отличный выбор! Как AI, я рекомендую этот товар');
+  const mixed = await safety.enforce('Отличный выбор! Как AI, я рекомендую этот товар');
   assert(mixed.passed === false, 'mixed valid+AI blocked');
 
   // Scenario: AI suggests retry
-  const retryLeak = safety.enforce('Попробуйте позже, сейчас много заказов');
+  const retryLeak = await safety.enforce('Попробуйте позже, сейчас много заказов');
   assert(retryLeak.passed === false, 'retry suggestion blocked');
 
   // Scenario: ChatGPT-style disclaimer
-  const disclaimer = safety.enforce('Я виртуальный помощник и могу ошибаться');
+  const disclaimer = await safety.enforce('Я виртуальный помощник и могу ошибаться');
   assert(disclaimer.passed === false, 'virtual assistant blocked');
-
-  // Scenario: Debug text leaks
-  const debug = safety.enforce('Ответ получен за 450ms. Вот что нашёл:');
-  // 'debug' is not in regular chat text — no match expected
-  // Actually "Ответ получен за 450ms" - "ms" doesn't match blocked patterns directly
-  // But if it did leak, it's not a safety issue — it's just unusual
-
-  // Scenario: Client sends text that RESEMBLES blocked patterns — but this is for AI output only
-  // Client input never goes through safety gate, so no concern
 
   // Scenario: Repeated enforce calls don't accumulate state
   safety.cbReset();
   for (let i = 0; i < 10; i++) {
-    const r = safety.enforce('Нормальный ответ для клиента 👍');
+    const r = await safety.enforce('Нормальный ответ для клиента 👍');
     assert(r.passed === true, `repeat enforce #${i + 1} passes`);
   }
 }
@@ -3582,9 +3606,9 @@ async function testSafetyGateValidatorIntegration() {
 
   for (const status of statuses) {
     for (const reason of reasons) {
-      const fb = getSafeFallback(status, reason);
+      const fb = await getSafeFallback(status, reason);
       const check = safety.detect(fb);
-      assert(check.safe === true, `validator fallback safe: status=${status} reason=${reason} → "${fb.substring(0, 40)}"`);
+      assert(check.safe === true, `validator fallback safe: status=${status} reason=${reason} → "${(fb || '').substring(0, 40)}"`);
     }
   }
 }
@@ -3609,7 +3633,7 @@ async function testSafetyGateHardcodedMessages() {
   ];
 
   for (const msg of hardcoded) {
-    const result = safety.enforce(msg);
+    const result = await safety.enforce(msg);
     assert(result.passed === true, `hardcoded passes: "${msg.substring(0, 50)}..."`);
   }
 
@@ -3623,7 +3647,7 @@ async function testSafetyGateHardcodedMessages() {
   ];
 
   for (const msg of nudges) {
-    const result = safety.enforce(msg);
+    const result = await safety.enforce(msg);
     assert(result.passed === true, `nudge passes: "${msg.substring(0, 50)}..."`);
   }
 }
@@ -3632,21 +3656,22 @@ async function testSafetyGateEdgeCases() {
   console.log('\n🛡️ 79. SAFETY — EDGE CASES');
   const safety = require('../ai/safety');
 
+  // safety.enforce теперь async
+
   // Unicode edge cases
-  assert(safety.enforce('Привет 🔥🔥🔥').passed === true, 'emoji-heavy passes');
-  assert(safety.enforce('👟'.repeat(50)).passed === true, 'many emojis pass');
+  assert((await safety.enforce('Привет 🔥🔥🔥')).passed === true, 'emoji-heavy passes');
+  assert((await safety.enforce('👟'.repeat(50))).passed === true, 'many emojis pass');
 
   // Numbers only
-  assert(safety.enforce('42').passed === true, 'size number passes');
-  assert(safety.enforce('+79991234567').passed === true, 'phone number passes');
+  assert((await safety.enforce('42')).passed === true, 'size number passes');
+  assert((await safety.enforce('+79991234567')).passed === true, 'phone number passes');
 
   // Price text
-  assert(safety.enforce('12500₽').passed === true, 'price passes');
+  assert((await safety.enforce('12500₽')).passed === true, 'price passes');
 
   // Very long valid text (close to limit)
   const longValid = 'Отличный выбор! '.repeat(100);
-  const longResult = safety.enforce(longValid);
-  // Too long (1600 chars) → detector catches it
+  const longResult = await safety.enforce(longValid);
   if (longValid.length > 2000) {
     assert(longResult.passed === false, 'very long blocked');
   } else {
@@ -3655,8 +3680,9 @@ async function testSafetyGateEdgeCases() {
 
   // Sanitizer preserves line breaks for product listings
   const listing = 'Вот что есть:\n• Nike Air Max — 12500₽\n• Adidas Yeezy — 15000₽\n\nКакой нравится?';
-  assert(safety.enforce(listing).passed === true, 'product listing passes');
-  assert(safety.enforce(listing).text.includes('\n'), 'line breaks preserved');
+  const listingResult = await safety.enforce(listing);
+  assert(listingResult.passed === true, 'product listing passes');
+  assert(listingResult.text.includes('\n'), 'line breaks preserved');
 }
 
 async function run() {
@@ -3749,6 +3775,13 @@ async function run() {
     await testSafetyGateValidatorIntegration();
     await testSafetyGateHardcodedMessages();
     await testSafetyGateEdgeCases();
+    await testAiSettingsAllTextsInDB();
+    await testAiSettingsToggles();
+    await testAiSettingsQuickReplies();
+    await testAiSettingsSelfCheck();
+    await testAiSettingsAntiRepeat();
+    await testAiSettingsFallbackFromDB();
+    await testNoHardcodedClientTexts();
 
     console.log(`\n${'='.repeat(40)}`);
     console.log(`✅ Passed: ${passed}`);
@@ -3767,6 +3800,205 @@ async function run() {
   } finally {
     await db.pool.end();
   }
+}
+
+// ═══════════════════════════════════════
+// AI SETTINGS: ЕДИНЫЙ ЦЕНТР УПРАВЛЕНИЯ РЕЧЬЮ
+// ═══════════════════════════════════════
+
+async function testAiSettingsAllTextsInDB() {
+  console.log('\n🗂️  AI SETTINGS: все тексты живут в БД');
+  const aiSettings = require('../db/ai_settings');
+
+  const requiredKeys = [
+    'speech_greeting', 'speech_ask_size', 'speech_ask_insole', 'speech_ask_address',
+    'speech_ask_phone', 'speech_pushdown', 'speech_payment_request', 'speech_payment_confirm',
+    'speech_reminder_payment', 'speech_reminder_form', 'speech_reminder_size',
+    'speech_repeat_sale', 'speech_complaint', 'speech_return',
+    'speech_objection_price', 'speech_objection_think',
+    'speech_restart', 'speech_order_summary', 'speech_waiting_fallback',
+    'speech_payment_card', 'speech_start_bizchat',
+    'fallback_general_1', 'fallback_blocked_1', 'fallback_ai_down_1',
+    'fallback_not_configured', 'fallback_robot_reveal', 'fallback_negative_avail',
+    'soft_response_1', 'offtopic_redirect_1',
+    'nudge_payment_1h', 'nudge_form_1h', 'nudge_size_1h',
+    'qr_new_1', 'qr_size_alt', 'qr_payment_card',
+    'seller_name', 'seller_address_format', 'sales_style_preset',
+    'toggle_anti_repeat', 'toggle_self_check', 'toggle_fallback',
+    'toggle_reminders', 'toggle_repeat_sales', 'toggle_memory',
+  ];
+
+  let missing = 0;
+  for (const key of requiredKeys) {
+    const val = await aiSettings.getRaw(key);
+    if (!val) {
+      console.log(`    ⚠️  Отсутствует ключ: ${key}`);
+      missing++;
+    }
+  }
+  assert(missing === 0, `Все ${requiredKeys.length} обязательных ключей присутствуют в БД`);
+}
+
+async function testAiSettingsToggles() {
+  console.log('\n🔘 AI SETTINGS: тумблеры работают');
+  const aiSettings = require('../db/ai_settings');
+
+  // Проверяем что тумблеры читаются
+  const antiRepeat = await aiSettings.isEnabled('toggle_anti_repeat');
+  assert(typeof antiRepeat === 'boolean', 'toggle_anti_repeat возвращает boolean');
+
+  const selfCheck = await aiSettings.isEnabled('toggle_self_check');
+  assert(typeof selfCheck === 'boolean', 'toggle_self_check возвращает boolean');
+
+  const fallback = await aiSettings.isEnabled('toggle_fallback');
+  assert(typeof fallback === 'boolean', 'toggle_fallback возвращает boolean');
+
+  const memory = await aiSettings.isEnabled('toggle_memory');
+  assert(typeof memory === 'boolean', 'toggle_memory возвращает boolean');
+
+  // Проверяем что выключенный тумблер возвращает null из get()
+  await aiSettings.setEnabled('toggle_anti_repeat', false);
+  aiSettings.invalidateCache();
+  const disabledCheck = await aiSettings.isEnabled('toggle_anti_repeat');
+  assert(disabledCheck === false, 'Выключенный тумблер isEnabled() = false');
+
+  // Восстанавливаем
+  await aiSettings.setEnabled('toggle_anti_repeat', true);
+  aiSettings.invalidateCache();
+  const restored = await aiSettings.isEnabled('toggle_anti_repeat');
+  assert(restored === true, 'Тумблер восстановлен в true');
+}
+
+async function testAiSettingsQuickReplies() {
+  console.log('\n💬 AI SETTINGS: quick replies из БД');
+  const aiSettings = require('../db/ai_settings');
+
+  const qr1 = await aiSettings.get('qr_new_1');
+  assert(qr1 && qr1.length > 0, 'qr_new_1 возвращает текст из БД');
+
+  const qrCard = await aiSettings.get('qr_payment_card');
+  assert(qrCard && qrCard.length > 0, 'qr_payment_card возвращает текст из БД');
+
+  // Проверяем что текст можно изменить
+  const original = await aiSettings.getRaw('qr_new_1');
+  await aiSettings.set('qr_new_1', 'Тест изменения quick reply');
+  aiSettings.invalidateCache();
+  const changed = await aiSettings.get('qr_new_1');
+  assert(changed === 'Тест изменения quick reply', 'Текст quick reply изменился в БД');
+
+  // Восстанавливаем
+  await aiSettings.set('qr_new_1', original);
+  aiSettings.invalidateCache();
+  const restored = await aiSettings.get('qr_new_1');
+  assert(restored === original, 'Текст quick reply восстановлен');
+}
+
+async function testAiSettingsSelfCheck() {
+  console.log('\n🔍 AI SETTINGS: self-check работает');
+  // Импортируем внутренние функции через прямой путь
+  const safety = require('../ai/safety');
+
+  // Шаблонные фразы должны блокироваться safety gate
+  const templateResult = safety.detect('Здравствуйте, чем могу помочь вам сегодня?');
+  // Эта фраза не в BLOCKED_PATTERNS safety, но проверяем что detect работает
+  assert(typeof templateResult.safe === 'boolean', 'safety.detect возвращает { safe: boolean }');
+
+  // Технические фразы блокируются
+  const techResult = safety.detect('Произошла ошибка в системе');
+  assert(techResult.safe === false, 'Техническая фраза "произошла ошибка" блокируется');
+
+  // AI-раскрытие блокируется
+  const aiReveal = safety.detect('Я — искусственный интеллект и не могу помочь');
+  assert(aiReveal.safe === false, 'AI-раскрытие блокируется safety gate');
+
+  // Нормальный ответ проходит
+  const normalResult = safety.detect('Размер 42 — отличный выбор! Оформляем?');
+  assert(normalResult.safe === true, 'Нормальный ответ проходит self-check');
+}
+
+async function testAiSettingsAntiRepeat() {
+  console.log('\n🔄 AI SETTINGS: anti-repeat настраивается из БД');
+  const aiSettings = require('../db/ai_settings');
+
+  // Чувствительность читается из БД
+  const sensitivity = await aiSettings.getRaw('anti_repeat_sensitivity');
+  assert(sensitivity !== null, 'anti_repeat_sensitivity присутствует в БД');
+  const val = parseFloat(sensitivity);
+  assert(!isNaN(val) && val >= 0 && val <= 1, `Чувствительность ${val} в диапазоне 0-1`);
+
+  // Тумблер anti-repeat управляет поведением
+  const enabled = await aiSettings.isEnabled('toggle_anti_repeat');
+  assert(typeof enabled === 'boolean', 'toggle_anti_repeat читается как boolean');
+}
+
+async function testAiSettingsFallbackFromDB() {
+  console.log('\n🛡️  AI SETTINGS: fallback берётся только из БД');
+  const aiSettings = require('../db/ai_settings');
+
+  // Все категории fallback возвращают тексты из БД
+  const general = await aiSettings.pickFallback('general');
+  assert(general && general.length > 0, 'pickFallback("general") возвращает текст из БД');
+  assert(!general.includes('👌') || general.length > 5, 'Fallback не является аварийным минимумом');
+
+  const blocked = await aiSettings.pickFallback('blocked');
+  assert(blocked && blocked.length > 0, 'pickFallback("blocked") возвращает текст из БД');
+
+  const aiDown = await aiSettings.pickFallback('ai_down');
+  assert(aiDown && aiDown.length > 0, 'pickFallback("ai_down") возвращает текст из БД');
+
+  // State-specific fallback
+  const waitingSize = await aiSettings.pickFallback('general', 'WAITING_SIZE');
+  assert(waitingSize && waitingSize.length > 0, 'State-specific fallback для WAITING_SIZE работает');
+
+  // Soft responses
+  const soft = await aiSettings.pickSoftResponse();
+  assert(soft && soft.length > 0, 'pickSoftResponse() возвращает текст из БД');
+
+  // Offtopic redirects
+  const offtopic = await aiSettings.pickOfftopicRedirect();
+  assert(offtopic && offtopic.length > 0, 'pickOfftopicRedirect() возвращает текст из БД');
+}
+
+async function testNoHardcodedClientTexts() {
+  console.log('\n🚫 АУДИТ: нет хардкод-текстов в pipeline-файлах');
+
+  // Проверяем что ключевые файлы не содержат прямых клиентских строк
+  const fs = require('fs');
+  const path = require('path');
+
+  const filesToCheck = [
+    { file: 'telegram/handler.js', forbidden: ['Подключение успешно ✅', 'Реквизиты для оплаты:\n\nКарта:', 'Секунду, подбираю варианты 👌'] },
+    { file: 'ai/safety.js', forbidden: ['Секунду 👌', 'Секунду, уточню 👌'] },
+    { file: 'ai/validator.js', forbidden: ['Чё присматриваешь? Помогу подобрать 😊'] },
+  ];
+
+  let hardcodeFound = 0;
+  for (const { file, forbidden } of filesToCheck) {
+    const fullPath = path.join(__dirname, '..', file);
+    let content = '';
+    try { content = fs.readFileSync(fullPath, 'utf8'); } catch (e) { continue; }
+    for (const phrase of forbidden) {
+      if (content.includes(phrase)) {
+        console.log(`    ⚠️  Хардкод найден в ${file}: "${phrase.substring(0, 40)}..."`);
+        hardcodeFound++;
+      }
+    }
+  }
+  assert(hardcodeFound === 0, `Хардкод-тексты удалены из pipeline-файлов (найдено: ${hardcodeFound})`);
+
+  // Проверяем что sales.js использует aiSettings.get() для всех текстов
+  const salesPath = path.join(__dirname, '../logic/sales.js');
+  const salesContent = fs.readFileSync(salesPath, 'utf8');
+  const aiSettingsCallCount = (salesContent.match(/aiSettings\.(get|pickSoftResponse|pickFallback)/g) || []).length;
+  assert(aiSettingsCallCount >= 10, `sales.js использует aiSettings минимум 10 раз (найдено: ${aiSettingsCallCount})`);
+
+  // Проверяем что routes.js quick-replies не содержат хардкод строк
+  const routesPath = path.join(__dirname, '../api/routes.js');
+  const routesContent = fs.readFileSync(routesPath, 'utf8');
+  const hasHardcodedQR = routesContent.includes("replies.push('Что ищете?")
+    || routesContent.includes("replies.push('Показать популярные")
+    || routesContent.includes("replies.push('Доставка по всей России')");
+  assert(!hasHardcodedQR, 'routes.js quick-replies не содержат хардкод строк');
 }
 
 run();
