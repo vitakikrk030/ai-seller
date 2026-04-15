@@ -5,91 +5,8 @@ import { api } from '../lib/api';
 
 // ─── Presets 2.0 ───────────────────────────────────────────────────────────
 
-const PRESETS = {
-  closer: {
-    label: '🔥 Closer (Продажа без трения)',
-    description: 'AI всегда подтверждает наличие и ведёт к оплате. Максимальная конверсия для перекупа.',
-    changes: ['Стиль → Closer', 'Дожим → Вкл', 'Напоминания → Вкл', 'Длина → Коротко'],
-    keys: {
-      sales_style_preset: 'closer',
-      seller_msg_length: 'коротко',
-      toggle_pushdown: true,
-      toggle_reminders: true,
-      toggle_upsell: false,
-      toggle_anti_repeat: true,
-      closer_mode_enabled: true,
-    },
-  },
-  max_sales: {
-    label: 'Максимум продаж',
-    description: 'Агрессивный дожим, напоминания, upsell. Лучше для товаров до 3000 руб.',
-    changes: ['Стиль → Напористый', 'Дожим → Вкл', 'Напоминания → Вкл', 'Upsell → Вкл', 'Длина → Коротко'],
-    keys: {
-      sales_style_preset: 'aggressive',
-      seller_msg_length: 'коротко',
-      toggle_pushdown: true,
-      toggle_reminders: true,
-      toggle_upsell: true,
-      toggle_anti_repeat: true,
-      closer_mode_enabled: false,
-    },
-  },
-  soft_seller: {
-    label: 'Мягкий продавец',
-    description: 'Помогает выбрать, не давит. Подходит для сложных или дорогих товаров.',
-    changes: ['Стиль → Дружелюбный', 'Дожим → Выкл', 'Напоминания → Вкл', 'Upsell → Выкл', 'Длина → Средне'],
-    keys: {
-      sales_style_preset: 'friendly',
-      seller_msg_length: 'средне',
-      toggle_pushdown: false,
-      toggle_reminders: true,
-      toggle_upsell: false,
-      toggle_anti_repeat: true,
-      closer_mode_enabled: false,
-    },
-  },
-  premium: {
-    label: 'Премиум',
-    description: 'Эксклюзивный стиль, VIP обращение. Для люксовых товаров.',
-    changes: ['Стиль → Премиум', 'Дожим → Выкл', 'Напоминания → Выкл', 'Upsell → Вкл', 'Длина → Средне'],
-    keys: {
-      sales_style_preset: 'premium',
-      seller_msg_length: 'средне',
-      toggle_pushdown: false,
-      toggle_reminders: false,
-      toggle_upsell: true,
-      toggle_anti_repeat: true,
-      closer_mode_enabled: false,
-    },
-  },
-};
-
-// ─── Conflict rules (6+) ───────────────────────────────────────────────────
-
+// Closer — единственный режим
 const CONFLICTS = [
-  {
-    check: (v) => v['sales_style_preset'] === 'aggressive' && v['seller_msg_length'] === 'подробно',
-    message: 'Агрессивный дожим + длинные сообщения снижают конверсию.',
-    fix: 'Установить длину "коротко"',
-    fixKey: 'seller_msg_length', fixVal: 'коротко',
-  },
-  {
-    check: (v) => v['toggle_memory'] === 'false' && v['sales_style_preset'] === 'premium',
-    message: 'Память выключена — персонализация VIP-клиентов не работает.',
-    fix: 'Включить память',
-    fixKey: 'toggle_memory', fixVal: true, fixField: 'enabled',
-  },
-  {
-    check: (v) => v['sales_style_preset'] === 'aggressive' && v['toggle_pushdown'] === 'false',
-    message: 'Агрессивный стиль без дожима — стратегия неполная.',
-    fix: 'Включить дожим',
-    fixKey: 'toggle_pushdown', fixVal: true, fixField: 'enabled',
-  },
-  {
-    check: (v) => v['toggle_upsell'] === 'true' && v['sales_style_preset'] === 'friendly',
-    message: 'Upsell при мягком стиле может отпугнуть клиента.',
-    fix: null,
-  },
   {
     check: (v) => v['toggle_reminders'] === 'true' && v['toggle_anti_repeat'] === 'false',
     message: 'Напоминания без защиты от повторов — клиент получит одинаковые сообщения.',
@@ -120,7 +37,6 @@ export default function AISettingsView() {
   const [fieldStatus, setFieldStatus] = useState({}); // key → 'saving'|'saved'|'error'
   const [conflicts, setConflicts] = useState([]);
   const [history, setHistory] = useState([]); // undo stack, max 5
-  const [presetConfirm, setPresetConfirm] = useState(null); // presetKey pending confirm
   const [activeSection, setActiveSection] = useState('persona');
   const debounceRef = useRef({});
 
@@ -241,22 +157,6 @@ export default function AISettingsView() {
     api.bulkUpdateAiSettings(entries).catch(() => {});
   }
 
-  async function applyPreset(presetKey) {
-    const preset = PRESETS[presetKey];
-    // push undo snapshot
-    setHistory(h => [JSON.parse(JSON.stringify(settings)), ...h].slice(0, 5));
-    setPresetConfirm(null);
-    try {
-      const entries = Object.entries(preset.keys).map(([key, value]) =>
-        typeof value === 'boolean' ? { key, enabled: value } : { key, value }
-      );
-      await api.bulkUpdateAiSettings(entries);
-      await load();
-    } catch (e) {
-      // silent
-    }
-  }
-
   const SECTIONS = [
     { id: 'behavior', label: 'Поведение AI' },
     { id: 'persona', label: 'Персона' },
@@ -271,14 +171,7 @@ export default function AISettingsView() {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Загрузка...</div>;
   }
 
-  // Preset context — which keys belong to the active preset
-  const currentStyle = getValue('sales_style_preset');
-  const activePresetKey = Object.entries(PRESETS).find(([, p]) => p.keys.sales_style_preset === currentStyle)?.[0] ?? null;
-  const presetContext = activePresetKey
-    ? { key: activePresetKey, label: PRESETS[activePresetKey].label, keys: new Set(Object.keys(PRESETS[activePresetKey].keys)) }
-    : null;
-
-  const sharedProps = { getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus, presetContext };
+  const sharedProps = { getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus };
 
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -332,17 +225,8 @@ export default function AISettingsView() {
           </div>
         )}
 
-        {/* Preset confirm modal */}
-        {presetConfirm && (
-          <PresetConfirmModal
-            preset={PRESETS[presetConfirm]}
-            onConfirm={() => applyPreset(presetConfirm)}
-            onCancel={() => setPresetConfirm(null)}
-          />
-        )}
-
         {activeSection === 'behavior' && <BehaviorSection />}
-        {activeSection === 'persona' && <PersonaSection {...sharedProps} onPreset={setPresetConfirm} />}
+        {activeSection === 'persona' && <PersonaSection {...sharedProps} />}
         {activeSection === 'sales' && <SalesSection {...sharedProps} />}
         {activeSection === 'automation' && <AutomationSection {...sharedProps} />}
         {activeSection === 'schedule' && <ScheduleSection {...sharedProps} />}
@@ -355,61 +239,14 @@ export default function AISettingsView() {
 
 // ─── Preset confirm modal ──────────────────────────────────────────────────
 
-function PresetConfirmModal({ preset, onConfirm, onCancel }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14, padding: 28, maxWidth: 400, width: '90%' }}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Применить пресет «{preset.label}»?</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>{preset.description}</div>
-        <div style={{ marginBottom: 20 }}>
-          {preset.changes.map((ch, i) => (
-            <div key={i} style={{ fontSize: 12, padding: '3px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent,#6366f1)', display: 'inline-block', flexShrink: 0 }} />
-              {ch}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onConfirm} style={{ flex: 1, padding: '9px 0', background: 'var(--accent,#6366f1)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Применить</button>
-          <button onClick={onCancel} style={{ flex: 1, padding: '9px 0', background: 'none', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Отмена</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 // ─── Reusable UI ──────────────────────────────────────────────────────────
 
-// ─── PresetBadge — shown on fields owned by active preset ─────────────────
-
-function PresetBadge({ presetContext, fieldKey }) {
-  const [show, setShow] = useState(false);
-  if (!presetContext || !presetContext.keys.has(fieldKey)) return null;
-  return (
-    <span style={{ position: 'relative', display: 'inline-flex', marginLeft: 6 }}
-      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, color: 'var(--accent,#6366f1)', background: 'rgba(99,102,241,0.1)', borderRadius: 999, padding: '2px 7px', cursor: 'default' }}>
-        <svg width="7" height="7" viewBox="0 0 8 8" fill="none"><path d="M1 4l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        Пресет
-      </span>
-      {show && (
-        <div style={{ position: 'absolute', bottom: '120%', left: '50%', transform: 'translateX(-50%)', background: '#1e1e2e', color: '#fff', fontSize: 11, padding: '5px 9px', borderRadius: 7, whiteSpace: 'nowrap', zIndex: 100, pointerEvents: 'none' }}>
-          Изменено пресетом «{presetContext.label}»
-        </div>
-      )}
-    </span>
-  );
-}
-
-function Card({ children, style, presetKey, presetContext }) {
-  const isPreset = presetKey && presetContext?.keys.has(presetKey);
+function Card({ children, style }) {
   return (
     <div style={{
       padding: 20,
       background: 'var(--card-bg, var(--bg-secondary))',
-      border: isPreset ? '1px solid rgba(99,102,241,0.35)' : '1px solid var(--border)',
-      borderLeft: isPreset ? '3px solid var(--accent,#6366f1)' : '1px solid var(--border)',
+      border: '1px solid var(--border)',
       borderRadius: 12,
       marginBottom: 16,
       ...style,
@@ -577,59 +414,12 @@ function BehaviorSection() {
   );
 }
 
-function PersonaSection({ getValue, saveKey, saveKeyDebounced, fieldStatus, onPreset, presetContext }) {
+function PersonaSection({ getValue, saveKey, saveKeyDebounced, fieldStatus }) {
   const [localName, setLocalName] = useState(getValue('seller_name') || '');
-  const [hoveredPreset, setHoveredPreset] = useState(null);
   useEffect(() => { setLocalName(getValue('seller_name') || ''); }, [getValue('seller_name')]);
-
-  const currentStyle = getValue('sales_style_preset');
-  const activePresetKey = Object.entries(PRESETS).find(([, p]) => p.keys.sales_style_preset === currentStyle)?.[0] ?? null;
 
   return (
     <div>
-      <Card>
-        <Label tooltip="Один клик — все настройки применятся сразу. Можно отменить кнопкой вверху.">Быстрый старт</Label>
-        <Hint>Выбери готовый стиль продавца</Hint>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {Object.entries(PRESETS).map(([key, preset]) => {
-            const isActive = activePresetKey === key;
-            const isHover = hoveredPreset === key;
-            return (
-              <button
-                key={key}
-                onClick={() => onPreset(key)}
-                onMouseEnter={() => setHoveredPreset(key)}
-                onMouseLeave={() => setHoveredPreset(null)}
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  border: isActive ? '2px solid var(--accent,#6366f1)' : isHover ? '2px solid rgba(99,102,241,0.4)' : '2px solid var(--border)',
-                  background: isActive ? 'rgba(99,102,241,0.07)' : isHover ? 'rgba(99,102,241,0.03)' : 'var(--bg)',
-                  boxShadow: isActive ? '0 0 0 3px rgba(99,102,241,0.1)' : 'none',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  textAlign: 'left',
-                  minWidth: 140,
-                  transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
-                  position: 'relative',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, color: isActive ? 'var(--accent,#6366f1)' : 'var(--text)' }}>{preset.label}</span>
-                  {isActive && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, color: 'var(--accent,#6366f1)', background: 'rgba(99,102,241,0.12)', borderRadius: 999, padding: '2px 7px' }}>
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 4l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                      Активно
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{preset.description}</div>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-
       <Card>
         <Label tooltip="Имя используется в подписи и в промпте AI">Имя продавца</Label>
         <Hint>Пример: Анна, Алексей, Менеджер</Hint>
@@ -656,12 +446,11 @@ function PersonaSection({ getValue, saveKey, saveKeyDebounced, fieldStatus, onPr
         </div>
       </Card>
 
-      <Card presetKey="sales_style_preset" presetContext={presetContext}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <Label tooltip="Определяет общий тон всех сообщений AI">Стиль общения</Label>
-          <PresetBadge presetContext={presetContext} fieldKey="sales_style_preset" />
+      <Card>
+        <Label tooltip="Режим AI — Closer (продажа без трения). Всегда активен.">Режим AI</Label>
+        <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(99,102,241,0.07)', border: '1.5px solid var(--accent,#6366f1)', fontSize: 13, color: 'var(--accent,#6366f1)', fontWeight: 600 }}>
+          🔥 Closer — активен
         </div>
-        <Select value={getValue('sales_style_preset')} onChange={v => saveKey('sales_style_preset', 'value', v)} options={[{ value: 'friendly', label: 'Дружелюбный' }, { value: 'confident', label: 'Уверенный' }, { value: 'aggressive', label: 'Напористый' }, { value: 'premium', label: 'Премиум' }, { value: 'closer', label: 'Closer (Продажа без трения)' }]} fieldKey="sales_style_preset" fieldStatus={fieldStatus} />
       </Card>
     </div>
   );
@@ -669,7 +458,7 @@ function PersonaSection({ getValue, saveKey, saveKeyDebounced, fieldStatus, onPr
 
 // ─── 2. Продажи ────────────────────────────────────────────────────────────
 
-function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus, presetContext }) {
+function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus }) {
   const [pushText, setPushText] = useState(getValue('speech_pushdown') || '');
   const [upsellText, setUpsellText] = useState(getValue('upsell_hint') || '');
   useEffect(() => { setPushText(getValue('speech_pushdown') || ''); }, [getValue('speech_pushdown')]);
@@ -677,14 +466,11 @@ function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldSt
 
   return (
     <div>
-      <Card presetKey="toggle_pushdown" presetContext={presetContext}>
+      <Card>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div>
-              <Label tooltip="AI отправит фразу дожима если клиент долго не отвечает на предложение">Дожим клиента</Label>
-              <Hint>Напоминает о незавершённом заказе</Hint>
-            </div>
-            <PresetBadge presetContext={presetContext} fieldKey="toggle_pushdown" />
+          <div>
+            <Label tooltip="AI отправит фразу дожима если клиент долго не отвечает на предложение">Дожим клиента</Label>
+            <Hint>Напоминает о незавершённом заказе</Hint>
           </div>
           <Toggle value={getEnabled('toggle_pushdown')} onChange={() => saveKey('toggle_pushdown', 'enabled', !getEnabled('toggle_pushdown'))} fieldKey="toggle_pushdown" fieldStatus={fieldStatus} />
         </div>
@@ -696,14 +482,11 @@ function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldSt
         )}
       </Card>
 
-      <Card presetKey="toggle_reminders" presetContext={presetContext}>
+      <Card>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div>
-              <Label tooltip="Отправляет напоминания через 1ч, 24ч и 3 дня если клиент замолчал">Автонапоминания</Label>
-              <Hint>Пишет сам если клиент не отвечает</Hint>
-            </div>
-            <PresetBadge presetContext={presetContext} fieldKey="toggle_reminders" />
+          <div>
+            <Label tooltip="Отправляет напоминания через 1ч, 24ч и 3 дня если клиент замолчал">Автонапоминания</Label>
+            <Hint>Пишет сам если клиент не отвечает</Hint>
           </div>
           <Toggle value={getEnabled('toggle_reminders')} onChange={() => saveKey('toggle_reminders', 'enabled', !getEnabled('toggle_reminders'))} fieldKey="toggle_reminders" fieldStatus={fieldStatus} />
         </div>
@@ -719,14 +502,11 @@ function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldSt
         )}
       </Card>
 
-      <Card presetKey="toggle_upsell" presetContext={presetContext}>
+      <Card>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div>
-              <Label tooltip="Если клиент смотрит дешёвый товар — AI предложит более дорогой вариант">Предлагать дороже (Upsell)</Label>
-              <Hint>Увеличивает средний чек</Hint>
-            </div>
-            <PresetBadge presetContext={presetContext} fieldKey="toggle_upsell" />
+          <div>
+            <Label tooltip="Если клиент смотрит дешёвый товар — AI предложит более дорогой вариант">Предлагать дороже (Upsell)</Label>
+            <Hint>Увеличивает средний чек</Hint>
           </div>
           <Toggle value={getEnabled('toggle_upsell')} onChange={() => saveKey('toggle_upsell', 'enabled', !getEnabled('toggle_upsell'))} fieldKey="toggle_upsell" fieldStatus={fieldStatus} />
         </div>
@@ -753,7 +533,7 @@ function SalesSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldSt
 
 // ─── 3. Автоматика ─────────────────────────────────────────────────────────
 
-function AutomationSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus, presetContext }) {
+function AutomationSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fieldStatus }) {
   const [keywords, setKeywords] = useState(getValue('manager_threshold_keywords') || '');
   useEffect(() => { setKeywords(getValue('manager_threshold_keywords') || ''); }, [getValue('manager_threshold_keywords')]);
 
@@ -775,11 +555,8 @@ function AutomationSection({ getValue, getEnabled, saveKey, saveKeyDebounced, fi
         </div>
       </Card>
 
-      <Card presetKey="toggle_anti_repeat" presetContext={presetContext}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <Label tooltip="Сравнивает новый ответ с предыдущими — блокирует если слишком похожи">Защита от повторов</Label>
-          <PresetBadge presetContext={presetContext} fieldKey="toggle_anti_repeat" />
-        </div>
+      <Card>
+        <Label tooltip="Сравнивает новый ответ с предыдущими — блокирует если слишком похожи">Защита от повторов</Label>
         <Hint>AI не пишет одно и то же дважды подряд</Hint>
         <Toggle value={getEnabled('toggle_anti_repeat')} onChange={() => saveKey('toggle_anti_repeat', 'enabled', !getEnabled('toggle_anti_repeat'))} label={getEnabled('toggle_anti_repeat') ? 'Включено' : 'Выключено'} fieldKey="toggle_anti_repeat" fieldStatus={fieldStatus} />
       </Card>
