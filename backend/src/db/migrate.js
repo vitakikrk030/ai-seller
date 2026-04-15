@@ -752,6 +752,13 @@ INSERT INTO settings (key, value) VALUES
   ('secondary_ai_model', '')
 ON CONFLICT (key) DO NOTHING;
     `);
+    await pool.query(`
+INSERT INTO ai_speech_settings (key, label, description, value, type, category, enabled, sort_order) VALUES
+('closer_pressure_level', 'Уровень давления (1–5)', 'Насколько агрессивно AI закрывает клиента. 1 = мягко, 5 = максимально', '3', 'text', 'closer', true, 1),
+('closer_message_length', 'Длина сообщений', 'Длина ответов AI: short / medium / long', 'short', 'text', 'closer', true, 2),
+('closer_initiative', 'Инициатива', 'Насколько активно AI предлагает следующий шаг: low / medium / high', 'high', 'text', 'closer', true, 3)
+ON CONFLICT (key) DO NOTHING;
+    `);
     console.log('Migration completed successfully');
   } catch (err) {
     console.error('Migration failed:', err.message);

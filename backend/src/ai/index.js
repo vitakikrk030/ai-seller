@@ -2,32 +2,6 @@ const aiClient = require('./client');
 const messages = require('../db/messages');
 const memory = require('../db/memory');
 const aiSettings = require('../db/ai_settings');
-const safety = require('./safety');
-
-// ═══════════════════════════════════════
-// CLOSER PROMPT — единственный режим
-// ═══════════════════════════════════════
-const CLOSER_PROMPT = `Ты продавец кроссовок (closer).
-
-Правила:
-- всегда ведёшь к покупке
-- не задаёшь лишних вопросов
-- если клиент выбрал товар → сразу оформляешь
-- не говоришь про менеджера
-- не передаёшь диалог
-
-Ты:
-- подтверждаешь наличие
-- называешь цену
-- ведёшь к оплате
-
-Отвечай коротко, уверенно, по делу.
-
-Цель — закрыть клиента.
-
-ЗАПРЕЩЕНО: упоминать менеджера, оператора, поддержку, передачу диалога.
-ЗАПРЕЩЕНО: говорить "уточню", "проверю", "к сожалению нет".
-ЗАПРЕЩЕНО: задавать вопрос о размере если размер уже назван.`;
 
 // SSE broadcast — lazy require to avoid circular dependency
 function _broadcastAI(event, data) {
@@ -37,22 +11,82 @@ function _broadcastAI(event, data) {
   } catch {}
 }
 
+// ═══════════════════════════════════════
+// BUILD PROMPT — из настроек БД
+// ═══════════════════════════════════════
+
+const PRESSURE_HINTS = {
+  1: 'Будь мягким и ненавязчивым. Предлагай, но не дави.',
+  2: 'Будь дружелюбным и уверенным. Мягко направляй к покупке.',
+  3: 'Уверенно веди к покупке. Используй дефицит умеренно.',
+  4: 'Активно закрывай. Создавай срочность. Прямые вопросы.',
+  5: 'Максимальное давление. Каждое сообщение = шаг к оплате. Дефицит, срочность, прямые вопросы.',
+};
+
+const LENGTH_HINTS = {
+  short: '1–2 предложения максимум.',
+  medium: '2–4 предложения.',
+  long: '4+ предложений, можно подробно.',
+};
+
+const INITIATIVE_HINTS = {
+  low: 'Отвечай на вопросы, не предлагай следующий шаг первым.',
+  medium: 'Иногда предлагай следующий шаг.',
+  high: 'Всегда заканчивай предложением следующего шага или вопросом.',
+};
+
+async function buildPrompt(user) {
+  // Кастомный промпт из БД
+  const customHint = await aiSettings.get('style_closer_hint').catch(() => null);
+
+  // Параметры Closer
+  const pressureRaw = await aiSettings.getRaw('closer_pressure_level').catch(() => '3');
+  const lengthRaw = await aiSettings.getRaw('closer_message_length').catch(() => 'short');
+  const initiativeRaw = await aiSettings.getRaw('closer_initiative').catch(() => 'high');
+
+  const pressure = Math.min(5, Math.max(1, parseInt(pressureRaw) || 3));
+  const length = ['short', 'medium', 'long'].includes(lengthRaw) ? lengthRaw : 'short';
+  const initiative = ['low', 'medium', 'high'].includes(initiativeRaw) ? initiativeRaw : 'high';
+
+  if (customHint) {
+    // Кастомный промпт + параметры поверх
+    return `${customHint}
+
+ДАВЛЕНИЕ: ${PRESSURE_HINTS[pressure]}
+ДЛИНА: ${LENGTH_HINTS[length]}
+ИНИЦИАТИВА: ${INITIATIVE_HINTS[initiative]}`;
+  }
+
+  // Дефолтный Closer prompt с параметрами
+  return `Ты продавец кроссовок (closer).
+
+Правила:
+- всегда ведёшь к покупке
+- не задаёшь лишних вопросов
+- если клиент выбрал товар → сразу оформляешь
+- не говоришь про менеджера
+- не передаёшь диалог
+- подтверждаешь наличие
+- называешь цену
+- ведёшь к оплате
+
+ЗАПРЕЩЕНО: упоминать менеджера, оператора, поддержку, передачу диалога.
+ЗАПРЕЩЕНО: говорить "уточню", "проверю", "к сожалению нет".
+ЗАПРЕЩЕНО: задавать вопрос о размере если размер уже назван.
+
+ДАВЛЕНИЕ: ${PRESSURE_HINTS[pressure]}
+ДЛИНА: ${LENGTH_HINTS[length]}
+ИНИЦИАТИВА: ${INITIATIVE_HINTS[initiative]}`;
+}
+
 /**
  * Генерация ответа — только Closer режим.
- * @param {object} user
- * @param {string} userMessage
- * @param {object} opts
- * @param {string|null} opts.productContext — текст каталога для AI
- * @param {boolean} opts.catalogAvailable
- * @param {string|null} opts.scenario — сценарий реактивации
  */
 async function generateResponse(user, userMessage, { productContext, catalogAvailable, scenario } = {}) {
   _broadcastAI('ai_typing', { userId: user.id, typing: true });
 
   try {
-    // Кастомный промпт из БД (если задан) — иначе дефолтный CLOSER_PROMPT
-    const customPrompt = await aiSettings.get('style_closer_hint').catch(() => null);
-    const systemBase = customPrompt || CLOSER_PROMPT;
+    const systemBase = await buildPrompt(user);
 
     // Память клиента
     const customerMemory = await memory.get(user.id).catch(() => null);
@@ -85,7 +119,6 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
       })),
     ];
 
-    // Добавляем текущее сообщение если его нет в истории
     const lastMsg = chatMessages[chatMessages.length - 1];
     if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== userMessage) {
       chatMessages.push({ role: 'user', content: userMessage });
@@ -118,7 +151,6 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
       }
     }
 
-    // Fallback из БД
     const fallback = await aiSettings.pickFallback('general').catch(() => null);
     _broadcastAI('ai_typing', { userId: user.id, typing: false });
     return fallback || 'Сек, сейчас отвечу 👌';

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 
 // ─── Reusable UI ──────────────────────────────────────────────────────────
@@ -194,10 +194,125 @@ function PaymentSection() {
   );
 }
 
+// ─── Настройка Closer ─────────────────────────────────────────────────────
+
+function CloserSection() {
+  const [vals, setVals] = useState({
+    closer_pressure_level: '3',
+    closer_message_length: 'short',
+    closer_initiative: 'high',
+    style_closer_hint: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.getAiSettings().then(data => {
+      const find = (key, def) => {
+        const item = (data || []).find(d => d.key === key);
+        return item?.value || def;
+      };
+      setVals({
+        closer_pressure_level: find('closer_pressure_level', '3'),
+        closer_message_length: find('closer_message_length', 'short'),
+        closer_initiative: find('closer_initiative', 'high'),
+        style_closer_hint: find('style_closer_hint', ''),
+      });
+    }).catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.bulkUpdateAiSettings([
+        { key: 'closer_pressure_level', value: vals.closer_pressure_level },
+        { key: 'closer_message_length', value: vals.closer_message_length },
+        { key: 'closer_initiative', value: vals.closer_initiative },
+        { key: 'style_closer_hint', value: vals.style_closer_hint },
+      ]);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+    setSaving(false);
+  }
+
+  const pressure = parseInt(vals.closer_pressure_level) || 3;
+
+  return (
+    <div>
+      <Card>
+        <Label tooltip="1 = мягко, 5 = максимальное давление">Уровень давления: {pressure}/5</Label>
+        <Hint>Насколько агрессивно AI закрывает клиента</Hint>
+        <input
+          type="range" min="1" max="5" step="1"
+          value={pressure}
+          onChange={e => setVals(v => ({ ...v, closer_pressure_level: e.target.value }))}
+          style={{ width: '100%', accentColor: 'var(--accent,#6366f1)', cursor: 'pointer' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
+          <span>Мягко</span><span>Умеренно</span><span>Максимум</span>
+        </div>
+      </Card>
+
+      <Card>
+        <Label>Длина сообщений</Label>
+        <Hint>Насколько подробно отвечает AI</Hint>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['short', 'Коротко', '1–2 предл.'], ['medium', 'Средне', '2–4 предл.'], ['long', 'Подробно', '4+ предл.']].map(([val, label, hint]) => {
+            const active = vals.closer_message_length === val;
+            return (
+              <button key={val} onClick={() => setVals(v => ({ ...v, closer_message_length: val }))} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: `2px solid ${active ? 'var(--accent,#6366f1)' : 'var(--border)'}`, background: active ? 'rgba(99,102,241,0.08)' : 'var(--bg)', cursor: 'pointer', textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--accent,#6366f1)' : 'var(--text)' }}>{label}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <Label>Инициатива</Label>
+        <Hint>Насколько активно AI предлагает следующий шаг</Hint>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['low', 'Низкая', 'Только отвечает'], ['medium', 'Средняя', 'Иногда предлагает'], ['high', 'Высокая', 'Всегда ведёт']].map(([val, label, hint]) => {
+            const active = vals.closer_initiative === val;
+            return (
+              <button key={val} onClick={() => setVals(v => ({ ...v, closer_initiative: val }))} style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: `2px solid ${active ? 'var(--accent,#6366f1)' : 'var(--border)'}`, background: active ? 'rgba(99,102,241,0.08)' : 'var(--bg)', cursor: 'pointer', textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--accent,#6366f1)' : 'var(--text)' }}>{label}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <Label tooltip="Если заполнено — используется вместо дефолтного промпта. Параметры выше добавляются поверх.">Кастомный промпт (необязательно)</Label>
+        <Hint>Оставь пустым чтобы использовать дефолтный Closer промпт</Hint>
+        <textarea
+          value={vals.style_closer_hint}
+          onChange={e => setVals(v => ({ ...v, style_closer_hint: e.target.value }))}
+          rows={8}
+          placeholder="Ты продавец кроссовок..."
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.5 }}
+        />
+      </Card>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button onClick={save} disabled={saving} style={{ padding: '8px 18px', background: 'var(--accent,#6366f1)', color: '#fff', border: 'none', borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+          Сохранить
+        </button>
+        {saved && <span style={{ fontSize: 12, color: '#22c55e' }}>Сохранено</span>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────
 
 const SECTIONS = [
   { id: 'behavior', label: 'Поведение AI' },
+  { id: 'closer', label: 'Настройка Closer' },
   { id: 'payment', label: 'Реквизиты' },
 ];
 
@@ -232,6 +347,7 @@ export default function AISettingsView() {
           {SECTIONS.find(s => s.id === activeSection)?.label}
         </div>
         {activeSection === 'behavior' && <BehaviorSection />}
+        {activeSection === 'closer' && <CloserSection />}
         {activeSection === 'payment' && <PaymentSection />}
       </div>
     </div>
