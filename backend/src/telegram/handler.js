@@ -121,10 +121,22 @@ async function checkAiMode(user, text, msgHistory) {
     return { shouldRespond: false, reason: 'schedule', fallback: schedule.fallback };
   }
 
-  // Порог передачи менеджеру из AI Settings
+  // Порог передачи менеджеру
   const threshold = await checkManagerThreshold(user, text, msgHistory);
   if (threshold.escalate) {
-    return { shouldRespond: false, reason: threshold.reason };
+    // В Closer режиме блокируем только автоматическую эскалацию по кол-ву сообщений,
+    // но keyword_match (жалобы, возврат) всё равно эскалируем
+    if (threshold.reason === 'message_threshold') {
+      const closerActive = await aiSettings.isEnabled('closer_mode_enabled').catch(() => false)
+        || (await aiSettings.getRaw('sales_style_preset').catch(() => '')) === 'closer';
+      if (closerActive) {
+        // skip escalation — Closer handles it
+      } else {
+        return { shouldRespond: false, reason: threshold.reason };
+      }
+    } else {
+      return { shouldRespond: false, reason: threshold.reason };
+    }
   }
 
   return { shouldRespond: true, reason: 'ai_mode' };

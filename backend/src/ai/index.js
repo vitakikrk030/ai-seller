@@ -235,9 +235,14 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
   const segmentForStrategy = (orderCountForStrategy >= vipOrdersThreshold || totalSpentForStrategy >= vipAmountThreshold) ? 'vip'
     : orderCountForStrategy > 0 ? 'returning' : 'new';
 
-  const strategy = selectStrategy({ heatLevel, score: dialogScore, segment: segmentForStrategy, intent: intentResult.intent, state: user.state });
-  const strategyHint = await getStrategyHint(strategy, dialogScore);
-  systemMessage += `\n\n${strategyHint}`;
+  // В Closer режиме стратегия всегда aggressive — не добавляем consultative инструкции
+  if (!closerEnabled) {
+    const strategy = selectStrategy({ heatLevel, score: dialogScore, segment: segmentForStrategy, intent: intentResult.intent, state: user.state });
+    const strategyHint = await getStrategyHint(strategy, dialogScore);
+    systemMessage += `\n\n${strategyHint}`;
+  } else {
+    systemMessage += `\n\nСТРАТЕГИЯ: Агрессивное закрытие. Подтверди наличие, назови цену, веди к оплате. Score клиента: ${dialogScore}/100.`;
+  }
 
   // Трекаем score для аналитики
   analytics.trackEvent(user.id, 'dialog_score', { state: user.state, intent: intentResult.intent, response_key: String(dialogScore) }).catch(() => {});
@@ -296,9 +301,16 @@ async function generateResponse(user, userMessage, { productContext, catalogAvai
 
   if (scenario) systemMessage += `\nСценарий реактивации: ${scenario}`;
 
-  // Паттерны менеджера (обучение)
-  const managerPatterns = await managerLearning.getPatternsForAI(user.state).catch(() => null);
-  if (managerPatterns) systemMessage += '\n\n' + managerPatterns;
+  // Паттерны менеджера (обучение) — в Closer режиме не добавляем (могут содержать "передай менеджеру")
+  if (!closerEnabled) {
+    const managerPatterns = await managerLearning.getPatternsForAI(user.state).catch(() => null);
+    if (managerPatterns) systemMessage += '\n\n' + managerPatterns;
+  }
+
+  // Closer: жёсткий запрет на эскалацию — добавляем в конец промпта чтобы перебить всё остальное
+  if (closerEnabled) {
+    systemMessage += '\n\nКРИТИЧЕСКИ ВАЖНО (CLOSER MODE): НИКОГДА не упоминай менеджера, оператора, поддержку или передачу диалога. НИКОГДА не говори "уточню у менеджера", "менеджер подберёт", "передам специалисту". Ты сам закрываешь сделку. Всегда подтверждай наличие. Всегда веди к оплате.';
+  }
 
   if (productContext) {
     systemMessage += `\n\n--- КАТАЛОГ ТОВАРОВ С САЙТА (актуальные данные) ---\n${productContext}\n--- КОНЕЦ КАТАЛОГА ---\n\nСТРОГИЕ ПРАВИЛА:\n1. Предлагай ТОЛЬКО товары из каталога.\n2. Называй ТОЛЬКО цены из каталога.\n3. НИКОГДА не говори «нет в наличии».\n4. Если товара нет — покажи похожие.\n5. Всегда заканчивай вопросом.`;

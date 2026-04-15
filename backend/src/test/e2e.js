@@ -824,6 +824,9 @@ async function testHandlerStructuredResponse() {
   await settings.set('global_ai_enabled', 'true');
   await settings.set('auto_reply', 'true');
   await settings.set('response_delay', '0');
+  // Disable schedule so test works at any time of day
+  const aiSettings = require('../db/ai_settings');
+  await aiSettings.setEnabled('ai_schedule_enabled', false);
 
   const user = await users.findOrCreate(TG_ID, 'Handler Test', 'handlertest');
   await users.updateState(user.id, 'WAITING_FORM');
@@ -855,6 +858,7 @@ async function testHandlerStructuredResponse() {
   // Restore
   await settings.set('payment_card_number', '');
   await settings.set('payment_name', '');
+  await aiSettings.setEnabled('ai_schedule_enabled', true);
   await cleanup(TG_ID);
 }
 
@@ -1961,6 +1965,8 @@ async function testCheckAiMode() {
 
   // isSimpleMessage/isComplexMessage удалены — логика встроена в checkAiMode через COMPLEX_PATTERNS
   const { checkAiMode } = require('../telegram/handler');
+  const aiSettings45 = require('../db/ai_settings');
+  await aiSettings45.setEnabled('ai_schedule_enabled', false);
   // checkAiMode теперь async — все вызовы с await
   const isSimpleMessage = async (text) => (await checkAiMode({ mode: 'ai' }, text)).shouldRespond;
   // isComplexMessage: проверяем оба reason — старый и новый (keyword_match из AI Settings)
@@ -2011,6 +2017,7 @@ async function testCheckAiMode() {
   assert(await isComplexMessage('перевести на менеджера'), 'complex: менеджер');
   assert(await isComplexMessage('проблема с доставкой'), 'complex: проблема с доставкой');
   assert(!(await isComplexMessage('привет')), 'not complex: привет');
+  await aiSettings45.setEnabled('ai_schedule_enabled', true);
 }
 
 async function testManagerOverrideFlow() {
@@ -2021,6 +2028,10 @@ async function testManagerOverrideFlow() {
 
   const user = await users.findOrCreate(testId, 'ManagerTest', 'managertest');
   // Default mode is 'ai'
+
+  // Disable schedule so test works at any time of day
+  const aiSettings46 = require('../db/ai_settings');
+  await aiSettings46.setEnabled('ai_schedule_enabled', false);
 
   // Step 1: AI responds normally
   const { checkAiMode } = require('../telegram/handler');
@@ -2052,6 +2063,7 @@ async function testManagerOverrideFlow() {
   const check3 = await checkAiMode(u3, 'привет');
   assert(check3.shouldRespond, 'step 5: AI responds after timeout');
 
+  await aiSettings46.setEnabled('ai_schedule_enabled', true);
   await cleanup(testId);
 }
 
