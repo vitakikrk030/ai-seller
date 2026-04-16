@@ -1,81 +1,126 @@
-#!/bin/bash
-# ══════════════════════════════════════════
+#!/usr/bin/env bash
 # AI Seller — Production Deploy Script
-# ══════════════════════════════════════════
 # Usage: bash deploy.sh
-# Requirements: node, npm, pm2, pg_dump
+#
+# Default behavior:
+# 1) Sync code from origin/main
+# 2) Install deps
+# 3) Run migrations (if DATABASE_URL exists)
+# 4) Build frontend
+# 5) Restart PM2 processes
 
-set -e  # Exit on any error
+set -Eeuo pipefail
 
-echo "🚀 Starting deployment..."
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REMOTE_NAME="${DEPLOY_REMOTE:-origin}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
-# ── 1. Check required env vars ────────────
-echo "📋 Checking environment..."
-required_vars=("DATABASE_URL" "BOT_TOKEN" "OPENROUTER_API_KEY" "JWT_SECRET" "ADMIN_PASSWORD")
-for var in "${required_vars[@]}"; do
-  if [ -z "${!var}" ]; then
-    echo "❌ ERROR: $var is not set"
+log() {
+  printf '%s\n' "$1"
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    log "❌ ERROR: required command '$1' not found"
     exit 1
   fi
-done
-echo "✅ Environment OK"
+}
 
-# ── 2. Backup database ────────────────────
-echo "💾 Backing up database..."
-BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
-pg_dump "$DATABASE_URL" > "$BACKUP_FILE" 2>/dev/null && echo "✅ Backup saved: $BACKUP_FILE" || echo "⚠️  Backup failed (continuing)"
+run_step() {
+  local title="$1"
+  log ""
+  log "➡️  ${title}"
+}
 
-# ── 3. Install dependencies ───────────────
-echo "📦 Installing backend dependencies..."
-cd backend && npm ci --production
-cd ..
+cd "$ROOT_DIR"
 
-echo "📦 Installing frontend dependencies..."
-cd frontend && npm ci
-cd ..
+log "🚀 Starting deployment in $ROOT_DIR"
 
-# ── 4. Run migrations ─────────────────────
-echo "🗄️  Running database migrations..."
-cd backend && node src/db/migrate.js
-cd ..
-echo "✅ Migrations complete"
+run_step "Checking required tools"
+require_cmd git
+require_cmd node
+require_cmd npm
+require_cmd curl
+if ! command -v pm2 >/dev/null 2>&1; then
+  log "❌ ERROR: pm2 is not installed. Install pm2 before deploy."
+  exit 1
+fi
+log "✅ Tooling OK"
 
-# ── 5. Build frontend ─────────────────────
-echo "🏗️  Building frontend..."
-cd frontend && npm run build
-cd ..
-echo "✅ Frontend built"
+run_step "Syncing latest code from ${REMOTE_NAME}/${DEPLOY_BRANCH}"
+git fetch --prune "$REMOTE_NAME" "$DEPLOY_BRANCH"
+git checkout "$DEPLOY_BRANCH"
+git reset --hard "${REMOTE_NAME}/${DEPLOY_BRANCH}"
+log "✅ Code synced to $(git rev-parse --short HEAD)"
 
-# ── 6. Create logs directory ──────────────
-mkdir -p logs
-
-# ── 7. Start/restart with PM2 ─────────────
-echo "⚙️  Starting services with PM2..."
-if pm2 list | grep -q "ai-seller-backend"; then
-  pm2 reload ecosystem.config.js --env production
-  echo "✅ Services reloaded"
+run_step "Optional database backup"
+if [[ -n "${DATABASE_URL:-}" ]] && command -v pg_dump >/dev/null 2>&1; then
+  BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
+  if pg_dump "$DATABASE_URL" > "$BACKUP_FILE" 2>/dev/null; then
+    log "✅ Backup saved: $BACKUP_FILE"
+  else
+    log "⚠️  Backup failed (continuing)"
+  fi
 else
-  pm2 start ecosystem.config.js --env production
-  pm2 save
-  echo "✅ Services started"
+  log "ℹ️  DATABASE_URL or pg_dump not found, skipping backup"
 fi
 
-# ── 8. Health check ───────────────────────
-echo "🏥 Running health check..."
-sleep 3
-if curl -sf "http://localhost:3001/api/stats" > /dev/null; then
-  echo "✅ Backend healthy"
+run_step "Installing backend dependencies"
+(cd backend && npm ci --omit=dev)
+log "✅ Backend dependencies installed"
+
+run_step "Installing frontend dependencies"
+(cd frontend && npm ci)
+log "✅ Frontend dependencies installed"
+
+run_step "Running database migrations"
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  (cd backend && npm run migrate)
+  log "✅ Migrations complete"
 else
-  echo "❌ Backend health check failed"
-  pm2 logs ai-seller-backend --lines 20
+  log "⚠️  DATABASE_URL is empty, skipping migrations"
+fi
+
+run_step "Building frontend"
+(cd frontend && npm run build)
+log "✅ Frontend build complete"
+
+run_step "Restarting PM2 apps"
+mkdir -p logs
+if pm2 startOrReload ecosystem.config.js --env production --update-env; then
+  pm2 save
+  log "✅ PM2 startOrReload successful"
+else
+  log "⚠️  startOrReload failed, trying reload/start fallback"
+  pm2 reload ecosystem.config.js --env production --update-env || pm2 start ecosystem.config.js --env production
+  pm2 save
+  log "✅ PM2 fallback restart successful"
+fi
+
+run_step "Health checks"
+sleep 3
+if curl -sf "http://localhost:3001/health" >/dev/null; then
+  log "✅ Backend health OK"
+else
+  log "❌ Backend health check failed"
+  pm2 logs ai-seller-backend --lines 30
   exit 1
 fi
 
-echo ""
-echo "════════════════════════════════════════"
-echo "✅ Deployment complete!"
-echo "   Backend:  http://localhost:3001"
-echo "   Frontend: http://localhost:3000"
-echo "   Logs:     pm2 logs"
-echo "   Status:   pm2 status"
-echo "════════════════════════════════════════"
+if curl -sf "http://localhost:3000/login" >/dev/null; then
+  log "✅ Frontend health OK"
+else
+  log "❌ Frontend health check failed"
+  pm2 logs ai-seller-frontend --lines 30
+  exit 1
+fi
+
+log ""
+log "════════════════════════════════════════"
+log "✅ Deployment complete!"
+log "   Commit:   $(git rev-parse --short HEAD)"
+log "   Branch:   $(git branch --show-current)"
+log "   Backend:  http://localhost:3001"
+log "   Frontend: http://localhost:3000"
+log "   Status:   pm2 status"
+log "════════════════════════════════════════"
