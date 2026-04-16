@@ -35,6 +35,8 @@ async function tgRequest(method, payload, retries = 2) {
 }
 
 const bot = {
+  getBotToken,
+
   async sendMessage(chatId, text, options = {}) {
     try {
       const payload = {
@@ -62,11 +64,13 @@ const bot = {
       return response.data?.result || null;
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);
-      try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed'); } catch(e) {}
+      const status = err.response?.status || null;
+      const severity = status === 401 || status === 403 ? 'critical' : 'warning';
+      try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed', severity); } catch(e) {}
       log.error('telegram.bot.sendMessage: failed', {
         chatId,
         error: err.message || 'sendMessage failed',
-        status: err.response?.status || null,
+        status,
       });
       throw err;
     }

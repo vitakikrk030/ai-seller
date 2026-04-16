@@ -151,7 +151,7 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
       }
       // Both attempts failed — log and try secondary
       await logFailure({ provider, errorType: 'request_failed', message: err.message, fallbackUsed: !!secondary });
-      try { require('../monitoring').recordError('ai', err.message || 'AI primary failed'); } catch (e) {}
+      try { require('../monitoring').recordError('ai', err.message || 'AI primary failed', 'warning'); } catch (e) {}
     }
   }
 
@@ -168,7 +168,7 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
       const provider = new URL(secondary.baseUrl).hostname;
       log.warn(`AI secondary error: ${err.message}`, { provider });
       await logFailure({ provider, errorType: 'secondary_failed', message: err.message, fallbackUsed: true });
-      try { require('../monitoring').recordError('ai', 'AI secondary failed'); } catch (e) {}
+      try { require('../monitoring').recordError('ai', 'AI secondary failed', 'warning'); } catch (e) {}
       // Notify critical — both providers down
       try { require('../monitoring').notifyCritical('ai', 'Both AI providers failed'); } catch (e) {}
     }
@@ -179,6 +179,7 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
 
   // ── DB fallback ─────────────────────────────────────────────────────────
   await logFailure({ provider: 'all', errorType: 'all_failed', message: 'All providers failed', fallbackUsed: true });
+  try { require('../monitoring').recordError('ai', 'All AI providers failed', 'critical'); } catch (e) {}
   try {
     const aiSettings = require('../db/ai_settings');
     const fallback = await aiSettings.pickFallback('general').catch(() => null);

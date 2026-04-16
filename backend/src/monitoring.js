@@ -394,7 +394,13 @@ async function checkDatabase() {
 async function checkTelegram() {
   const name = 'telegram';
   initComponent(name, { label: 'Telegram Bot API', critical: true });
-  const token = config.get('BOT_TOKEN');
+  let token = '';
+  try {
+    const settings = require('./db/settings');
+    token = (await settings.get('bot_token') || '').trim();
+  } catch (e) {
+    token = (config.get('BOT_TOKEN') || '').trim();
+  }
   if (!token) {
     setDegraded(name, 'BOT_TOKEN not configured');
     return;
@@ -409,25 +415,36 @@ async function checkTelegram() {
     }
   } catch (err) {
     const status = err.response && err.response.status;
-    if (status === 401) {
-      setDown(name, 'Invalid BOT_TOKEN (401)');
+    // Auth errors are critical, transport/provider hiccups are degraded.
+    if (status === 401 || status === 403) {
+      setDown(name, 'Invalid BOT_TOKEN (' + status + ')');
+    } else if (status === 429 || (status >= 500 && status < 600)) {
+      setDegraded(name, 'Telegram API temporary error (' + status + ')');
     } else {
-      setDown(name, err.message);
+      const code = err.code || '';
+      if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') {
+        setDegraded(name, 'Telegram API network timeout/error: ' + code);
+      } else {
+        setDegraded(name, err.message || 'Telegram check failed');
+      }
     }
   }
 }
 
-async function checkOpenRouter() {
+async function checkAI() {
   const name = 'ai';
-  initComponent(name, { label: 'OpenRouter AI', critical: true });
-  const key = config.get('OPENROUTER_API_KEY');
+  initComponent(name, { label: 'AI Provider', critical: true });
+  const { getAIConfig } = require('./ai/client');
+  const cfg = getAIConfig();
+  const key = cfg.apiKey;
   if (!key) {
     setDegraded(name, 'API key not configured');
     return;
   }
   const start = Date.now();
   try {
-    const res = await axios.get('https://openrouter.ai/api/v1/models', {
+    const baseUrl = (cfg.baseUrl || '').replace(/\/$/, '');
+    const res = await axios.get(baseUrl + '/models', {
       headers: { Authorization: 'Bearer ' + key },
       timeout: HEALTH_CHECK_TIMEOUT,
     });
@@ -442,8 +459,15 @@ async function checkOpenRouter() {
       setDown(name, 'Invalid API key');
     } else if (status === 429) {
       setDegraded(name, 'Rate limited (429)', 'warning');
+    } else if (status >= 500 && status < 600) {
+      setDegraded(name, 'Provider temporary error (' + status + ')', 'warning');
     } else {
-      setDown(name, err.message);
+      const code = err.code || '';
+      if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') {
+        setDegraded(name, 'AI provider network timeout/error: ' + code, 'warning');
+      } else {
+        setDegraded(name, err.message, 'warning');
+      }
     }
   }
 }
@@ -538,7 +562,7 @@ async function runAllChecks() {
   await Promise.allSettled([
     checkDatabase(),
     checkTelegram(),
-    checkOpenRouter(),
+    checkAI(),
     checkWebhook(),
     checkShop(),
     checkScheduler(),
@@ -556,7 +580,7 @@ async function startPeriodicChecks() {
 
   initComponent('database', { label: 'PostgreSQL', critical: true });
   initComponent('telegram', { label: 'Telegram Bot API', critical: true });
-  initComponent('ai', { label: 'OpenRouter AI', critical: true });
+  initComponent('ai', { label: 'AI Provider', critical: true });
   initComponent('webhook', { label: 'Webhook Endpoint', critical: true });
   initComponent('shop', { label: 'Shop API', critical: false });
   initComponent('scheduler', { label: 'Background Tasks', critical: false });

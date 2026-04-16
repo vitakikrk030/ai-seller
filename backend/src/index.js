@@ -107,6 +107,20 @@ async function start() {
   
   // Load DB settings (overrides .env)
   await config.loadDbSettings();
+  // One-time safety bootstrap: if DB token is empty but env token exists,
+  // migrate it into settings to prevent outbound Telegram outage after DB-only switch.
+  try {
+    const settings = require('./db/settings');
+    const dbToken = (await settings.get('bot_token') || '').trim();
+    const envToken = (process.env.BOT_TOKEN || '').trim();
+    if (!dbToken && envToken) {
+      await settings.set('bot_token', envToken);
+      await config.reloadSettings();
+      log.warn('Telegram token bootstrapped from env into DB settings (one-time compatibility migration).');
+    }
+  } catch (e) {
+    log.error('Failed to run bot_token bootstrap migration', { error: e.message });
+  }
 
   // Warn about insecure defaults (never block startup)
   const adminLogin = config.get('ADMIN_LOGIN') || config.ADMIN_LOGIN || 'admin';
