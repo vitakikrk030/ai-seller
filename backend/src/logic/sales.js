@@ -1,5 +1,4 @@
 const { processTurn } = require('../runtime/orchestrator');
-const { buildOrderContext, normalizeUserState } = require('../domain/order_service');
 
 async function processMessage(user, text, options = {}) {
   return processTurn(user, {
@@ -22,6 +21,4 @@ module.exports = {
   processMessage,
   processPhoto,
   processTurn,
-  buildOrderContext,
-  normalizeUserState,
 };

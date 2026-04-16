@@ -48,19 +48,8 @@ const users = {
         lo.size as order_size,
         lo.price as order_price,
         lo.status as order_status,
-        CASE
-          WHEN COALESCE(u."mode", 'ai') = 'manager' THEN 'manager'
-          WHEN u.manager_active = true AND u.manager_active_at IS NOT NULL
-            AND u.manager_active_at > NOW() - INTERVAL '30 minutes' THEN 'paused'
-          ELSE 'ai'
-        END as active_actor,
-        CASE
-          WHEN COALESCE(u."mode", 'ai') = 'ai' AND u.manager_active = true
-            AND u.manager_active_at IS NOT NULL
-            AND u.manager_active_at > NOW() - INTERVAL '30 minutes'
-          THEN GREATEST(0, EXTRACT(EPOCH FROM (u.manager_active_at + INTERVAL '30 minutes' - NOW())) / 60)::int
-          ELSE 0
-        END as pause_remaining,
+        'ai'::text as active_actor,
+        0::int as pause_remaining,
         CASE
           WHEN u.state = 'PAYMENT_REVIEW' THEN 110
           WHEN u.state = 'COLLECTING' THEN 100
@@ -165,55 +154,6 @@ const users = {
 
   async setAiEnabled(userId, enabled) {
     await db.query('UPDATE users SET ai_enabled = $1 WHERE id = $2', [enabled, userId]);
-  },
-
-  async setAiMode(userId, mode) {
-    // Legacy compat: map old 4-mode values to new 2-mode
-    const newMode = (mode === 'OBSERVE') ? 'manager' : 'ai';
-    const valid = ['OBSERVE', 'HYBRID', 'AUTO', 'AUTO_WITH_MANAGER_OVERRIDE'];
-    if (!valid.includes(mode)) throw new Error(`Invalid ai_mode: ${mode}`);
-    const result = await db.query(
-      'UPDATE users SET ai_mode = $1, "mode" = $2 WHERE id = $3 RETURNING *',
-      [mode, newMode, userId]
-    );
-    return result.rows[0];
-  },
-
-  async setMode(userId, mode) {
-    const valid = ['ai', 'manager'];
-    if (!valid.includes(mode)) throw new Error(`Invalid mode: ${mode}`);
-    // Map to legacy ai_mode for backward compat
-    const legacyMode = mode === 'manager' ? 'OBSERVE' : 'AUTO';
-    // When switching to 'ai', also clear manager_active
-    if (mode === 'ai') {
-      const result = await db.query(
-        'UPDATE users SET "mode" = $1, ai_mode = $2, manager_active = false, manager_active_at = NULL WHERE id = $3 RETURNING *',
-        [mode, legacyMode, userId]
-      );
-      return result.rows[0];
-    }
-    const result = await db.query(
-      'UPDATE users SET "mode" = $1, ai_mode = $2 WHERE id = $3 RETURNING *',
-      [mode, legacyMode, userId]
-    );
-    return result.rows[0];
-  },
-
-  async setManagerActive(userId, active) {
-    await db.query(
-      'UPDATE users SET manager_active = $1, manager_active_at = $2 WHERE id = $3',
-      [active, active ? new Date() : null, userId]
-    );
-  },
-
-  async clearStaleManagers(minutes) {
-    const result = await db.query(
-      `UPDATE users SET manager_active = false, manager_active_at = NULL
-       WHERE manager_active = true AND manager_active_at < NOW() - INTERVAL '1 minute' * $1
-       RETURNING *`,
-      [minutes]
-    );
-    return result.rows;
   },
 
   async getInactive(days) {

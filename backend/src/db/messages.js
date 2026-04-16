@@ -19,8 +19,12 @@ const messages = {
         telegram_message_id,
         delivery_status,
         error_text,
-        metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        metadata,
+        retry_count,
+        next_retry_at,
+        dlq_at,
+        dlq_reason
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, NULL, NULL, NULL)
       RETURNING *`,
       [
         userId,
@@ -40,16 +44,79 @@ const messages = {
     if (!normalizedStatus) {
       throw new Error(`Invalid delivery status: ${deliveryStatus}`);
     }
+    const isDelivered = normalizedStatus === 'delivered';
     const result = await db.query(
       `UPDATE messages
        SET delivery_status = $2,
            telegram_message_id = COALESCE($3, telegram_message_id),
-           error_text = $4
+           error_text = $4,
+           next_retry_at = CASE WHEN $5 THEN NULL ELSE next_retry_at END,
+           dlq_at = CASE WHEN $5 THEN NULL ELSE dlq_at END,
+           dlq_reason = CASE WHEN $5 THEN NULL ELSE dlq_reason END
        WHERE id = $1
        RETURNING *`,
-      [id, normalizedStatus, options.telegramMessageId || null, options.errorText || null]
+      [id, normalizedStatus, options.telegramMessageId || null, options.errorText || null, isDelivered]
     );
     return result.rows[0] || null;
+  },
+
+  async scheduleRetry(id, options = {}) {
+    const nextRetryAt = options.nextRetryAt instanceof Date ? options.nextRetryAt : new Date();
+    const retryCount = Number.isInteger(options.retryCount) ? options.retryCount : 0;
+    const result = await db.query(
+      `UPDATE messages
+       SET delivery_status = 'failed',
+           error_text = $2,
+           retry_count = $3,
+           next_retry_at = $4,
+           last_retry_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id, options.errorText || null, retryCount, nextRetryAt]
+    );
+    return result.rows[0] || null;
+  },
+
+  async moveToDlq(id, options = {}) {
+    const retryCount = Number.isInteger(options.retryCount) ? options.retryCount : 0;
+    const result = await db.query(
+      `UPDATE messages
+       SET delivery_status = 'failed',
+           error_text = $2,
+           retry_count = $3,
+           next_retry_at = NULL,
+           dlq_at = NOW(),
+           dlq_reason = $4,
+           last_retry_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id, options.errorText || null, retryCount, options.reason || 'delivery_retries_exhausted']
+    );
+    return result.rows[0] || null;
+  },
+
+  async getRetryBatch(limit = 20, maxRetries = 3) {
+    const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
+    const safeMaxRetries = Math.max(1, parseInt(maxRetries, 10) || 3);
+    const result = await db.query(
+      `SELECT
+         m.*,
+         u.telegram_id
+       FROM messages m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.delivery_status = 'failed'
+         AND m.role IN ('ai', 'admin')
+         AND m.dlq_at IS NULL
+         AND COALESCE(m.retry_count, 0) < $2
+         AND (
+           m.next_retry_at IS NULL
+           OR m.next_retry_at <= NOW()
+         )
+       ORDER BY COALESCE(m.next_retry_at, m.created_at) ASC, m.id ASC
+       LIMIT $1`,
+      [safeLimit, safeMaxRetries]
+    );
+    return result.rows;
   },
 
   async getHistory(userId, limit = 20) {

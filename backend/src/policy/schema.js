@@ -13,36 +13,7 @@ const ACTION_TYPES = new Set([
   'none',
   'upsert_order_draft',
   'send_payment_details',
-  'schedule_followup',
 ]);
-
-function fallbackReply(context) {
-  if (context.order?.payment_review_pending) {
-    return 'Чек получил. Передал на ручную проверку оплаты.';
-  }
-  if (context.order?.payment_verified) {
-    return 'Оплату подтвердили. Заказ принят в работу, дальше напишу по отправке.';
-  }
-  if (context.order?.missing?.includes('product')) {
-    return 'Скажи, какая модель интересует, и я сразу сориентирую.';
-  }
-  if (context.order?.missing?.includes('size')) {
-    return 'Напиши свой размер, и двинемся к оформлению.';
-  }
-  if (context.order?.missing?.some((field) => ['full_name', 'phone', 'address'].includes(field))) {
-    return 'Скинь ФИО, телефон и адрес одним сообщением.';
-  }
-  return 'Продолжим оформление. Если всё ок, отправлю следующий шаг.';
-}
-
-function deriveNextStep(context) {
-  if (context.order?.payment_review_pending) return 'ack_payment_claim';
-  if (context.order?.payment_verified) return 'post_verification_reassure';
-  if (context.order?.missing?.includes('product')) return 'show_options';
-  if (context.order?.missing?.includes('size')) return 'collect_size';
-  if (context.order?.missing?.some((field) => ['full_name', 'phone', 'address'].includes(field))) return 'collect_delivery';
-  return 'request_payment';
-}
 
 function normalizeString(value) {
   if (value === undefined || value === null) return null;
@@ -70,8 +41,8 @@ function validateDecision(parsed, context) {
   const errors = [];
   const base = {
     version: 'v1',
-    reply: fallbackReply(context),
-    next_step: deriveNextStep(context),
+    reply: null,
+    next_step: 'clarify_need',
     action: { type: 'none', payload: {} },
     collected_data: {
       product_ref: null,
@@ -89,9 +60,14 @@ function validateDecision(parsed, context) {
     return { decision: base, valid: false, errors };
   }
 
+  const parsedReply = normalizeString(parsed.reply);
+  if (!parsedReply) {
+    errors.push('missing_reply');
+  }
+
   const decision = {
     ...base,
-    reply: normalizeString(parsed.reply) || base.reply,
+    reply: parsedReply,
     next_step: NEXT_STEPS.has(parsed.next_step) ? parsed.next_step : base.next_step,
     action: {
       type: ACTION_TYPES.has(parsed.action?.type) ? parsed.action.type : 'none',
@@ -126,8 +102,14 @@ function validateDecision(parsed, context) {
   if (parsed.next_step && !NEXT_STEPS.has(parsed.next_step)) {
     errors.push('invalid_next_step');
   }
+  if (!parsed.next_step) {
+    errors.push('missing_next_step');
+  }
   if (parsed.action?.type && !ACTION_TYPES.has(parsed.action.type)) {
     errors.push('invalid_action_type');
+  }
+  if (parsed.action && typeof parsed.action !== 'object') {
+    errors.push('invalid_action');
   }
   if (decision.action.type === 'send_payment_details' && !paymentReady) {
     errors.push('payment_details_requested_without_complete_order');

@@ -70,7 +70,7 @@ async function buildPolicyPrompt(user, context) {
 clarify_need, show_options, collect_size, collect_delivery, confirm_order, request_payment, ack_payment_claim, post_verification_reassure
 
 РАЗРЕШЁННЫЕ action.type:
-none, upsert_order_draft, send_payment_details, schedule_followup
+none, upsert_order_draft, send_payment_details
 
 ФОРМАТ ОТВЕТА:
 {

@@ -344,25 +344,8 @@ async function notifyCritical(name, message) {
 
   const label = _components[name]?.label || name;
   log.error('CRITICAL: ' + label + ' is DOWN — ' + message);
-
-  let delivered = false;
-
-  // Primary channel: Telegram
-  try {
-    const bot = require('./telegram/bot');
-    const ownerChatId = config.get('OWNER_CHAT_ID');
-    if (ownerChatId) {
-      await bot.sendMessage(ownerChatId, '[ALERT] ' + label + ': DOWN\n' + message);
-      delivered = true;
-    }
-  } catch (e) {
-    log.error('Alert primary (Telegram) failed: ' + e.message);
-  }
-
-  // Failsafe channel: file log + console (always)
-  if (!delivered) {
-    fallbackLog('CRITICAL_ALERT', { component: name, label, message });
-  }
+  // Alert delivery is log-only to avoid direct Telegram bypass and false alert spam.
+  fallbackLog('CRITICAL_ALERT', { component: name, label, message });
 
   // Mark incident as notified
   const inc = _incidents.find(i => i.source === name && !i.resolved);
@@ -399,7 +382,7 @@ async function checkTelegram() {
     const settings = require('./db/settings');
     token = (await settings.get('bot_token') || '').trim();
   } catch (e) {
-    token = (config.get('BOT_TOKEN') || '').trim();
+    token = '';
   }
   if (!token) {
     setDegraded(name, 'BOT_TOKEN not configured');

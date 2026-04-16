@@ -120,7 +120,6 @@ INSERT INTO settings (key, value, updated_at) VALUES
   ('payment_name', '', NOW()),
   ('payment_bank_name', '', NOW()),
   ('payment_receiver_name', '', NOW()),
-  ('policy_mode', 'primary', NOW()),
   ('policy_logging_enabled', 'true', NOW()),
   ('manual_payment_review_enabled', 'true', NOW())
 ON CONFLICT (key) DO NOTHING;
@@ -131,7 +130,6 @@ DELETE FROM prompt_settings WHERE key = 'sales_prompt';
 
 INSERT INTO prompt_settings (key, value, updated_at) VALUES
   ('core_prompt', 'Ты AI-продавец в Telegram. Веди клиента к покупке коротко и уверенно, не выдумывай данные и не повторяй уже известное. Если владелец подтвердил оплату, спокойно подтверди заказ и объясни следующий шаг.', NOW()),
-  ('followup_prompt', 'Сделай короткое follow-up сообщение, которое возвращает клиента к диалогу о покупке.', NOW()),
   ('policy_prompt', 'Ты AI policy engine для Telegram-продаж. Возвращай только решение в JSON, не управляй side-effects напрямую и никогда не ставь статусы оплаты самостоятельно.', NOW())
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 `;

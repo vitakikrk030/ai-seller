@@ -72,7 +72,6 @@ async function main() {
       { key: 'payment_card_number', value: '4111222233334444' },
       { key: 'payment_bank_name', value: 'T-Bank' },
       { key: 'payment_receiver_name', value: 'AI Seller Live Test' },
-      { key: 'policy_mode', value: 'primary' },
       { key: 'policy_logging_enabled', value: 'true' },
       { key: 'manual_payment_review_enabled', value: 'true' },
     ]);

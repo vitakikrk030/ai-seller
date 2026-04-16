@@ -78,22 +78,28 @@ async function ensureRuntimeSchema(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT 'ai';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_mode VARCHAR(50) DEFAULT 'AUTO';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_active BOOLEAN DEFAULT false;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_active_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS needs_attention BOOLEAN DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS attention_reason VARCHAR(100);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS attention_override BOOLEAN DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0;
+    ALTER TABLE users DROP COLUMN IF EXISTS mode;
+    ALTER TABLE users DROP COLUMN IF EXISTS ai_mode;
+    ALTER TABLE users DROP COLUMN IF EXISTS manager_active;
+    ALTER TABLE users DROP COLUMN IF EXISTS manager_active_at;
 
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT FALSE;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(32);
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_text TEXT;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS last_retry_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS dlq_at TIMESTAMPTZ;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS dlq_reason TEXT;
+    UPDATE messages SET retry_count = 0 WHERE retry_count IS NULL;
 
     UPDATE messages
     SET delivery_status = 'delivered'
@@ -114,33 +120,13 @@ async function ensureRuntimeSchema(pool) {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
-    UPDATE users
-    SET state = 'COLLECTING'
-    WHERE state IN ('WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT');
-
-    UPDATE orders
-    SET status = CASE
-          WHEN status IN ('NEW', 'COLLECTING', 'WAITING_SIZE', 'WAITING_FORM') THEN 'draft'
-          WHEN status = 'WAITING_PAYMENT' THEN 'payment_pending'
-          WHEN status = 'PAID' THEN 'payment_verified'
-          WHEN status = 'DONE' THEN 'fulfilled'
-          ELSE status
-        END,
-        payment_verified_at = CASE
-          WHEN status = 'PAID' THEN COALESCE(payment_verified_at, paid_at, updated_at, created_at, NOW())
-          ELSE payment_verified_at
-        END,
-        paid_at = CASE
-          WHEN status = 'PAID' THEN COALESCE(paid_at, updated_at, created_at, NOW())
-          ELSE paid_at
-        END,
-        updated_at = NOW()
-    WHERE status IN ('NEW', 'COLLECTING', 'WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT', 'PAID', 'DONE');
-
     CREATE INDEX IF NOT EXISTS idx_messages_delivery_status ON messages(delivery_status);
     CREATE INDEX IF NOT EXISTS idx_messages_telegram_message_id ON messages(telegram_message_id);
     CREATE INDEX IF NOT EXISTS idx_messages_delivery_pending ON messages(delivery_status, created_at DESC)
       WHERE delivery_status IN ('pending', 'sent');
+    CREATE INDEX IF NOT EXISTS idx_messages_retry_ready ON messages(delivery_status, next_retry_at ASC, retry_count ASC)
+      WHERE delivery_status = 'failed' AND dlq_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_messages_dlq_at ON messages(dlq_at DESC) WHERE dlq_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_orders_status_runtime ON orders(status);
     CREATE INDEX IF NOT EXISTS idx_orders_payment_claimed_at ON orders(payment_claimed_at) WHERE payment_claimed_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_orders_payment_verified_at ON orders(payment_verified_at) WHERE payment_verified_at IS NOT NULL;
@@ -188,10 +174,10 @@ async function ensureRuntimeSchema(pool) {
        OR key IN ('toggle_ab_testing');
 
     DELETE FROM prompt_settings WHERE key = 'sales_prompt';
+    DELETE FROM prompt_settings WHERE key = 'followup_prompt';
 
     INSERT INTO prompt_settings (key, value, updated_at) VALUES
       ('core_prompt', 'Ты AI-продавец в Telegram. Веди клиента к покупке коротко и уверенно, не выдумывай данные и не повторяй уже известное. Если оплата подтверждена владельцем, спокойно сообщи клиенту, что заказ подтверждён и что будет дальше.', NOW()),
-      ('followup_prompt', 'Сделай короткое follow-up сообщение для возврата клиента в диалог о покупке.', NOW()),
       ('policy_prompt', 'Ты AI policy engine для Telegram-продаж. Возвращай только решение в JSON и никогда не ставь статусы оплаты самостоятельно.', NOW())
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 
@@ -199,12 +185,13 @@ async function ensureRuntimeSchema(pool) {
       ('closer_pressure_level', 'Уровень давления', 'Насколько активно AI ведёт к покупке', '3', 'text', 'closer', true, 1),
       ('closer_message_length', 'Длина сообщения', 'short / medium / long', 'short', 'text', 'closer', true, 2),
       ('closer_initiative', 'Инициатива', 'low / medium / high', 'high', 'text', 'closer', true, 3),
-      ('style_closer_hint', 'Custom closer hint', 'Дополнительная инструкция для policy prompt', '', 'textarea', 'closer', true, 4),
-      ('toggle_fallback', 'Fallbacks', 'Разрешить fallback при ошибках', 'true', 'toggle', 'toggles', true, 5)
+      ('style_closer_hint', 'Custom closer hint', 'Дополнительная инструкция для policy prompt', '', 'textarea', 'closer', true, 4)
     ON CONFLICT (key) DO NOTHING;
 
+    DELETE FROM ai_speech_settings WHERE key = 'toggle_fallback';
+    DELETE FROM settings WHERE key = 'policy_mode';
+
     INSERT INTO settings (key, value, updated_at) VALUES
-      ('policy_mode', 'primary', NOW()),
       ('policy_logging_enabled', 'true', NOW()),
       ('manual_payment_review_enabled', 'true', NOW())
     ON CONFLICT (key) DO NOTHING;

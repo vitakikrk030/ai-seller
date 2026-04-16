@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  User, Bot, ShieldCheck, ChevronLeft, Send,
+  ChevronLeft, Send,
   Hash, Trash2, Search, Clock, Star, Copy, MoreHorizontal,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -150,12 +150,11 @@ function TypingIndicator({ label }) {
   );
 }
 
-function ModeBadge({ mode, aiEnabled }) {
+function ModeBadge({ aiEnabled }) {
   if (!aiEnabled) return <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', background: 'rgba(148,163,184,0.12)', borderRadius: 999, padding: '3px 9px' }}>AI выкл</span>;
-  const isAI = (mode || 'ai') === 'ai';
   return (
-    <span style={{ fontSize: 11, fontWeight: 600, color: isAI ? 'var(--accent,#6366f1)' : '#f59e0b', background: isAI ? 'rgba(99,102,241,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 999, padding: '3px 9px' }}>
-      {isAI ? 'AI ведёт' : 'Менеджер ведёт'}
+    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent,#6366f1)', background: 'rgba(99,102,241,0.1)', borderRadius: 999, padding: '3px 9px' }}>
+      AI ведёт
     </span>
   );
 }
@@ -181,7 +180,6 @@ export default function ChatView() {
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [quickReplies, setQuickReplies] = useState([]);
   const [customerMemory, setCustomerMemory] = useState(null);
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
@@ -335,12 +333,10 @@ export default function ChatView() {
     };
 
     const loadOrd = async () => { try { setOrders(await api.getUserOrders(selected.id)); } catch {} };
-    const loadQR = async () => { try { setQuickReplies(await api.getQuickReplies(selected.id)); } catch {} };
     const loadMem = async () => { try { setCustomerMemory(await api.getMemory(selected.id)); } catch {} };
 
     loadInitial();
     loadOrd();
-    loadQR();
     loadMem();
   }, [selected?.id]);
 
@@ -404,7 +400,6 @@ export default function ChatView() {
           return next;
         });
       }
-      try { setQuickReplies(await api.getQuickReplies(selected.id)); } catch {}
     } catch (err) {
       try {
         const refreshed = await api.getMessagesPaginated(selected.id, 50);
@@ -412,32 +407,6 @@ export default function ChatView() {
       } catch {}
       setInput(text);
       console.error('sendMessage failed:', err.message);
-    }
-    setSending(false);
-    inputRef.current?.focus();
-  }
-
-  async function sendQuickReply(text) {
-    if (!selected || sending) return;
-    setSending(true);
-    try {
-      const saved = await api.sendMessage(selected.id, text);
-      if (saved?.id) {
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === saved.id);
-          if (idx === -1) return [...prev, saved];
-          const next = [...prev];
-          next[idx] = { ...next[idx], ...saved };
-          return next;
-        });
-      }
-      try { setQuickReplies(await api.getQuickReplies(selected.id)); } catch {}
-    } catch (err) {
-      try {
-        const refreshed = await api.getMessagesPaginated(selected.id, 50);
-        setMessages(refreshed);
-      } catch {}
-      console.error('sendQuickReply failed:', err.message);
     }
     setSending(false);
     inputRef.current?.focus();
@@ -482,45 +451,10 @@ export default function ChatView() {
     });
   }
 
-  async function toggleAI() {
-    if (!selected) return;
-    try {
-      await api.toggleAI(selected.id, !selected.ai_enabled);
-      setSelected({ ...selected, ai_enabled: !selected.ai_enabled });
-      loadUsers();
-    } catch {}
-  }
-
-  async function toggleMode() {
-    if (!selected) return;
-    const newMode = (selected.mode || 'ai') === 'ai' ? 'manager' : 'ai';
-    try {
-      const updated = await api.setMode(selected.id, newMode);
-      setSelected({ ...selected, ...updated, mode: newMode });
-      loadUsers();
-    } catch {}
-  }
-
   async function togglePin(u) {
     const pinned = !u.pinned;
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, pinned } : x));
     try { await api.pinUser(u.id, pinned); } catch {}
-  }
-
-  async function deleteDialog() {
-    if (!selected) return;
-    confirmDeleteDialog();
-    // legacy kept for profile button
-    return;
-    try {
-      await api.deleteUser(selected.id);
-      setSelected(null);
-      setMessages([]);
-      setOrders([]);
-      setQuickReplies([]);
-      setMobilePanel('list');
-      loadUsers();
-    } catch (e) {}
   }
 
   const selectUser = useCallback(async (u) => {
@@ -533,19 +467,6 @@ export default function ChatView() {
   }, []);
 
   // ── Derived ──
-
-  function getAiStatus(user) {
-    if (!user) return { text: '', cls: '' };
-    if (!user.ai_enabled) return { text: 'AI выкл', cls: 'cv-ai-off' };
-    const actor = user.active_actor || ((user.mode || 'ai') === 'manager' ? 'manager' : user.manager_active ? 'paused' : 'ai');
-    if (actor === 'manager') return { text: 'Менеджер ведёт', cls: 'cv-ai-manager' };
-    if (actor === 'paused') {
-      const mins = user.pause_remaining || 0;
-      if (mins > 0) return { text: `AI на паузе (${mins} мин)`, cls: 'cv-ai-paused' };
-      return { text: 'AI на паузе', cls: 'cv-ai-paused' };
-    }
-    return { text: 'AI в диалоге', cls: 'cv-ai-active' };
-  }
 
   function getDeliveryInfo(message) {
     if (!message || message.role === 'user') return null;
@@ -691,9 +612,8 @@ export default function ChatView() {
           )}
           {filteredUsers.map((u) => {
             const heat = heatLevel(u);
-            const aiSt = getAiStatus(u);
             const waitStr = fmtWait(u.wait_minutes);
-            const isAI = (u.mode || 'ai') === 'ai' && u.ai_enabled;
+            const isAI = !!u.ai_enabled;
             return (
               <div
                 key={u.id}
@@ -731,7 +651,7 @@ export default function ChatView() {
                   <div className="cv-list-chips">
                     <Chip color={stateColor(u.state)}>{stateLabel(u.state)}</Chip>
                     {heat !== 'cold' && <Chip variant={heat}>{HEAT_LABELS[heat]}</Chip>}
-                    <Chip variant={isAI ? 'ai-active' : 'manager'}>{isAI ? 'AI' : 'М'}</Chip>
+                    <Chip variant={isAI ? 'ai-active' : 'wait'}>{isAI ? 'AI' : 'AI OFF'}</Chip>
                     {u.order_price && <Chip>{u.order_price} р</Chip>}
                     {waitStr && u.unread && <Chip variant="wait"><Clock size={9} /> {waitStr}</Chip>}
                   </div>
@@ -769,7 +689,7 @@ export default function ChatView() {
                 {selected.username && <span className="cv-chat-username">@{selected.username}</span>}
               </div>
               <div className="cv-chat-header-right">
-                <ModeBadge mode={selected.mode} aiEnabled={selected.ai_enabled} />
+                <ModeBadge aiEnabled={selected.ai_enabled} />
                 {selected.wait_minutes > 0 && selected.unread && (
                   <span className={`cv-wait-badge ${selected.wait_minutes > 30 ? 'cv-wait-danger' : 'cv-wait-warn'}`}>
                     <Clock size={10} /> {fmtWait(selected.wait_minutes)}
@@ -790,14 +710,6 @@ export default function ChatView() {
                     {HEAT_LABELS[heatLevel(selected)]}
                   </span>
                 )}
-              </div>
-            )}
-
-            {/* AI suggestion */}
-            {customerMemory?._next_action && (selected.mode || 'ai') === 'manager' && (
-              <div className="cv-ai-hint">
-                <Bot size={11} />
-                <span>{customerMemory._next_action}</span>
               </div>
             )}
 
@@ -912,46 +824,21 @@ export default function ChatView() {
               </div>
             )}
 
-            {/* Smart suggestion — only in manager mode, one at a time */}
-            {(selected.mode || 'ai') === 'manager' && quickReplies.length > 0 && (
-              <div className="cv-suggestion-bar">
-                <span className="cv-suggestion-label">Рекомендуем</span>
-                <span className="cv-suggestion-text">{quickReplies[0]}</span>
-                <button
-                  className="cv-suggestion-use"
-                  onClick={() => sendQuickReply(quickReplies[0])}
-                  disabled={sending}
-                >
-                  Использовать
-                </button>
-              </div>
-            )}
-
-            {/* Mode switch + Input */}
+            {/* Input */}
             <div className="cv-bottom">
-              {(selected.mode || 'ai') === 'ai' ? (
-                <div className="cv-ai-mode-bar">
-                  <span className="cv-ai-mode-text">AI ведёт диалог</span>
-                  <button className="cv-take-btn" onClick={toggleMode}>Взять диалог</button>
-                </div>
-              ) : (
-                <form className="cv-input-area" onSubmit={sendMessage}>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    className="cv-input"
-                    placeholder="Написать клиенту..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                  />
-                  <button type="submit" className="cv-send" disabled={sending || !input.trim()}>
-                    <Send size={14} />
-                  </button>
-                  <button type="button" className="cv-return-ai-btn" onClick={toggleMode} title="Передать AI">
-                    <Bot size={14} />
-                  </button>
-                </form>
-              )}
+              <form className="cv-input-area" onSubmit={sendMessage}>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="cv-input"
+                  placeholder="Сообщение клиенту..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                />
+                <button type="submit" className="cv-send" disabled={sending || !input.trim()}>
+                  <Send size={14} />
+                </button>
+              </form>
             </div>
           </>
         ) : (
@@ -1004,10 +891,9 @@ export default function ChatView() {
 
           <div className="cv-section">
             <div className="cv-section-label">Управление</div>
-            <div className="cv-mode-toggle-wrap">
-              <span className={`cv-mode-label ${(selected.mode || 'ai') === 'ai' ? 'cv-mode-label-active' : ''}`}>AI</span>
-              <div className={`cv-mode-toggle ${(selected.mode || 'ai') === 'manager' ? 'cv-mode-toggle-on' : ''}`} onClick={toggleMode} role="switch" aria-checked={(selected.mode || 'ai') === 'manager'} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMode(); } }} />
-              <span className={`cv-mode-label ${(selected.mode || 'ai') === 'manager' ? 'cv-mode-label-active' : ''}`}>Менеджер</span>
+            <div className="cv-row" style={{ marginBottom: 10 }}>
+              <span className="cv-row-label">Режим</span>
+              <Chip variant="ai-active">AI-only</Chip>
             </div>
             <div style={{ marginTop: 12 }}>
               {selected.needs_attention ? (

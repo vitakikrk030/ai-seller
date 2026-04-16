@@ -162,28 +162,7 @@ async function executeDecision(user, decision, orderContext, sensors) {
   return { order, actions, outbox };
 }
 
-async function executeManualReply(user, text, options = {}) {
-  const role = options.role || 'admin';
-  const normalizedText = String(text || '').trim();
-  if (!normalizedText) {
-    return {
-      actions: [{ type: 'skip_manual_reply_empty', role }],
-      outbox: [],
-    };
-  }
-
-  return {
-    actions: [{
-      type: 'queue_manual_reply',
-      role,
-      text_length: normalizedText.length,
-    }],
-    outbox: [{ kind: 'reply', text: normalizedText }],
-  };
-}
-
 module.exports = {
   reconcileInboundSignals,
   executeDecision,
-  executeManualReply,
 };

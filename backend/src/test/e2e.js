@@ -13,6 +13,7 @@ const orders = require('../db/orders');
 const settings = require('../db/settings');
 const queue = require('../queue');
 const { handleMessage } = require('../telegram/handler');
+const { retryFailedDeliveries } = require('../telegram/outbox');
 const apiRoutes = require('../api/routes');
 const aiClient = require('../ai/client');
 const bot = require('../telegram/bot');
@@ -191,7 +192,6 @@ async function runScenario() {
     { key: 'payment_card_number', value: '4111222233334444' },
     { key: 'payment_bank_name', value: 'T-Bank' },
     { key: 'payment_receiver_name', value: 'AI Seller Test' },
-    { key: 'policy_mode', value: 'primary' },
     { key: 'policy_logging_enabled', value: 'true' },
     { key: 'manual_payment_review_enabled', value: 'true' },
   ]);
@@ -313,22 +313,6 @@ async function runScenario() {
     assert(aiMessages.some((message) => message.text.includes('заказ принят в работу')), 'Post-payment reply объясняет клиенту следующий шаг');
     assert(policyRunRows.rows.some((row) => JSON.stringify(row.input_json).includes('owner_payment_verified')), 'Owner-triggered reply тоже логируется в policy_runs');
 
-    const beforeStaleCount = sentMessages.length;
-    await db.query(
-      "UPDATE users SET manager_active = true, manager_active_at = NOW() - INTERVAL '31 minutes' WHERE id = $1",
-      [user.id]
-    );
-    await handleMessage({
-      message_id: 5,
-      chat: { id: TG_ID },
-      from: { id: TG_ID, first_name: 'Ivan', last_name: 'Test', username: 'ivantest' },
-      text: 'Хочу ещё одну пару',
-    });
-    await queue.drain();
-    const refreshedUser = await users.getById(user.id);
-    assert(sentMessages.length > beforeStaleCount, 'Stale manager_active не блокирует ответ AI');
-    assert(refreshedUser.manager_active === false, 'Stale manager_active автоматически очищается');
-
     const stableBotStub = bot.sendMessage;
     bot.sendMessage = async () => {
       throw new Error('telegram_down');
@@ -345,6 +329,36 @@ async function runScenario() {
     const failedAdminMessage = (await messages.getByUser(user.id)).filter((message) => message.role === 'admin').at(-1);
     assert(failedAdminMessage.delivery_status === 'failed', 'Failed delivery сохраняется как failed, а не как отправленная');
     assert((failedAdminMessage.error_text || '').includes('telegram_down'), 'error_text сохраняет причину ошибки Telegram');
+    assert(Number(failedAdminMessage.retry_count || 0) === 1, 'Failed message получает retry_count');
+    assert(!!failedAdminMessage.next_retry_at, 'Failed message получает next_retry_at для retry worker');
+
+    await db.query('UPDATE messages SET next_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = $1', [failedAdminMessage.id]);
+    const retried = await retryFailedDeliveries({ limit: 10, maxRetries: 4 });
+    assert(retried.delivered >= 1, 'Retry worker повторно отправляет failed сообщение');
+    const retriedMessage = (await messages.getByUser(user.id)).find((message) => message.id === failedAdminMessage.id);
+    assert(retriedMessage.delivery_status === 'delivered', 'Retry worker переводит сообщение в delivered после успешной отправки');
+
+    bot.sendMessage = async () => {
+      throw new Error('telegram_down_persistent');
+    };
+    await withApiServer(async (baseUrl) => {
+      await axios.post(`${baseUrl}/api/users/${user.id}/messages`, {
+        text: 'DLQ проверка',
+      }).catch(() => null);
+    });
+    bot.sendMessage = stableBotStub;
+    const dlqCandidate = (await messages.getByUser(user.id)).filter((message) => message.role === 'admin').at(-1);
+    await db.query('UPDATE messages SET next_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = $1', [dlqCandidate.id]);
+
+    bot.sendMessage = async () => {
+      throw new Error('telegram_down_persistent');
+    };
+    const dlqResult = await retryFailedDeliveries({ limit: 10, maxRetries: 2 });
+    bot.sendMessage = stableBotStub;
+    assert(dlqResult.movedToDlq >= 1, 'Retry worker переносит сообщение в DLQ после исчерпания лимита');
+    const dlqMessage = (await messages.getByUser(user.id)).find((message) => message.id === dlqCandidate.id);
+    assert(!!dlqMessage.dlq_at, 'DLQ сообщение получает dlq_at');
+    assert((dlqMessage.dlq_reason || '').includes('delivery_retries_exhausted'), 'DLQ сообщение получает причину');
 
     const salesSource = fs.readFileSync(path.join(__dirname, '../logic/sales.js'), 'utf8');
     const policySource = fs.readFileSync(path.join(__dirname, '../policy/index.js'), 'utf8');

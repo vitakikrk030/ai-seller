@@ -7,13 +7,11 @@ const prompts = require('../db/prompts');
 const settings = require('../db/settings');
 const memory = require('../db/memory');
 const policyRuns = require('../db/policy_runs');
-const queue = require('../queue');
 const axios = require('axios');
 const shop = require('../shop');
 const ownerReviews = require('../db/owner_reviews');
 const { runPolicy } = require('../policy');
 const { buildOrderContext, syncUserState } = require('../domain/order_service');
-const { executeManualReply } = require('../actuators');
 const { deliverOutbox, OutboxDeliveryError } = require('../telegram/outbox');
 
 // === USERS ===
@@ -58,26 +56,6 @@ router.patch('/users/:id/ai', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/ai-mode', async (req, res) => {
-  try {
-    const { mode } = req.body;
-    const user = await users.setAiMode(req.params.id, mode);
-    res.json(user);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.patch('/users/:id/mode', async (req, res) => {
-  try {
-    const { mode } = req.body;
-    const user = await users.setMode(req.params.id, mode);
-    res.json(user);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 router.post('/users/:id/read', async (req, res) => {
   try {
     await users.markRead(req.params.id);
@@ -107,7 +85,6 @@ router.get('/users/:id/memory', async (req, res) => {
     const result = mem ? { ...mem } : {};
     // Add computed fields
     if (user && mem) {
-      result._next_action = memory.getNextAction(user, mem);
       result._is_vip = memory.isVIP(mem);
       result._has_full_delivery = memory.hasFullDeliveryData(mem);
     }
@@ -169,36 +146,23 @@ router.get('/users/:id/messages', async (req, res) => { // @test-only — UI use
 router.post('/users/:id/messages', async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text required' });
+    const normalizedText = String(text || '').trim();
+    if (!normalizedText) return res.status(400).json({ error: 'Text required' });
 
     const user = await users.getById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Cancel any pending AI responses for this chat (manager takes over)
-    queue.cancelChat(user.telegram_id);
-
-    const execution = await executeManualReply(user, text, { role: 'admin' });
-    if (execution.outbox.length === 0) {
-      return res.status(400).json({ error: 'Text required' });
-    }
-
-    // Send via unified pipeline: actuator -> outbox -> Telegram
+    // Unified outbound pipeline only: outbox -> Telegram
     console.log(`SEND TO (CRM): ${user.telegram_id} (user.id=${user.id})`);
     const delivered = await deliverOutbox({
       telegramId: user.telegram_id,
       user,
-      outbox: execution.outbox,
+      outbox: [{ kind: 'reply', text: normalizedText }],
       role: 'admin',
       applyDelay: false,
       broadcast: broadcastSSE,
     });
 
-    // Mark manager as active only after successful delivery
-    await users.setManagerActive(user.id, true);
-
-    // Обучение от менеджера (non-blocking)
-    const managerLearning = require('../db/manager_learning');
-    managerLearning.learnFromManager(text).catch(() => {});
     const latest = delivered.at(-1) || (await messages.getByUserPaginated(user.id, 1)).at(-1) || null;
     res.json(latest);
   } catch (err) {

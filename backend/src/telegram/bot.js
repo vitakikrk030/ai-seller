@@ -133,12 +133,6 @@ const bot = {
     }
   },
 
-  async notifyOwner(text, options = {}) {
-    const ownerId = config.get('OWNER_CHAT_ID');
-    if (!ownerId) return;
-    await bot.sendMessage(ownerId, text, options);
-  },
-
   async answerCallbackQuery(callbackQueryId, text) {
     await tgRequest('answerCallbackQuery', {
       callback_query_id: callbackQueryId,

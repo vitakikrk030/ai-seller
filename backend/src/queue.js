@@ -5,10 +5,8 @@
  *   Telegram → webhook → queue.enqueue(chatId, task)
  *   Workers pick highest-priority task where chat is NOT locked.
  *   Only 1 task per chatId runs at a time (serialization).
- *   Manager messages cancel pending AI tasks for that chat.
  *
  * Priority (lower number = higher priority):
- *   0  manager override / cancel
  *   1  COLLECTING / hot clients
  *   4  NEW / other
  *   5  DONE / cold
@@ -28,13 +26,11 @@ const STATE_PRIORITY = {
 // ── Configuration ──
 const DEFAULT_CONCURRENCY = 5;     // max parallel workers
 const MAX_QUEUE_SIZE = 500;        // safety cap
-const FALLBACK_DELAY_MS = 8000;    // send fallback after this delay
 const MAX_RETRIES = 1;             // retry failed AI tasks once
 
 // ── Queue state ──
 const _queue = [];                 // { id, chatId, priority, task, retries, enqueuedAt }
 const _chatLocks = new Map();      // chatId → true (locked while processing)
-const _pendingCancels = new Set(); // chatIds where manager cancelled AI
 let _activeWorkers = 0;
 let _maxConcurrency = DEFAULT_CONCURRENCY;
 let _totalEnqueued = 0;
@@ -43,16 +39,14 @@ let _totalDropped = 0;
 let _totalRetries = 0;
 let _totalErrors = 0;
 let _idCounter = 0;
-let _onFallback = null;            // callback(chatId) — send "секунду..." message
 let _processing = false;
 
 /**
  * Configure queue.
- * @param {{ concurrency?: number, onFallback?: Function }} opts
+ * @param {{ concurrency?: number }} opts
  */
 function configure(opts = {}) {
   if (opts.concurrency) _maxConcurrency = Math.max(1, Math.min(20, opts.concurrency));
-  if (opts.onFallback) _onFallback = opts.onFallback;
 }
 
 /**
@@ -99,35 +93,6 @@ function enqueue(chatId, task, opts = {}) {
 }
 
 /**
- * Cancel all pending AI tasks for a chatId (manager override).
- */
-function cancelChat(chatId) {
-  const cid = String(chatId);
-  _pendingCancels.add(cid);
-  // Remove pending tasks for this chat from queue
-  let removed = 0;
-  for (let i = _queue.length - 1; i >= 0; i--) {
-    if (_queue[i].chatId === cid) {
-      _queue.splice(i, 1);
-      removed++;
-    }
-  }
-  if (removed > 0) {
-    log.info('Manager override: cancelled pending AI tasks', { chatId: cid, removed });
-  }
-  // Clear cancel flag after a short window
-  setTimeout(() => _pendingCancels.delete(cid), 5000);
-  return removed;
-}
-
-/**
- * Check if a chatId has a pending cancel (manager override in progress).
- */
-function isCancelled(chatId) {
-  return _pendingCancels.has(String(chatId));
-}
-
-/**
  * Internal: schedule the processing loop (non-recursive, debounced).
  */
 function _scheduleProcess() {
@@ -155,28 +120,14 @@ function _processLoop() {
 }
 
 /**
- * Internal: run a single task with lock, fallback timer, and retry.
+ * Internal: run a single task with lock and retry.
  */
 async function _runTask(item) {
   const { chatId, task, id } = item;
   _chatLocks.set(chatId, true);
   _activeWorkers++;
 
-  // Fallback timer — send "секунду..." if processing takes too long
-  let fallbackSent = false;
-  const fallbackTimer = _onFallback ? setTimeout(() => {
-    if (_chatLocks.has(chatId) && !_pendingCancels.has(chatId)) {
-      fallbackSent = true;
-      try { _onFallback(chatId); } catch (e) { /* ignore */ }
-    }
-  }, FALLBACK_DELAY_MS) : null;
-
   try {
-    // Check if cancelled before starting
-    if (_pendingCancels.has(chatId)) {
-      return;
-    }
-
     await task();
     _totalProcessed++;
   } catch (err) {
@@ -191,7 +142,6 @@ async function _runTask(item) {
       _queue.sort((a, b) => a.priority - b.priority || a.enqueuedAt - b.enqueuedAt);
     }
   } finally {
-    if (fallbackTimer) clearTimeout(fallbackTimer);
     _chatLocks.delete(chatId);
     _activeWorkers--;
     // Try to process more tasks
@@ -240,7 +190,6 @@ function drain(timeoutMs = 10000) {
 function reset() {
   _queue.length = 0;
   _chatLocks.clear();
-  _pendingCancels.clear();
   _activeWorkers = 0;
   _totalEnqueued = 0;
   _totalProcessed = 0;
@@ -253,8 +202,6 @@ function reset() {
 module.exports = {
   configure,
   enqueue,
-  cancelChat,
-  isCancelled,
   getMetrics,
   getQueueLength,
   getPriority,
@@ -262,5 +209,4 @@ module.exports = {
   reset,
   STATE_PRIORITY,
   MAX_QUEUE_SIZE,
-  FALLBACK_DELAY_MS,
 };

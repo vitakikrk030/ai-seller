@@ -83,16 +83,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     }),
-  setAiMode: (id, mode) =>
-    fetchAPI(`/users/${id}/ai-mode`, {
-      method: 'PATCH',
-      body: JSON.stringify({ mode }),
-    }),
-  setMode: (id, mode) =>
-    fetchAPI(`/users/${id}/mode`, {
-      method: 'PATCH',
-      body: JSON.stringify({ mode }),
-    }),
   updateState: (id, state) =>
     fetchAPI(`/users/${id}/state`, {
       method: 'PATCH',

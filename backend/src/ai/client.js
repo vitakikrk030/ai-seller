@@ -169,24 +169,13 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
       log.warn(`AI secondary error: ${err.message}`, { provider });
       await logFailure({ provider, errorType: 'secondary_failed', message: err.message, fallbackUsed: true });
       try { require('../monitoring').recordError('ai', 'AI secondary failed', 'warning'); } catch (e) {}
-      // Notify critical — both providers down
-      try { require('../monitoring').notifyCritical('ai', 'Both AI providers failed'); } catch (e) {}
     }
-  } else {
-    // No secondary — notify critical
-    try { require('../monitoring').notifyCritical('ai', 'AI primary failed, no secondary configured'); } catch (e) {}
   }
 
-  // ── DB fallback ─────────────────────────────────────────────────────────
+  // ── No scripted fallback replies: propagate hard failure upstream ───────
   await logFailure({ provider: 'all', errorType: 'all_failed', message: 'All providers failed', fallbackUsed: true });
   try { require('../monitoring').recordError('ai', 'All AI providers failed', 'critical'); } catch (e) {}
-  try {
-    const aiSettings = require('../db/ai_settings');
-    const fallback = await aiSettings.pickFallback('general').catch(() => null);
-    if (fallback) return { text: fallback, tokensIn: 0, tokensOut: 0 };
-  } catch (e) { /* ignore */ }
-
-  return { text: 'Уточните, пожалуйста, детали заказа.', tokensIn: 0, tokensOut: 0 };
+  throw new Error('AI providers unavailable');
 }
 
 /**

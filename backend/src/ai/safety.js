@@ -1,6 +1,5 @@
 /**
  * AI Safety Gate — единый слой защиты между AI и клиентом.
- * Fallback-тексты берутся из AI Settings (ai_speech_settings).
  */
 
 const log = require('../logger');
@@ -155,7 +154,6 @@ function cbReset() {
 
 /**
  * Пропустить AI-ответ через safety gate.
- * Fallback берётся из AI Settings асинхронно.
  *
  * @param {string} rawResponse
  * @param {object} opts — { userState, isScheduled }
@@ -174,23 +172,6 @@ async function enforce(rawResponse, opts = {}) {
 
   cbRecord(false);
 
-  // Получаем fallback из AI Settings — никакого хардкода
-  let fallback;
-  try {
-    const aiSettings = require('../db/ai_settings');
-    const toggleEnabled = await aiSettings.isEnabled('toggle_fallback');
-    if (toggleEnabled) {
-      const category = isScheduled ? 'ai_down' : 'blocked';
-      fallback = await aiSettings.pickFallback(category, userState);
-    } else {
-      // Тумблер fallback выключен — берём нейтральный general
-      fallback = await aiSettings.pickFallback('general', userState);
-    }
-  } catch (e) {
-    // Аварийный минимум — только если БД недоступна
-    fallback = 'Секунду';
-  }
-
   log.warn('Safety gate: blocked AI response', {
     reason: result.reason,
     userState,
@@ -198,7 +179,7 @@ async function enforce(rawResponse, opts = {}) {
     preview: (rawResponse || '').substring(0, 80),
   });
 
-  return { text: fallback, passed: false, reason: result.reason };
+  return { text: '', passed: false, reason: result.reason };
 }
 
 /**
@@ -206,16 +187,8 @@ async function enforce(rawResponse, opts = {}) {
  */
 async function shouldCallAI(userState) {
   if (cbAllowRequest()) return { allowed: true };
-  let fallback;
-  try {
-    const aiSettings = require('../db/ai_settings');
-    fallback = await aiSettings.pickFallback('ai_down', userState);
-  } catch (e) {
-    // Аварийный минимум — только если БД недоступна
-    fallback = 'Секунду';
-  }
   log.warn('Circuit breaker: AI request blocked', { state: _cb.state, userState });
-  return { allowed: false, fallback };
+  return { allowed: false, fallback: null };
 }
 
 module.exports = {
