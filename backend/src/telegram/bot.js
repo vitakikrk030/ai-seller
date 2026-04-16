@@ -63,16 +63,29 @@ const bot = {
       });
       return response.data?.result || null;
     } catch (err) {
-      console.error('Telegram send error:', err.response?.data || err.message);
-      const status = err.response?.status || null;
+      const status = err.status || err.response?.status || null;
+      const telegram = err.telegram || err.response?.data || null;
+      const description = telegram?.description || null;
+      const networkCode = err.code || null;
+      const normalizedMessage = description
+        ? `telegram_api_${status || 'error'}: ${description}`
+        : networkCode
+          ? `telegram_network_${networkCode}`
+          : (err.message || 'sendMessage failed');
+      console.error('Telegram send error:', telegram || err.message);
       const severity = status === 401 || status === 403 ? 'critical' : 'warning';
-      try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed', severity); } catch(e) {}
+      try { require('../monitoring').recordError('telegram', normalizedMessage, severity); } catch(e) {}
       log.error('telegram.bot.sendMessage: failed', {
         chatId,
-        error: err.message || 'sendMessage failed',
+        error: normalizedMessage,
         status,
       });
-      throw err;
+      const wrapped = new Error(normalizedMessage);
+      wrapped.code = err.code || 'TELEGRAM_SEND_FAILED';
+      wrapped.status = status;
+      wrapped.telegram = telegram;
+      wrapped.cause = err;
+      throw wrapped;
     }
   },
 

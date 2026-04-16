@@ -95,6 +95,17 @@ async function ensureRuntimeSchema(pool) {
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_text TEXT;
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
+    UPDATE messages
+    SET delivery_status = 'delivered'
+    WHERE delivery_status = 'received';
+
+    ALTER TABLE messages DROP CONSTRAINT IF EXISTS chk_messages_delivery_status;
+    ALTER TABLE messages ADD CONSTRAINT chk_messages_delivery_status
+      CHECK (
+        delivery_status IS NULL
+        OR delivery_status IN ('pending', 'sent', 'delivered', 'failed')
+      );
+
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_ref VARCHAR(255);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_claimed_at TIMESTAMPTZ;
@@ -128,6 +139,8 @@ async function ensureRuntimeSchema(pool) {
 
     CREATE INDEX IF NOT EXISTS idx_messages_delivery_status ON messages(delivery_status);
     CREATE INDEX IF NOT EXISTS idx_messages_telegram_message_id ON messages(telegram_message_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_delivery_pending ON messages(delivery_status, created_at DESC)
+      WHERE delivery_status IN ('pending', 'sent');
     CREATE INDEX IF NOT EXISTS idx_orders_status_runtime ON orders(status);
     CREATE INDEX IF NOT EXISTS idx_orders_payment_claimed_at ON orders(payment_claimed_at) WHERE payment_claimed_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_orders_payment_verified_at ON orders(payment_verified_at) WHERE payment_verified_at IS NOT NULL;

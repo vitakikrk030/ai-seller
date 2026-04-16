@@ -36,6 +36,16 @@ async function tryRefresh() {
 }
 
 export async function fetchAPI(path, options = {}) {
+  const parseError = async (res, fallbackMessage) => {
+    let payload = null;
+    try { payload = await res.json(); } catch {}
+    const message = payload?.error || payload?.message || fallbackMessage || `API error: ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.payload = payload;
+    return err;
+  };
+
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...options.headers },
     ...options,
@@ -50,6 +60,7 @@ export async function fetchAPI(path, options = {}) {
         ...options,
       });
       if (retry.ok) return retry.json();
+      throw await parseError(retry, 'Unauthorized');
     }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('auth_token');
@@ -58,7 +69,7 @@ export async function fetchAPI(path, options = {}) {
     }
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) throw await parseError(res);
   return res.json();
 }
 

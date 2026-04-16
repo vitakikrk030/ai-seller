@@ -2,7 +2,6 @@ const users = require('../db/users');
 const messages = require('../db/messages');
 const memory = require('../db/memory');
 const config = require('../config');
-const bot = require('./bot');
 const { deliverOutbox } = require('./outbox');
 const monitoring = require('../monitoring');
 const queue = require('../queue');
@@ -18,11 +17,6 @@ function _broadcast(event, data) {
 
 queue.configure({
   concurrency: 5,
-  onFallback: async (chatId) => {
-    try {
-      await bot.sendMessage(chatId, 'Секунду.');
-    } catch {}
-  },
 });
 
 const processedUpdates = new Map();
@@ -89,8 +83,17 @@ async function handleMessage(msg, businessConnectionId) {
 
   if (text && text.startsWith('/start bizChat')) {
     try {
+      const user = await users.findOrCreate(telegramId, name, username);
       const sendOptions = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
-      await bot.sendMessage(telegramId, 'Подключение успешно.', sendOptions);
+      await deliverOutbox({
+        telegramId,
+        user,
+        outbox: [{ kind: 'reply', text: 'Подключение успешно.' }],
+        businessConnectionId: sendOptions.business_connection_id || null,
+        applyDelay: false,
+        role: 'ai',
+        broadcast: _broadcast,
+      });
     } catch {}
     return;
   }
@@ -100,7 +103,7 @@ async function handleMessage(msg, businessConnectionId) {
       const user = await users.findOrCreate(telegramId, name, username);
       await messages.save(user.id, 'user', '[неподдерживаемый формат]', {
         telegramMessageId: msg.message_id || null,
-        deliveryStatus: 'received',
+        deliveryStatus: 'delivered',
       });
     } catch {}
     return;
@@ -124,7 +127,7 @@ async function handleMessage(msg, businessConnectionId) {
 
     const userMessage = await messages.save(user.id, 'user', text || '[фото]', {
       telegramMessageId: msg.message_id || null,
-      deliveryStatus: 'received',
+      deliveryStatus: 'delivered',
       metadata: { hasPhoto },
     });
     _broadcast('typing', { userId: user.id, typing: false });

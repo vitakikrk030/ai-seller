@@ -13,20 +13,29 @@ const TZ = 'Europe/Moscow';
 
 const STATE_LABELS = {
   NEW: 'Новый',
-  WAITING_SIZE: 'Размер',
-  WAITING_FORM: 'Данные',
-  WAITING_PAYMENT: 'Оплата',
+  COLLECTING: 'Оформление',
+  PAYMENT_REVIEW: 'Проверка оплаты',
+  PAYMENT_PENDING: 'Ожидание оплаты',
+  PAYMENT_CLAIMED: 'Чек отправлен',
   PAID: 'Оплачено',
   DONE: 'Готово',
 };
 
 const STATE_COLORS = {
   NEW: 'var(--c-neutral)',
-  WAITING_SIZE: 'var(--c-thinking)',
-  WAITING_FORM: 'var(--c-thinking)',
-  WAITING_PAYMENT: 'var(--c-warning)',
+  COLLECTING: 'var(--c-thinking)',
+  PAYMENT_REVIEW: 'var(--c-warning)',
+  PAYMENT_PENDING: 'var(--c-warning)',
+  PAYMENT_CLAIMED: 'var(--c-warning)',
   PAID: 'var(--c-active)',
   DONE: 'var(--c-active)',
+};
+
+const DELIVERY_LABELS = {
+  pending: 'В очереди',
+  sent: 'Отправка',
+  delivered: 'Доставлено',
+  failed: 'Ошибка',
 };
 
 // Heat pill colors
@@ -91,8 +100,8 @@ function fmtWait(minutes) {
 function heatLevel(user) {
   if (!user.last_message_at) return 'cold';
   const hoursSince = (Date.now() - new Date(user.last_message_at).getTime()) / 3600000;
-  const isPayment = user.state === 'WAITING_PAYMENT';
-  const isActive = ['WAITING_SIZE', 'WAITING_FORM'].includes(user.state);
+  const isPayment = ['PAYMENT_REVIEW', 'PAYMENT_PENDING', 'PAYMENT_CLAIMED'].includes(user.state);
+  const isActive = user.state === 'COLLECTING';
 
   if (isPayment && hoursSince < 24) return 'hot';
   if (isPayment) return 'warm';
@@ -252,8 +261,11 @@ export default function ChatView() {
         const { userId, message } = JSON.parse(e.data);
         if (selectedRef.current?.id === userId) {
           setMessages(prev => {
-            if (prev.some(m => m.id === message.id)) return prev;
-            return [...prev, message];
+            const idx = prev.findIndex((m) => m.id === message.id);
+            if (idx === -1) return [...prev, message];
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...message };
+            return next;
           });
           // clear typing when message arrives
           setTypingState(prev => ({ ...prev, [userId]: { client: false, ai: false } }));
@@ -380,21 +392,26 @@ export default function ChatView() {
     const text = input.trim();
     setInput('');
 
-    // Optimistic UI
-    const tempId = 'temp-' + Date.now();
-    const tempMsg = { id: tempId, role: 'admin', text, created_at: new Date().toISOString(), _pending: true };
-    setMessages(prev => [...prev, tempMsg]);
-
     setSending(true);
     try {
       const saved = await api.sendMessage(selected.id, text);
-      // replace temp with real (SSE may also deliver it — dedup handled in SSE handler)
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...saved } : m));
+      if (saved?.id) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === saved.id);
+          if (idx === -1) return [...prev, saved];
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...saved };
+          return next;
+        });
+      }
       try { setQuickReplies(await api.getQuickReplies(selected.id)); } catch {}
-    } catch {
-      // rollback optimistic
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } catch (err) {
+      try {
+        const refreshed = await api.getMessagesPaginated(selected.id, 50);
+        setMessages(refreshed);
+      } catch {}
       setInput(text);
+      console.error('sendMessage failed:', err.message);
     }
     setSending(false);
     inputRef.current?.focus();
@@ -403,14 +420,24 @@ export default function ChatView() {
   async function sendQuickReply(text) {
     if (!selected || sending) return;
     setSending(true);
-    const tempId = 'temp-' + Date.now();
-    setMessages(prev => [...prev, { id: tempId, role: 'admin', text, created_at: new Date().toISOString(), _pending: true }]);
     try {
       const saved = await api.sendMessage(selected.id, text);
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...saved } : m));
+      if (saved?.id) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === saved.id);
+          if (idx === -1) return [...prev, saved];
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...saved };
+          return next;
+        });
+      }
       try { setQuickReplies(await api.getQuickReplies(selected.id)); } catch {}
-    } catch {
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } catch (err) {
+      try {
+        const refreshed = await api.getMessagesPaginated(selected.id, 50);
+        setMessages(refreshed);
+      } catch {}
+      console.error('sendQuickReply failed:', err.message);
     }
     setSending(false);
     inputRef.current?.focus();
@@ -518,6 +545,16 @@ export default function ChatView() {
       return { text: 'AI на паузе', cls: 'cv-ai-paused' };
     }
     return { text: 'AI в диалоге', cls: 'cv-ai-active' };
+  }
+
+  function getDeliveryInfo(message) {
+    if (!message || message.role === 'user') return null;
+    const status = (message.delivery_status || '').toLowerCase();
+    if (!status || !DELIVERY_LABELS[status]) return null;
+    return {
+      status,
+      text: DELIVERY_LABELS[status],
+    };
   }
 
   // Group messages by day + unread separator
@@ -808,10 +845,12 @@ export default function ChatView() {
                 }
                 const m = item.data;
                 const isEditing = editingMsg?.id === m.id;
+                const delivery = getDeliveryInfo(m);
+                const isPendingDelivery = !!delivery && ['pending', 'sent'].includes(delivery.status);
                 return (
                   <div key={item.key} className={`cv-msg-wrap cv-msg-wrap-${m.role}`}>
                     <div
-                      className={`cv-msg cv-msg-${m.role} ${m._pending ? 'cv-msg-pending' : ''}`}
+                      className={`cv-msg cv-msg-${m.role} ${isPendingDelivery ? 'cv-msg-pending' : ''} ${delivery?.status === 'failed' ? 'cv-msg-failed' : ''}`}
                       onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ id: m.id, text: m.text, role: m.role, x: e.clientX, y: e.clientY }); }}
                     >
                       {isEditing ? (
@@ -829,12 +868,15 @@ export default function ChatView() {
                         <span className="cv-msg-role-label">
                           {m.role === 'user' ? 'Клиент' : m.role === 'ai' ? 'AI' : 'Менеджер'}
                         </span>
-                        <span className="cv-msg-time">{m._pending ? '...' : fmtTime(m.created_at)}</span>
-                        {!m._pending && (
-                          <button className="cv-msg-menu-btn" onClick={(e) => { e.stopPropagation(); setMsgMenu({ id: m.id, text: m.text, role: m.role, x: e.clientX, y: e.clientY }); }}>
-                            <MoreHorizontal size={12} />
-                          </button>
+                        <span className="cv-msg-time">{fmtTime(m.created_at)}</span>
+                        {delivery && (
+                          <span className={`cv-msg-delivery cv-msg-delivery-${delivery.status}`}>
+                            {delivery.text}
+                          </span>
                         )}
+                        <button className="cv-msg-menu-btn" onClick={(e) => { e.stopPropagation(); setMsgMenu({ id: m.id, text: m.text, role: m.role, x: e.clientX, y: e.clientY }); }}>
+                          <MoreHorizontal size={12} />
+                        </button>
                       </div>
                     </div>
                   </div>

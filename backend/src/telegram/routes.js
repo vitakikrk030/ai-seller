@@ -4,6 +4,8 @@ const router = express.Router();
 const { handleMessage } = require('./handler');
 const settings = require('../db/settings');
 const bot = require('./bot');
+const users = require('../db/users');
+const { deliverOutbox } = require('./outbox');
 const config = require('../config');
 
 // Telegram webhook endpoint
@@ -48,7 +50,18 @@ router.post('/webhook', (req, res) => {
         try {
           const cardNumber = await settings.get('payment_card_number');
           if (cardNumber) {
-            await bot.sendMessage(cbq.message.chat.id, cardNumber);
+            const chatId = cbq.message?.chat?.id;
+            const from = cbq.from || {};
+            if (chatId) {
+              const user = await users.findOrCreate(chatId, [from.first_name, from.last_name].filter(Boolean).join(' ') || null, from.username || null);
+              await deliverOutbox({
+                telegramId: chatId,
+                user,
+                outbox: [{ kind: 'reply', text: cardNumber }],
+                applyDelay: false,
+                role: 'ai',
+              });
+            }
           }
           await bot.answerCallbackQuery(cbq.id, 'Номер карты отправлен для копирования');
         } catch (e) {
@@ -66,9 +79,16 @@ router.post('/webhook', (req, res) => {
     console.log(`Business connection: user=${chatId} enabled=${enabled}`);
 
     if (chatId && enabled) {
-      bot.sendMessage(chatId, '✅ Бот подключён и готов к работе').catch((e) =>
-        console.error('business_connection send error:', e.message)
-      );
+      const from = bc.user || {};
+      users.findOrCreate(chatId, [from.first_name, from.last_name].filter(Boolean).join(' ') || null, from.username || null)
+        .then((user) => deliverOutbox({
+          telegramId: chatId,
+          user,
+          outbox: [{ kind: 'reply', text: '✅ Бот подключён и готов к работе' }],
+          applyDelay: false,
+          role: 'ai',
+        }))
+        .catch((e) => console.error('business_connection send error:', e.message));
     }
   }
 });

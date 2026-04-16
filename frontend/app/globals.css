@@ -985,6 +985,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 /* Pending message */
 .cv-msg-pending { opacity: 0.65; }
+.cv-msg-failed {
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.5);
+}
+.cv-msg-delivery {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15px;
+  opacity: 0.75;
+}
+.cv-msg-delivery-pending,
+.cv-msg-delivery-sent {
+  color: rgba(245, 158, 11, 0.95);
+}
+.cv-msg-delivery-delivered {
+  color: rgba(34, 197, 94, 0.95);
+}
+.cv-msg-delivery-failed {
+  color: rgba(239, 68, 68, 0.95);
+}
 
 /* Message search bar */
 .cv-msg-search-bar {

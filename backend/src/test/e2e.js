@@ -302,10 +302,13 @@ async function runScenario() {
     order = await orders.getLatestByUser(user.id);
     const resolvedReview = await db.query('SELECT * FROM owner_reviews WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1', [order.id]);
     policyRunRows = await db.query('SELECT * FROM policy_runs WHERE user_id = $1 ORDER BY created_at ASC', [user.id]);
-    const aiMessages = (await messages.getByUser(user.id)).filter((message) => message.role === 'ai');
+    const conversation = await messages.getByUser(user.id);
+    const aiMessages = conversation.filter((message) => message.role === 'ai');
+    const outboundMessages = conversation.filter((message) => ['ai', 'admin'].includes(message.role));
 
     assert(orders.normalizeStatus(order.status) === 'payment_verified', 'Order остаётся под ручным контролем до подтверждения владельцем');
     assert(resolvedReview.rows[0].status === 'verified', 'Owner review закрыт как verified');
+    assert(outboundMessages.every((message) => ['pending', 'sent', 'delivered', 'failed'].includes(message.delivery_status)), 'Outbound сообщения используют строгую delivery модель');
     assert(aiMessages.every((message) => message.delivery_status === 'delivered'), 'Outbound сообщения получают delivery status');
     assert(aiMessages.some((message) => message.text.includes('заказ принят в работу')), 'Post-payment reply объясняет клиенту следующий шаг');
     assert(policyRunRows.rows.some((row) => JSON.stringify(row.input_json).includes('owner_payment_verified')), 'Owner-triggered reply тоже логируется в policy_runs');
@@ -335,7 +338,7 @@ async function runScenario() {
       const failed = await axios.post(`${baseUrl}/api/users/${user.id}/messages`, {
         text: 'Ручная проверка доставки',
       }).catch((error) => error.response);
-      assert(failed.status === 500, 'Ошибки Telegram не игнорируются в admin send flow');
+      assert(failed.status === 502, 'Ошибки Telegram не игнорируются в admin send flow');
     });
 
     bot.sendMessage = stableBotStub;

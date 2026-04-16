@@ -8,13 +8,13 @@ const settings = require('../db/settings');
 const memory = require('../db/memory');
 const policyRuns = require('../db/policy_runs');
 const queue = require('../queue');
-const bot = require('../telegram/bot');
 const axios = require('axios');
 const shop = require('../shop');
 const ownerReviews = require('../db/owner_reviews');
 const { runPolicy } = require('../policy');
 const { buildOrderContext, syncUserState } = require('../domain/order_service');
-const { deliverOutbox } = require('../telegram/outbox');
+const { executeManualReply } = require('../actuators');
+const { deliverOutbox, OutboxDeliveryError } = require('../telegram/outbox');
 
 // === USERS ===
 
@@ -177,12 +177,17 @@ router.post('/users/:id/messages', async (req, res) => {
     // Cancel any pending AI responses for this chat (manager takes over)
     queue.cancelChat(user.telegram_id);
 
-    // Send via Telegram with delivery tracking
+    const execution = await executeManualReply(user, text, { role: 'admin' });
+    if (execution.outbox.length === 0) {
+      return res.status(400).json({ error: 'Text required' });
+    }
+
+    // Send via unified pipeline: actuator -> outbox -> Telegram
     console.log(`SEND TO (CRM): ${user.telegram_id} (user.id=${user.id})`);
-    await deliverOutbox({
+    const delivered = await deliverOutbox({
       telegramId: user.telegram_id,
       user,
-      outbox: [{ kind: 'reply', text }],
+      outbox: execution.outbox,
       role: 'admin',
       applyDelay: false,
       broadcast: broadcastSSE,
@@ -194,9 +199,17 @@ router.post('/users/:id/messages', async (req, res) => {
     // Обучение от менеджера (non-blocking)
     const managerLearning = require('../db/manager_learning');
     managerLearning.learnFromManager(text).catch(() => {});
-    const latest = (await messages.getByUserPaginated(user.id, 1)).at(-1) || null;
+    const latest = delivered.at(-1) || (await messages.getByUserPaginated(user.id, 1)).at(-1) || null;
     res.json(latest);
   } catch (err) {
+    if (err instanceof OutboxDeliveryError) {
+      return res.status(502).json({
+        error: err.message,
+        delivery_status: 'failed',
+        message: err.failedMessage,
+        details: err.details,
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });
