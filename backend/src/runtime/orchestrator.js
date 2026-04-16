@@ -3,6 +3,9 @@ const policyRuns = require('../db/policy_runs');
 const { runPolicy } = require('../policy');
 const log = require('../logger');
 
+const CHAT_TEMPERATURE = 0.7;
+const CHAT_MAX_TOKENS = 1000;
+
 async function processTurn(user, incoming) {
   const userMessage = incoming.text || (incoming.hasPhoto ? '[фото]' : '[пустое сообщение]');
   const history = await messages.getHistory(user.id, 20).catch(() => []);
@@ -17,8 +20,8 @@ async function processTurn(user, incoming) {
       },
     },
     {
-      temperature: 0.3,
-      maxTokens: 700,
+      temperature: CHAT_TEMPERATURE,
+      maxTokens: CHAT_MAX_TOKENS,
     }
   );
 
@@ -64,4 +67,6 @@ async function processTurn(user, incoming) {
 
 module.exports = {
   processTurn,
+  CHAT_TEMPERATURE,
+  CHAT_MAX_TOKENS,
 };

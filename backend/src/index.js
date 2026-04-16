@@ -13,6 +13,9 @@ const apiRoutes = require('./api/routes');
 const scheduler = require('./scheduler');
 const monitoring = require('./monitoring');
 const { authMiddleware, login, verify, refresh, logout } = require('./api/auth');
+const { getPublicAIConfig } = require('./ai/client');
+const { CHAT_TEMPERATURE, CHAT_MAX_TOKENS } = require('./runtime/orchestrator');
+const { getGitCommit, getPipelineVersion } = require('./utils/runtime_info');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -78,7 +81,27 @@ app.post('/api/auth/logout', authMiddleware, logout);
 app.use('/api', apiLimiter, authMiddleware, apiRoutes);
 
 // Health / readiness checks
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => {
+  const ai = getPublicAIConfig();
+  res.json({
+    status: 'ok',
+    commit: getGitCommit(),
+    pipeline: getPipelineVersion(),
+    ai: {
+      provider: ai.baseUrl,
+      model: ai.model,
+      client_default_max_tokens: ai.maxTokens,
+      timeout_ms: ai.timeout,
+      has_api_key: ai.hasApiKey,
+    },
+    chat_runtime: {
+      max_tokens: CHAT_MAX_TOKENS,
+      temperature: CHAT_TEMPERATURE,
+    },
+    payload_logging: true,
+    roles_sent_to_model: ['user'],
+  });
+});
 app.get('/ready', async (req, res) => {
   try {
     await db.query('SELECT 1');
@@ -118,7 +141,19 @@ async function start() {
   }
 
   server = app.listen(config.PORT, () => {
-    log.info(`Server running on port ${config.PORT}`);
+    const ai = getPublicAIConfig();
+    log.info(`Server running on port ${config.PORT}`, {
+      commit: getGitCommit(),
+      pipeline: getPipelineVersion(),
+      aiProvider: ai.baseUrl,
+      aiModel: ai.model,
+      aiClientDefaultMaxTokens: ai.maxTokens,
+      aiTimeoutMs: ai.timeout,
+      chatRuntimeMaxTokens: CHAT_MAX_TOKENS,
+      chatRuntimeTemperature: CHAT_TEMPERATURE,
+      payloadLogging: true,
+      rolesSentToModel: ['user'],
+    });
   });
 
   // Setup webhook

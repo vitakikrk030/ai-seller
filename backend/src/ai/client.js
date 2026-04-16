@@ -39,6 +39,17 @@ function getAIConfig() {
   };
 }
 
+function getPublicAIConfig() {
+  const cfg = getAIConfig();
+  return {
+    baseUrl: cfg.baseUrl,
+    model: cfg.model,
+    hasApiKey: Boolean(cfg.apiKey),
+    maxTokens: cfg.maxTokens,
+    timeout: cfg.timeout,
+  };
+}
+
 /**
  * Get secondary (failover) AI config. Returns null if not configured.
  */
@@ -208,4 +219,4 @@ async function getUsageStats({ days = 30 } = {}) {
   }
 }
 
-module.exports = { sendMessage, getUsageStats, getAIConfig, estimateTokens };
+module.exports = { sendMessage, getUsageStats, getAIConfig, getPublicAIConfig, estimateTokens };
