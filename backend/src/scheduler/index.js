@@ -3,12 +3,12 @@ const db = require('../db');
 const users = require('../db/users');
 const messages = require('../db/messages');
 const prompts = require('../db/prompts');
-const bot = require('../telegram/bot');
+const { deliverOutbox } = require('../telegram/outbox');
 const { generateResponse } = require('../ai');
 const monitoring = require('../monitoring');
-const memory = require('../db/memory');
 const safety = require('../ai/safety');
 const aiSettings = require('../db/ai_settings');
+const { buildOrderContext, normalizeUserState } = require('../logic/sales');
 
 /**
  * Determine reactivation scenario based on user state & history.
@@ -19,14 +19,15 @@ async function getScenario(user) {
     [user.id]
   );
   const lastOrder = orderResult.rows[0];
+  const normalizedStatus = lastOrder?.status ? String(lastOrder.status).toLowerCase() : null;
 
-  if (lastOrder && (lastOrder.status === 'PAID' || lastOrder.status === 'DONE')) {
+  if (lastOrder && (normalizedStatus === 'payment_verified' || normalizedStatus === 'fulfilled')) {
     return 'post_purchase';
   }
 
   const daysSince = Math.floor((Date.now() - new Date(user.last_seen).getTime()) / (1000 * 60 * 60 * 24));
 
-  if (['WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT'].includes(user.state)) {
+  if (normalizeUserState(user.state) === 'COLLECTING') {
     return 'abandoned_7d';
   }
 
@@ -51,40 +52,35 @@ async function buildFollowup(user, scenario) {
 }
 
 /**
- * Nudge chain config — тексты берутся из AI Settings по ключу.
+ * Nudge chain config — only timing lives in code.
  * afterMin — через сколько минут отправлять.
  */
 const NUDGE_CHAIN_CONFIG = {
-  WAITING_PAYMENT: [
-    { afterMin: 60,   key: 'nudge_payment_1h',   closerKey: 'nudge_payment_closer_1h' },
-    { afterMin: 1440, key: 'nudge_payment_24h',  closerKey: 'nudge_payment_closer_24h' },
-    { afterMin: 4320, key: 'nudge_payment_3d' },
-  ],
-  WAITING_FORM: [
-    { afterMin: 60,   key: 'nudge_form_1h',      closerKey: 'nudge_form_closer_1h' },
-    { afterMin: 1440, key: 'nudge_form_24h' },
-    { afterMin: 4320, key: 'nudge_form_3d' },
-  ],
-  WAITING_SIZE: [
-    { afterMin: 60,   key: 'nudge_size_1h' },
-    { afterMin: 1440, key: 'nudge_size_24h' },
+  COLLECTING: [
+    { afterMin: 60 },
+    { afterMin: 1440 },
+    { afterMin: 4320 },
   ],
 };
 
-function start() {
-  // Self Learning Loop — каждый час авто-оптимизация A/B тестов
-  cron.schedule('0 * * * *', async () => {
-    try {
-      const { runSelfLearningLoop } = require('../ai/optimizer');
-      const result = await runSelfLearningLoop();
-      if (result.ab_optimization?.some(r => r.status === 'optimized')) {
-        console.log('Self-learning: A/B optimized', result.ab_optimization.filter(r => r.status === 'optimized'));
-      }
-    } catch (err) {
-      console.error('Self-learning loop error:', err.message);
-    }
-  });
+async function buildAutoNudge(user, level) {
+  const normalizedState = normalizeUserState(user.state);
+  const orderContext = await buildOrderContext({ ...user, state: normalizedState });
+  const prompt = `Клиент замолчал в текущем оформлении. Напиши короткое продолжение диалога, которое вернёт его к следующему шагу. Уровень напоминания: ${level}.`;
 
+  return generateResponse(
+    { ...user, state: normalizedState },
+    prompt,
+    {
+      orderContext,
+      sensorContext: {
+        automation: 'nudge',
+      },
+    }
+  );
+}
+
+function start() {
   // Clear stale manager_active flags every 10 minutes
   cron.schedule('*/10 * * * *', async () => {
     monitoring.schedulerHeartbeat();
@@ -112,7 +108,8 @@ function start() {
           if (!user.ai_enabled) continue;
           if (user.manager_active) continue;
 
-          const chain = NUDGE_CHAIN_CONFIG[user.state];
+          const normalizedState = normalizeUserState(user.state);
+          const chain = NUDGE_CHAIN_CONFIG[normalizedState];
           if (!chain) continue;
 
           const recentMsgs = await messages.getHistory(user.id, 5);
@@ -142,17 +139,18 @@ function start() {
             if (lastNudgeAge < 30) continue;
           }
 
-          // Получаем текст из AI Settings — closer режим использует агрессивные дожимы
-          const closerActive = await aiSettings.isEnabled('closer_mode_enabled').catch(() => false)
-            || (await aiSettings.getRaw('sales_style_preset').catch(() => '')) === 'closer';
-          const nudgeKey = (closerActive && nextNudgeCfg.closerKey) ? nextNudgeCfg.closerKey : nextNudgeCfg.key;
-          const msg = await aiSettings.getNudge(nudgeKey) || await aiSettings.getNudge(nextNudgeCfg.key);
+          const msg = await buildAutoNudge(user, nudgesSent + 1);
           if (!msg) continue;
 
-          await messages.save(user.id, 'ai', msg);
-          console.log(`SEND TO (nudge): ${user.telegram_id} (user.id=${user.id}, state=${user.state})`);
-          await bot.sendMessage(user.telegram_id, msg);
-          console.log(`Auto-nudge [${user.state} L${nudgesSent + 1}] to user ${user.id}`);
+          const safeResult = await safety.enforce(msg, { isScheduled: true, userState: normalizedState });
+          console.log(`SEND TO (nudge): ${user.telegram_id} (user.id=${user.id}, state=${normalizedState})`);
+          await deliverOutbox({
+            telegramId: user.telegram_id,
+            user,
+            outbox: [{ kind: 'reply', text: safeResult.text }],
+            applyDelay: false,
+          });
+          console.log(`Auto-nudge [${normalizedState} L${nudgesSent + 1}] to user ${user.id}`);
         } catch (err) {
           console.error(`Auto-nudge error for user ${user.id}:`, err.message);
         }
@@ -188,8 +186,12 @@ function start() {
 
           if (message) {
             const safeResult = await safety.enforce(message, { isScheduled: true, userState: 'FOLLOWUP' });
-            await messages.save(user.id, 'ai', safeResult.text);
-            await bot.sendMessage(user.telegram_id, safeResult.text);
+            await deliverOutbox({
+              telegramId: user.telegram_id,
+              user,
+              outbox: [{ kind: 'reply', text: safeResult.text }],
+              applyDelay: false,
+            });
             await db.query('UPDATE users SET last_seen = NOW() WHERE id = $1', [user.id]);
             console.log(`Follow-up [${scenario}] sent to user ${user.id} (${daysSince}d inactive)`);
           }

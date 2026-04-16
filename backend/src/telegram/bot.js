@@ -35,15 +35,16 @@ const bot = {
       if (options.parse_mode) {
         payload.parse_mode = options.parse_mode;
       }
-      // Telegram Business: send as the connected user
       if (options.business_connection_id) {
         payload.business_connection_id = options.business_connection_id;
       }
-      await tgRequest('sendMessage', payload);
+      const response = await tgRequest('sendMessage', payload);
       try { require('../monitoring').recordSuccess('telegram'); } catch(e) {}
+      return response.data?.result || null;
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);
       try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed'); } catch(e) {}
+      throw err;
     }
   },
 

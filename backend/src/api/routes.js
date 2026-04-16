@@ -6,10 +6,15 @@ const orders = require('../db/orders');
 const prompts = require('../db/prompts');
 const settings = require('../db/settings');
 const memory = require('../db/memory');
+const policyRuns = require('../db/policy_runs');
 const queue = require('../queue');
 const bot = require('../telegram/bot');
 const axios = require('axios');
 const shop = require('../shop');
+const ownerReviews = require('../db/owner_reviews');
+const { runPolicy } = require('../policy');
+const { buildOrderContext, syncUserState } = require('../domain/order_service');
+const { deliverOutbox } = require('../telegram/outbox');
 
 // === USERS ===
 
@@ -82,91 +87,13 @@ router.post('/users/:id/read', async (req, res) => {
   }
 });
 
-// Quick-reply suggestions based on user state + memory (из AI Settings)
+// Quick replies are intentionally disabled in AI-only mode:
+// the assistant, not backend templates, should drive the conversation.
 router.get('/users/:id/quick-replies', async (req, res) => {
   try {
-    const aiSettings = require('../db/ai_settings');
-    const toggleEnabled = await aiSettings.isEnabled('toggle_quick_replies');
-    if (!toggleEnabled) return res.json([]);
-
     const user = await users.getById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const mem = await memory.get(req.params.id).catch(() => null);
-    const replies = [];
-
-    // Все тексты берутся только из AI Settings
-    switch (user.state) {
-      case 'NEW': {
-        const [r1, r2, r3] = await Promise.all([
-          aiSettings.get('qr_new_1'),
-          aiSettings.get('qr_new_2'),
-          aiSettings.get('qr_new_3'),
-        ]);
-        if (r1) replies.push(r1);
-        if (r2) replies.push(r2);
-        if (r3) replies.push(r3);
-        break;
-      }
-      case 'WAITING_SIZE': {
-        const askSize = await aiSettings.get('speech_ask_size');
-        if (mem?.shoe_size) {
-          replies.push(`Размер ${mem.shoe_size} оставляем?`);
-        } else if (askSize) {
-          replies.push(askSize);
-        }
-        const askInsole = await aiSettings.get('speech_ask_insole');
-        if (askInsole) replies.push(askInsole);
-        const alt = await aiSettings.get('qr_size_alt');
-        if (alt) replies.push(alt);
-        break;
-      }
-      case 'WAITING_FORM': {
-        const askAddress = await aiSettings.get('speech_ask_address');
-        if (mem?.full_name && mem?.phone && mem?.address) {
-          const memConfirm = await aiSettings.get('speech_ask_address') || null;
-          replies.push(memConfirm || askAddress);
-        } else if (askAddress) {
-          replies.push(askAddress);
-        }
-        const delivery = await aiSettings.get('qr_form_delivery');
-        if (delivery) replies.push(delivery);
-        break;
-      }
-      case 'WAITING_PAYMENT': {
-        const [card, reminder, after] = await Promise.all([
-          aiSettings.get('qr_payment_card'),
-          aiSettings.get('speech_reminder_payment'),
-          aiSettings.get('qr_payment_after'),
-        ]);
-        if (card) replies.push(card);
-        if (reminder) replies.push(reminder);
-        if (after) replies.push(after);
-        break;
-      }
-      case 'PAID': {
-        const confirm = await aiSettings.get('speech_payment_confirm');
-        if (confirm) replies.push(confirm);
-        break;
-      }
-      case 'DONE': {
-        const [feedback, repeat, welcome] = await Promise.all([
-          aiSettings.get('qr_done_feedback'),
-          aiSettings.get('speech_repeat_sale'),
-          aiSettings.get('qr_done_welcome'),
-        ]);
-        if (feedback) replies.push(feedback);
-        if (repeat) replies.push(repeat);
-        if (welcome) replies.push(welcome);
-        break;
-      }
-      default: {
-        const r1 = await aiSettings.get('qr_new_1');
-        if (r1) replies.push(r1);
-        break;
-      }
-    }
-    res.json(replies.filter(Boolean));
+    res.json([]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,10 +131,19 @@ router.patch('/users/:id/memory', async (req, res) => {
   }
 });
 
+router.get('/users/:id/policy-runs', async (req, res) => {
+  try {
+    const data = await policyRuns.getByUser(req.params.id, parseInt(req.query.limit || '50', 10));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/users/:id/state', async (req, res) => {
   try {
     const { state } = req.body;
-    const validStates = ['NEW', 'WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT', 'PAID', 'DONE'];
+    const validStates = ['NEW', 'COLLECTING', 'PAYMENT_REVIEW', 'PAID', 'DONE'];
     if (!state || !validStates.includes(state)) {
       return res.status(400).json({ error: `Invalid state. Allowed: ${validStates.join(', ')}` });
     }
@@ -238,27 +174,28 @@ router.post('/users/:id/messages', async (req, res) => {
     const user = await users.getById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Save admin message
-    const msg = await messages.save(user.id, 'admin', text);
-
     // Cancel any pending AI responses for this chat (manager takes over)
     queue.cancelChat(user.telegram_id);
 
-    // Mark manager as active (for AUTO_WITH_MANAGER_OVERRIDE mode)
-    await users.setManagerActive(user.id, true);
-
-    // Send via Telegram
+    // Send via Telegram with delivery tracking
     console.log(`SEND TO (CRM): ${user.telegram_id} (user.id=${user.id})`);
-    await bot.sendMessage(user.telegram_id, text);
+    await deliverOutbox({
+      telegramId: user.telegram_id,
+      user,
+      outbox: [{ kind: 'reply', text }],
+      role: 'admin',
+      applyDelay: false,
+      broadcast: broadcastSSE,
+    });
+
+    // Mark manager as active only after successful delivery
+    await users.setManagerActive(user.id, true);
 
     // Обучение от менеджера (non-blocking)
     const managerLearning = require('../db/manager_learning');
     managerLearning.learnFromManager(text).catch(() => {});
-
-    // Broadcast SSE to admin panel
-    broadcastSSE('message', { userId: user.id, message: msg });
-
-    res.json(msg);
+    const latest = (await messages.getByUserPaginated(user.id, 1)).at(-1) || null;
+    res.json(latest);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -398,6 +335,99 @@ function broadcastSSE(event, data) {
 
 router.broadcastSSE = broadcastSSE;
 
+async function sendOwnerVerifiedReply(order, actor) {
+  const user = await users.getById(order.user_id);
+  if (!user) {
+    return { notified: false, reason: 'user_not_found', reply: null, error: null };
+  }
+
+  const [history, catalog] = await Promise.all([
+    messages.getHistory(user.id, 15).catch(() => []),
+    shop.getCatalog().catch(() => ({ available: false, status: 'api_error', products: [] })),
+  ]);
+
+  const sensors = {
+    intent: 'payment_verified',
+    intent_confidence: 'high',
+    intent_meta: {
+      source: 'owner_manual_verification',
+      actor: actor || 'admin',
+    },
+    has_photo: false,
+    payment_claim_signal: false,
+    product_match: null,
+    extracted: {},
+  };
+
+  const orderContext = await buildOrderContext(user, sensors);
+  const systemMessage = 'Владелец подтвердил оплату. Сообщи клиенту, что заказ подтвержден и что будет дальше.';
+  const run = await runPolicy(
+    user,
+    systemMessage,
+    {
+      history,
+      catalog,
+      sensors,
+      order: orderContext,
+    },
+    {
+      temperature: 0.2,
+      maxTokens: 400,
+    }
+  );
+
+  const outbox = run.decision.reply ? [{ kind: 'reply', text: run.decision.reply }] : [];
+  let deliveryError = null;
+
+  if (outbox.length > 0) {
+    try {
+      await deliverOutbox({
+        telegramId: user.telegram_id,
+        user,
+        outbox,
+        applyDelay: false,
+        broadcast: broadcastSSE,
+      });
+    } catch (err) {
+      deliveryError = err;
+    }
+  }
+
+  const policyLoggingEnabled = (await settings.get('policy_logging_enabled').catch(() => 'true')) !== 'false';
+  if (policyLoggingEnabled) {
+    await policyRuns.create({
+      user_id: user.id,
+      order_id: order.id,
+      mode: 'owner_event',
+      input_json: {
+        trigger: 'owner_payment_verified',
+        actor: actor || 'admin',
+        sensors,
+        order: orderContext,
+        catalog_status: catalog.status,
+      },
+      raw_output: run.rawOutput,
+      decision_json: run.decision,
+      validation_status: run.validation.valid ? 'passed' : 'failed',
+      validation_errors: run.validation.errors,
+      backend_actions: [
+        { type: 'owner_mark_payment_verified', order_id: order.id, actor: actor || 'admin' },
+        {
+          type: outbox.length > 0 ? 'owner_payment_verified_reply' : 'owner_payment_verified_reply_skipped',
+          delivery_status: deliveryError ? 'failed' : 'delivered',
+        },
+      ],
+    }).catch(() => {});
+  }
+
+  return {
+    notified: outbox.length > 0 && !deliveryError,
+    reason: outbox.length === 0 ? 'empty_reply' : null,
+    reply: run.decision.reply || null,
+    error: deliveryError?.message || null,
+  };
+}
+
 // === ORDERS ===
 
 router.get('/orders', async (req, res) => { // @test-only — UI uses /users/:id/orders
@@ -421,12 +451,69 @@ router.get('/users/:id/orders', async (req, res) => {
 router.patch('/orders/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const validStatuses = ['NEW', 'PAID', 'DONE', 'CANCELLED'];
+    if (['payment_verified', 'PAID'].includes(status)) {
+      return res.status(400).json({
+        error: 'payment_verified can only be set through explicit owner payment verification',
+      });
+    }
+    const validStatuses = [
+      'draft',
+      'payment_pending',
+      'payment_claimed',
+      'fulfilled',
+      'cancelled',
+    ];
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Allowed: ${validStatuses.join(', ')}` });
     }
-    const order = await orders.updateStatus(req.params.id, status);
+
+    let order;
+    if (status === 'payment_pending') {
+      order = await orders.resetToPaymentPending(req.params.id);
+      await ownerReviews.resolveByOrder(req.params.id, 'rejected', req.user?.login || 'admin', 'returned_to_payment_pending');
+    } else {
+      order = await orders.updateStatus(req.params.id, status);
+      if (order && ['cancelled', 'fulfilled'].includes(status)) {
+        await ownerReviews.resolveByOrder(req.params.id, 'resolved', req.user?.login || 'admin');
+      }
+    }
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    await syncUserState(order.user_id, order).catch(() => {});
     res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/orders/:id/payment/verify', async (req, res) => {
+  try {
+    const existing = await orders.getById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Order not found' });
+
+    const actor = req.user?.login || 'admin';
+    const currentStatus = orders.normalizeStatus(existing.status);
+    if (!['payment_claimed', 'payment_verified'].includes(currentStatus)) {
+      return res.status(409).json({
+        error: 'Only payment_claimed orders can be manually verified',
+      });
+    }
+
+    const order = currentStatus === 'payment_verified'
+      ? existing
+      : await orders.markPaymentVerified(req.params.id);
+    if (!order) {
+      return res.status(409).json({ error: 'Order is no longer eligible for payment verification' });
+    }
+
+    await ownerReviews.resolveByOrder(req.params.id, 'verified', actor);
+    await syncUserState(order.user_id, order).catch(() => {});
+
+    const notification = currentStatus === 'payment_verified'
+      ? { notified: false, reason: 'already_verified', reply: null, error: null }
+      : await sendOwnerVerifiedReply(order, actor);
+
+    res.json({ order, notification });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -785,7 +872,7 @@ router.get('/monitoring/summary', async (req, res) => {
       `SELECT COALESCE(SUM(price),0) as total FROM orders
        WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
          AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 day'
-         AND status IN ('PAID','DONE')`
+         AND status IN ('payment_verified','fulfilled')`
     );
     const revenue_today = parseFloat(revRow.rows[0]?.total || 0);
 
@@ -799,7 +886,7 @@ router.get('/monitoring/summary', async (req, res) => {
       `SELECT COUNT(*) as paid FROM orders
        WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
          AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 day'
-         AND status IN ('PAID','DONE')`
+         AND status IN ('payment_verified','fulfilled')`
     );
     const totalDialogs = parseInt(convRow.rows[0]?.total || 0);
     const paidOrders = parseInt(paidRow.rows[0]?.paid || 0);
@@ -850,7 +937,7 @@ router.get('/monitoring/summary', async (req, res) => {
       `SELECT COALESCE(SUM(price),0) as total FROM orders
        WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 day'
          AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND status IN ('PAID','DONE')`
+         AND status IN ('payment_verified','fulfilled')`
     );
     const revenue_yesterday = parseFloat(revYestRow.rows[0]?.total || 0);
 
@@ -861,7 +948,7 @@ router.get('/monitoring/summary', async (req, res) => {
          AND role = 'user'`
     );
     const convYestPaid = await db.query(
-      "SELECT COUNT(*) as paid FROM orders WHERE paid_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours' AND status IN ('PAID','DONE')"
+      "SELECT COUNT(*) as paid FROM orders WHERE paid_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours' AND status IN ('payment_verified','fulfilled')"
     );
     const yd = parseInt(convYestDialogs.rows[0]?.total || 0);
     const yp = parseInt(convYestPaid.rows[0]?.paid || 0);

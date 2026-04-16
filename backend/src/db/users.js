@@ -62,9 +62,8 @@ const users = {
           ELSE 0
         END as pause_remaining,
         CASE
-          WHEN u.state = 'WAITING_PAYMENT' THEN 100
-          WHEN u.state = 'WAITING_FORM' THEN 80
-          WHEN u.state = 'WAITING_SIZE' THEN 60
+          WHEN u.state = 'PAYMENT_REVIEW' THEN 110
+          WHEN u.state = 'COLLECTING' THEN 100
           WHEN u.state = 'PAID' THEN 50
           WHEN u.state = 'NEW' THEN 40
           WHEN u.state = 'DONE' THEN 10
@@ -89,10 +88,9 @@ const users = {
           WHEN um.created_at IS NOT NULL
             AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
             AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 2
-            AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW')
+            AND u.state IN ('COLLECTING','PAYMENT_REVIEW','NEW')
           THEN true
-          -- stuck on payment for 30+ min
-          WHEN u.state = 'WAITING_PAYMENT'
+          WHEN u.state IN ('COLLECTING')
             AND um.created_at IS NOT NULL
             AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 30
           THEN true
@@ -103,12 +101,12 @@ const users = {
           WHEN um.created_at IS NOT NULL
             AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
             AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 2
-            AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW')
+            AND u.state IN ('COLLECTING','PAYMENT_REVIEW','NEW')
           THEN 'Нет ответа ' || EXTRACT(EPOCH FROM (NOW() - um.created_at))::int / 60 || ' мин'
-          WHEN u.state = 'WAITING_PAYMENT'
+          WHEN u.state IN ('COLLECTING')
             AND um.created_at IS NOT NULL
             AND EXTRACT(EPOCH FROM (NOW() - um.created_at)) / 60 >= 30
-          THEN 'Завис на оплате'
+          THEN 'Диалог завис на оформлении'
           ELSE NULL
         END as attention_reason,
         -- computed_priority score: pinned=1000, needs_attention=500, unread=100
@@ -119,7 +117,7 @@ const users = {
               WHEN u.attention_override = true THEN u.needs_attention
               WHEN um.created_at IS NOT NULL AND um.created_at > COALESCE(lr.created_at,'1970-01-01')
                 AND EXTRACT(EPOCH FROM (NOW()-um.created_at))/60 >= 2
-                AND u.state IN ('WAITING_PAYMENT','WAITING_FORM','WAITING_SIZE','NEW') THEN true
+                AND u.state IN ('COLLECTING','PAYMENT_REVIEW','NEW') THEN true
               ELSE false
             END
           ) THEN 500
@@ -229,7 +227,7 @@ const users = {
   async getStuckInOrder(minutes) {
     const result = await db.query(
       `SELECT * FROM users
-       WHERE state IN ('WAITING_SIZE', 'WAITING_FORM', 'WAITING_PAYMENT')
+       WHERE state IN ('COLLECTING')
          AND ai_enabled = true
          AND last_seen < NOW() - INTERVAL '1 minute' * $1
          AND last_seen > NOW() - INTERVAL '1 day'`,

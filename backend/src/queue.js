@@ -9,9 +9,7 @@
  *
  * Priority (lower number = higher priority):
  *   0  manager override / cancel
- *   1  WAITING_PAYMENT
- *   2  WAITING_FORM
- *   3  WAITING_SIZE / hot clients
+ *   1  COLLECTING / hot clients
  *   4  NEW / other
  *   5  DONE / cold
  */
@@ -20,9 +18,8 @@ const log = require('./logger');
 
 // ── State priority map ──
 const STATE_PRIORITY = {
-  WAITING_PAYMENT: 1,
-  WAITING_FORM: 2,
-  WAITING_SIZE: 3,
+  COLLECTING: 1,
+  PAYMENT_REVIEW: 1,
   PAID: 4,
   NEW: 4,
   DONE: 5,

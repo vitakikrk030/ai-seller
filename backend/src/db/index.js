@@ -1,16 +1,13 @@
 const { Pool } = require('pg');
 const config = require('../config');
+const { ensureRuntimeSchema } = require('./runtime_schema');
 
 const pool = new Pool({
   connectionString: config.DATABASE_URL,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
-});
-
-// Set Moscow timezone on every new connection
-pool.on('connect', (client) => {
-  client.query("SET timezone = 'Europe/Moscow'").catch(() => {});
+  options: '-c timezone=Europe/Moscow',
 });
 
 // Prevent unhandled errors from crashing the process on idle client errors
@@ -25,6 +22,7 @@ module.exports = {
     try {
       await pool.query("SET timezone = 'Europe/Moscow'");
       await pool.query('SELECT 1');
+      await ensureRuntimeSchema(pool);
       console.log('Database connected (timezone: Europe/Moscow)');
     } catch (err) {
       console.error('Database connection error:', err.message);

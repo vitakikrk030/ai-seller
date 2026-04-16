@@ -1,12 +1,42 @@
 const db = require('../db');
 
 const messages = {
-  async save(userId, role, text) {
+  async save(userId, role, text, options = {}) {
     const result = await db.query(
-      'INSERT INTO messages (user_id, role, text) VALUES ($1, $2, $3) RETURNING *',
-      [userId, role, text]
+      `INSERT INTO messages (
+        user_id,
+        role,
+        text,
+        telegram_message_id,
+        delivery_status,
+        error_text,
+        metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *`,
+      [
+        userId,
+        role,
+        text,
+        options.telegramMessageId || null,
+        options.deliveryStatus || null,
+        options.errorText || null,
+        JSON.stringify(options.metadata || {}),
+      ]
     );
     return result.rows[0];
+  },
+
+  async markDelivery(id, deliveryStatus, options = {}) {
+    const result = await db.query(
+      `UPDATE messages
+       SET delivery_status = $2,
+           telegram_message_id = COALESCE($3, telegram_message_id),
+           error_text = $4
+       WHERE id = $1
+       RETURNING *`,
+      [id, deliveryStatus, options.telegramMessageId || null, options.errorText || null]
+    );
+    return result.rows[0] || null;
   },
 
   async getHistory(userId, limit = 20) {

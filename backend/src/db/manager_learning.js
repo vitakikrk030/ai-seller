@@ -68,9 +68,8 @@ async function getPatternsForAI(userState) {
   // Маппинг состояния → контекст
   const contextMap = {
     NEW: 'greeting',
-    WAITING_SIZE: 'size',
-    WAITING_FORM: 'delivery',
-    WAITING_PAYMENT: 'payment',
+    COLLECTING: 'general',
+    PAYMENT_REVIEW: 'payment',
     PAID: 'general',
     DONE: 'general',
   };

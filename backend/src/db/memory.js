@@ -279,20 +279,19 @@ const memory = {
     const hasData = memory.hasFullDeliveryData(mem);
     const isReturn = (mem?.order_count || 0) >= 1;
     const beh = mem?.behavior || {};
+    const normalizedState = state === 'PAYMENT_REVIEW' ? 'PAYMENT_REVIEW' : state;
 
-    switch (state) {
+    switch (normalizedState) {
       case 'NEW':
         if (isReturn && mem?.preferred_brand) return `Вернувшийся клиент → предложи ${mem.preferred_brand}, размер ${mem.shoe_size || '?'}`;
         return 'Новый клиент → узнай что ищет';
-      case 'WAITING_SIZE':
-        if (mem?.shoe_size) return `Знаем размер ${mem.shoe_size} → уточни и двигай к оформлению`;
-        return 'Ждём размер → помоги определиться';
-      case 'WAITING_FORM':
-        if (hasData) return 'Данные уже есть → предложи использовать прошлые';
-        return 'Ждём данные → запроси ФИО, телефон, адрес';
-      case 'WAITING_PAYMENT':
+      case 'COLLECTING':
+        if (!mem?.shoe_size) return 'Оформление в процессе → помоги закрыть выбор товара и размера';
+        if (!hasData) return 'Размер известен → собери ФИО, телефон и адрес одним сообщением';
         if (beh.often_disappears) return 'Клиент часто пропадает → быстрый дожим';
-        return 'Ждём оплату → мягко напомни';
+        return 'Все данные есть → веди к оплате';
+      case 'PAYMENT_REVIEW':
+        return 'Чек получен → дождись ручной проверки оплаты';
       case 'PAID':
         return 'Оплачено → поблагодари, предложи ещё';
       case 'DONE':
