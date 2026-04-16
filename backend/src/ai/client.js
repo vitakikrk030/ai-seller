@@ -14,7 +14,7 @@ const log = require('../logger');
 
 // Defaults — override via AI_BASE_URL / AI_MODEL env or DB settings
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
-const DEFAULT_MODEL = process.env.AI_MODEL || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_MAX_TOKENS = 500;
 const DEFAULT_TIMEOUT = 10000; // 10s
 
@@ -31,11 +31,9 @@ function estimateTokens(text) {
 function getAIConfig() {
   const config = require('../config');
   return {
-    baseUrl: process.env.AI_BASE_URL || config.get('AI_BASE_URL') || DEFAULT_BASE_URL,
-    apiKey: process.env.AI_API_KEY || config.get('AI_API_KEY')
-      || process.env.OPENROUTER_API_KEY || config.get('OPENROUTER_API_KEY') || '',
-    model: process.env.AI_MODEL || config.get('AI_MODEL')
-      || process.env.OPENROUTER_MODEL || config.get('OPENROUTER_MODEL') || DEFAULT_MODEL,
+    baseUrl: config.get('AI_BASE_URL') || DEFAULT_BASE_URL,
+    apiKey: config.get('AI_API_KEY') || config.get('OPENROUTER_API_KEY') || '',
+    model: config.get('AI_MODEL') || config.get('OPENROUTER_MODEL') || DEFAULT_MODEL,
     maxTokens: parseInt(process.env.AI_MAX_TOKENS || DEFAULT_MAX_TOKENS),
     timeout: parseInt(process.env.AI_TIMEOUT_MS || DEFAULT_TIMEOUT),
   };
@@ -46,9 +44,9 @@ function getAIConfig() {
  */
 function getSecondaryConfig() {
   const config = require('../config');
-  const baseUrl = process.env.SECONDARY_AI_BASE_URL || config.get('SECONDARY_AI_BASE_URL') || '';
-  const apiKey = process.env.SECONDARY_AI_API_KEY || config.get('SECONDARY_AI_API_KEY') || '';
-  const model = process.env.SECONDARY_AI_MODEL || config.get('SECONDARY_AI_MODEL') || '';
+  const baseUrl = config.get('SECONDARY_AI_BASE_URL') || '';
+  const apiKey = config.get('SECONDARY_AI_API_KEY') || '';
+  const model = config.get('SECONDARY_AI_MODEL') || '';
   if (!baseUrl || !apiKey) return null;
   return {
     baseUrl,
@@ -93,11 +91,22 @@ async function _request(cfg, messages, { maxTokens, temperature = 0.3 }) {
   const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const resolvedModel = cfg.model;
   const resolvedMaxTokens = maxTokens || cfg.maxTokens;
+  const payload = {
+    model: resolvedModel,
+    messages,
+    max_tokens: resolvedMaxTokens,
+    temperature,
+  };
+
+  log.debug('ai.client.request_payload', {
+    provider: cfg.baseUrl,
+    payload,
+  });
 
   const start = Date.now();
   const response = await axios.post(
     url,
-    { model: resolvedModel, messages, max_tokens: resolvedMaxTokens, temperature },
+    payload,
     {
       headers: {
         Authorization: `Bearer ${cfg.apiKey}`,

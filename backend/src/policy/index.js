@@ -12,9 +12,9 @@ const EMPTY_COLLECTED_DATA = {
 
 function mapHistory(history = []) {
   return history
-    .filter((message) => message?.text)
+    .filter((message) => message?.text && message.role === 'user')
     .map((message) => ({
-      role: message.role === 'user' ? 'user' : 'assistant',
+      role: 'user',
       content: message.text,
     }));
 }

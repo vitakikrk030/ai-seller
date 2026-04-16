@@ -42,6 +42,7 @@ async function runScenario() {
   const TG_ID = 300000001;
   const sentMessages = [];
   const aiCalls = [];
+  const aiPayloads = [];
 
   await db.init();
   await cleanup(TG_ID);
@@ -60,6 +61,7 @@ async function runScenario() {
   };
 
   aiClient.sendMessage = async ({ messages: promptMessages }) => {
+    aiPayloads.push(promptMessages);
     const lastUserMessage = [...promptMessages].reverse().find((message) => message.role === 'user')?.content || '';
     aiCalls.push(lastUserMessage);
     return {
@@ -83,6 +85,7 @@ async function runScenario() {
 
     assert(aiCalls.length === 1, '1. Входящее сообщение сразу уходит в AI');
     assert(aiCalls[0] === 'Привет, что есть в наличии?', '2. В AI уходит реальный текст клиента без шаблонов');
+    assert(aiPayloads[0].every((message) => message.role === 'user'), '3. В payload нет system/assistant ролей');
     assert(sentMessages.length === 1, '3. Ответ модели отправляется обратно в Telegram');
     assert(sentMessages[0].text === 'AI:Привет, что есть в наличии?', '4. В Telegram уходит именно ответ модели');
     assert(conversation.length === 2, '5. В диалоге сохраняются user + ai сообщения');
@@ -102,6 +105,7 @@ async function runScenario() {
     conversation = await messages.getByUser(user.id);
     assert(aiCalls.at(-1) === 'Смотри фото', '10. Подпись к фото тоже уходит в AI напрямую');
     assert(conversation.at(-1).text === 'AI:Смотри фото', '11. Ответ на фото тоже идёт напрямую от модели');
+    assert(aiPayloads.at(-1).every((message) => message.role === 'user'), '12. История в payload содержит только user-сообщения');
 
     await handleMessage({
       message_id: 3,
@@ -111,8 +115,8 @@ async function runScenario() {
     });
 
     conversation = await messages.getByUser(user.id);
-    assert(aiCalls.at(-1) === '[фото]', '12. Фото без текста всё равно проходит через AI');
-    assert(conversation.at(-1).text === 'AI:[фото]', '13. Для фото без текста нет шаблона, только ответ модели');
+    assert(aiCalls.at(-1) === '[фото]', '13. Фото без текста всё равно проходит через AI');
+    assert(conversation.at(-1).text === 'AI:[фото]', '14. Для фото без текста нет шаблона, только ответ модели');
 
     bot.sendMessage = async () => {
       throw new Error('telegram_down');
@@ -127,9 +131,9 @@ async function runScenario() {
 
     conversation = await messages.getByUser(user.id);
     const failedMessage = conversation.filter((message) => message.role === 'ai').at(-1);
-    assert(aiCalls.at(-1) === 'Ты здесь?', '14. Даже при сбое Telegram сообщение всё равно проходит через AI');
-    assert(failedMessage.delivery_status === 'failed', '15. При ошибке Telegram не создаётся фейковый delivered');
-    assert((failedMessage.error_text || '').includes('telegram_down'), '16. Ошибка доставки фиксируется как ошибка системы');
+    assert(aiCalls.at(-1) === 'Ты здесь?', '15. Даже при сбое Telegram сообщение всё равно проходит через AI');
+    assert(failedMessage.delivery_status === 'failed', '16. При ошибке Telegram не создаётся фейковый delivered');
+    assert((failedMessage.error_text || '').includes('telegram_down'), '17. Ошибка доставки фиксируется как ошибка системы');
   } finally {
     bot.sendMessage = originalSendMessage;
     aiClient.sendMessage = originalAiSendMessage;
