@@ -1,4 +1,3 @@
-const monitoring = require('../monitoring');
 const { retryFailedDeliveries } = require('../telegram/outbox');
 const log = require('../logger');
 
@@ -12,7 +11,6 @@ let retryInFlight = false;
 async function runRetryTick() {
   if (retryInFlight) return;
   retryInFlight = true;
-  monitoring.schedulerHeartbeat();
   try {
     let broadcast = null;
     try {

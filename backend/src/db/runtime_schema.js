@@ -153,6 +153,11 @@ async function ensureRuntimeSchema(pool) {
   `);
 
   await pool.query(`
+    DROP TABLE IF EXISTS monitoring_history;
+    DROP TABLE IF EXISTS monitoring_incidents;
+    DROP TABLE IF EXISTS monitoring_components;
+    DROP TABLE IF EXISTS funnel_events;
+    DROP TABLE IF EXISTS ai_errors;
     DROP TABLE IF EXISTS ai_speech_settings;
     DROP TABLE IF EXISTS prompt_settings;
 

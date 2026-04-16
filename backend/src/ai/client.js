@@ -137,7 +137,6 @@ async function _request(cfg, messages, { maxTokens, temperature = 0.3 }) {
   const provider = new URL(cfg.baseUrl).hostname.replace('www.', '');
 
   saveUsage({ tokensIn, tokensOut, model: resolvedModel, provider }).catch(() => {});
-  try { require('../monitoring').recordSuccess('ai', latency); } catch (e) {}
 
   return { text, tokensIn, tokensOut };
 }
@@ -171,7 +170,6 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
       }
       // Both attempts failed — log and try secondary
       await logFailure({ provider, errorType: 'request_failed', message: err.message, fallbackUsed: !!secondary });
-      try { require('../monitoring').recordError('ai', err.message || 'AI primary failed', 'warning'); } catch (e) {}
     }
   }
 
@@ -188,20 +186,18 @@ async function sendMessage({ messages, model, maxTokens, temperature = 0.3 }) {
       const provider = new URL(secondary.baseUrl).hostname;
       log.warn(`AI secondary error: ${err.message}`, { provider });
       await logFailure({ provider, errorType: 'secondary_failed', message: err.message, fallbackUsed: true });
-      try { require('../monitoring').recordError('ai', 'AI secondary failed', 'warning'); } catch (e) {}
     }
   }
 
   // ── No scripted fallback replies: propagate hard failure upstream ───────
   await logFailure({ provider: 'all', errorType: 'all_failed', message: 'All providers failed', fallbackUsed: true });
-  try { require('../monitoring').recordError('ai', 'All AI providers failed', 'critical'); } catch (e) {}
   throw new Error('AI providers unavailable');
 }
 
 /**
- * Get usage stats from DB.
+ * Get usage summary from DB.
  */
-async function getUsageStats({ days = 30 } = {}) {
+async function getUsageSummary({ days = 30 } = {}) {
   try {
     const result = await db.query(
       `SELECT
@@ -219,4 +215,4 @@ async function getUsageStats({ days = 30 } = {}) {
   }
 }
 
-module.exports = { sendMessage, getUsageStats, getAIConfig, getPublicAIConfig, estimateTokens };
+module.exports = { sendMessage, getUsageSummary, getAIConfig, getPublicAIConfig, estimateTokens };

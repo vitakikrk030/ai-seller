@@ -1,7 +1,6 @@
 const users = require('../db/users');
 const messages = require('../db/messages');
 const { deliverOutbox } = require('./outbox');
-const monitoring = require('../monitoring');
 const { processTurn } = require('../logic/sales');
 const log = require('../logger');
 
@@ -38,8 +37,6 @@ async function handleMessage(msg, businessConnectionId) {
     });
     return;
   }
-
-  monitoring.recordMessageActivity();
 
   const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || 'Unknown';
   const username = msg.from?.username || null;

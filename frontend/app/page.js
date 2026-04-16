@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, Plug, Sun, Moon, LogOut, Activity } from 'lucide-react';
+import { MessageSquare, Plug, Sun, Moon, LogOut } from 'lucide-react';
 import ChatView from '../components/ChatView';
 import IntegrationsView from '../components/IntegrationsView';
-import MonitoringView from '../components/MonitoringView';
-import StatsBar from '../components/StatsBar';
 import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
 
@@ -40,15 +38,7 @@ export default function Home() {
         >
           <Plug size={15} /> Интеграции
         </button>
-        <button
-          className={`nav-tab ${tab === 'monitoring' ? 'active' : ''}`}
-          onClick={() => setTab('monitoring')}
-          aria-current={tab === 'monitoring' ? 'page' : undefined}
-        >
-          <Activity size={15} /> Мониторинг
-        </button>
         <div className="nav-right">
-          <StatsBar />
           <button className="theme-toggle" onClick={toggleTheme} title="Переключить тему" aria-label="Переключить тему">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
@@ -60,7 +50,6 @@ export default function Home() {
 
       {tab === 'chats' && <ChatView />}
       {tab === 'integrations' && <IntegrationsView />}
-      {tab === 'monitoring' && <MonitoringView />}
     </div>
   );
 }

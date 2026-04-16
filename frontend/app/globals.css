@@ -93,20 +93,6 @@ body {
   margin-left: auto;
 }
 
-.nav-stats {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.nav-stat {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .theme-toggle {
   display: flex;
   align-items: center;
@@ -1344,7 +1330,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     font-size: 12px;
   }
 
-  .nav-stats { display: none; }
 
   /* Mobile: show one panel at a time */
   .cv-root { position: relative; }

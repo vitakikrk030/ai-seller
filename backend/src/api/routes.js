@@ -323,29 +323,6 @@ router.post('/orders/:id/payment/verify', async (req, res) => {
   }
 });
 
-// === STATS ===
-
-router.get('/stats', async (req, res) => {
-  try {
-    const db = require('../db');
-    const [usersCount, ordersCount, messagesCount, todayOrders] = await Promise.all([
-      db.query('SELECT COUNT(*) FROM users'),
-      db.query('SELECT COUNT(*) FROM orders'),
-      db.query('SELECT COUNT(*) FROM messages'),
-      db.query("SELECT COUNT(*) FROM orders WHERE created_at > NOW() - INTERVAL '24 hours'"),
-    ]);
-
-    res.json({
-      users: parseInt(usersCount.rows[0].count),
-      orders: parseInt(ordersCount.rows[0].count),
-      messages: parseInt(messagesCount.rows[0].count),
-      todayOrders: parseInt(todayOrders.rows[0].count),
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // === SETTINGS ===
 
 router.get('/settings', async (req, res) => {
@@ -641,153 +618,6 @@ router.post('/settings/test-shop', async (req, res) => {
   }
 });
 
-// === MONITORING ===
-
-// Business pulse summary — 6 metrics
-router.get('/monitoring/summary', async (req, res) => {
-  try {
-    const db = require('../db');
-    const monitoring = require('../monitoring');
-
-    // 1. Revenue today (Moscow calendar day: 00:00–23:59 MSK)
-    const revRow = await db.query(
-      `SELECT COALESCE(SUM(price),0) as total FROM orders
-       WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 day'
-         AND status IN ('payment_verified','fulfilled')`
-    );
-    const revenue_today = parseFloat(revRow.rows[0]?.total || 0);
-
-    // 2. Conversion: paid orders / total users with messages today (Moscow day)
-    const convRow = await db.query(
-      `SELECT COUNT(DISTINCT user_id) as total FROM messages
-       WHERE created_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND role = 'user'`
-    );
-    const paidRow = await db.query(
-      `SELECT COUNT(*) as paid FROM orders
-       WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 day'
-         AND status IN ('payment_verified','fulfilled')`
-    );
-    const totalDialogs = parseInt(convRow.rows[0]?.total || 0);
-    const paidOrders = parseInt(paidRow.rows[0]?.paid || 0);
-    const conversion = totalDialogs > 0 ? Math.round((paidOrders / totalDialogs) * 100) : 0;
-
-    // 3. Missed clients: user sent message, no AI reply within 5 min
-    const missedRow = await db.query(`
-      SELECT COUNT(DISTINCT m.user_id) as cnt
-      FROM messages m
-      WHERE m.role = 'user'
-        AND m.created_at > NOW() - INTERVAL '2 hours'
-        AND NOT EXISTS (
-          SELECT 1 FROM messages r
-          WHERE r.user_id = m.user_id
-            AND r.role = 'ai'
-            AND r.created_at > m.created_at
-            AND r.created_at < m.created_at + INTERVAL '5 minutes'
-        )
-    `);
-    const missed_clients = parseInt(missedRow.rows[0]?.cnt || 0);
-
-    // 4. AI errors in last 24h
-    let ai_errors = 0;
-    try {
-      const errRow = await db.query(
-        "SELECT COUNT(*) as cnt FROM ai_errors WHERE created_at > NOW() - INTERVAL '24 hours'"
-      );
-      ai_errors = parseInt(errRow.rows[0]?.cnt || 0);
-    } catch {}
-
-    // 5. System status (reuse monitoring module)
-    let system_status = { ai: 'unknown', telegram: 'unknown', db: 'unknown' };
-    try {
-      const monData = monitoring.getStatus();
-      const comps = monData?.components || [];
-      const find = (name) => comps.find(c => c.name === name)?.status?.toLowerCase() || 'unknown';
-      system_status = { ai: find('ai'), telegram: find('telegram'), db: find('database') };
-    } catch {}
-
-    // 6. Lost clients: no activity for 48h+
-    const lostRow = await db.query(
-      "SELECT COUNT(*) as cnt FROM users WHERE last_seen < NOW() - INTERVAL '48 hours' AND state NOT IN ('DONE','PAID')"
-    );
-    const lost_clients = parseInt(lostRow.rows[0]?.cnt || 0);
-
-    // Trends (yesterday Moscow day)
-    const revYestRow = await db.query(
-      `SELECT COALESCE(SUM(price),0) as total FROM orders
-       WHERE paid_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 day'
-         AND paid_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND status IN ('payment_verified','fulfilled')`
-    );
-    const revenue_yesterday = parseFloat(revYestRow.rows[0]?.total || 0);
-
-    const convYestDialogs = await db.query(
-      `SELECT COUNT(DISTINCT user_id) as total FROM messages
-       WHERE created_at AT TIME ZONE 'Europe/Moscow' >= date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 day'
-         AND created_at AT TIME ZONE 'Europe/Moscow' < date_trunc('day', NOW() AT TIME ZONE 'Europe/Moscow')
-         AND role = 'user'`
-    );
-    const convYestPaid = await db.query(
-      "SELECT COUNT(*) as paid FROM orders WHERE paid_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours' AND status IN ('payment_verified','fulfilled')"
-    );
-    const yd = parseInt(convYestDialogs.rows[0]?.total || 0);
-    const yp = parseInt(convYestPaid.rows[0]?.paid || 0);
-    const conversion_yesterday = yd > 0 ? Math.round((yp / yd) * 100) : 0;
-
-    let ai_errors_yesterday = 0;
-    try {
-      const errYRow = await db.query(
-        "SELECT COUNT(*) as cnt FROM ai_errors WHERE created_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'"
-      );
-      ai_errors_yesterday = parseInt(errYRow.rows[0]?.cnt || 0);
-    } catch {}
-
-    // Avg check (all time, only paid orders)
-    const avgRow = await db.query(
-      "SELECT COALESCE(AVG(price),0) as avg FROM orders WHERE paid_at IS NOT NULL AND price > 0"
-    );
-    const avg_check = Math.round(parseFloat(avgRow.rows[0]?.avg || 0));
-
-    res.json({
-      revenue_today,
-      revenue_yesterday,
-      conversion,
-      conversion_yesterday,
-      missed_clients,
-      ai_errors,
-      ai_errors_yesterday,
-      avg_check,
-      system_status,
-      lost_clients,
-      updated_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/monitoring', async (req, res) => {
-  try {
-    const monitoring = require('../monitoring');
-    res.json(monitoring.getStatus());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/monitoring/metrics', async (req, res) => { // @test-only — UI uses /monitoring/summary
-  try {
-    const monitoring = require('../monitoring');
-    const data = await monitoring.getBusinessMetrics();
-    if (!data) return res.status(500).json({ error: 'Failed to load metrics' });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // === AI PROVIDER TEST ===
 
 router.post('/ai/test-provider', async (req, res) => {
@@ -844,13 +674,13 @@ router.post('/ai/test-provider', async (req, res) => {
 
 router.get('/ai/usage', async (req, res) => {
   try {
-    const { getUsageStats, getAIConfig } = require('../ai/client');
+    const { getUsageSummary, getAIConfig } = require('../ai/client');
     const config = require('../config');
     const days = parseInt(req.query.days || '30');
-    const stats = await getUsageStats({ days });
+    const usage = await getUsageSummary({ days });
     const cfg = getAIConfig();
     const limit = parseInt(config.AI_TOKEN_LIMIT || process.env.AI_TOKEN_LIMIT || 1000000);
-    const used = parseInt(stats.used) || 0;
+    const used = parseInt(usage.used) || 0;
     const remaining = Math.max(0, limit - used);
     const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     res.json({
@@ -858,10 +688,10 @@ router.get('/ai/usage', async (req, res) => {
       limit,
       remaining,
       percent,
-      tokens_in: parseInt(stats.tokens_in) || 0,
-      tokens_out: parseInt(stats.tokens_out) || 0,
-      requests: parseInt(stats.requests) || 0,
-      last_request: stats.last_request || null,
+      tokens_in: parseInt(usage.tokens_in) || 0,
+      tokens_out: parseInt(usage.tokens_out) || 0,
+      requests: parseInt(usage.requests) || 0,
+      last_request: usage.last_request || null,
       provider: cfg.baseUrl ? new URL(cfg.baseUrl).hostname : 'unknown',
       model: cfg.model,
       days,

@@ -93,9 +93,6 @@ export const api = {
   // Orders
   getUserOrders: (userId) => fetchAPI(`/users/${userId}/orders`),
 
-  // Stats
-  getStats: () => fetchAPI('/stats'),
-
   // Settings (integrations)
   getSettings: () => fetchAPI('/settings'),
   saveSettings: (entries) =>
@@ -114,9 +111,6 @@ export const api = {
     }),
   disconnectBot: () =>
     fetchAPI('/settings/disconnect-bot', { method: 'POST' }),
-
-  // Monitoring
-  getMonitoringSummary: () => fetchAPI('/monitoring/summary'),
 
   // Integrations status
   getIntegrationsStatus: () => fetchAPI('/integrations/status'),

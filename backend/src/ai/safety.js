@@ -51,7 +51,7 @@ const BLOCKED_PATTERNS = [
   /\bprocess\.env\b/i,
   /\b(?:prompt|system message|instruction|generate|completion)\b/i,
   /\b(?:fallback|retry|timeout|circuit.?breaker|queue|worker|task)\b/i,
-  /\b(?:debug|log|trace|verbose|monitoring)\b/i,
+  /\b(?:debug|log|trace|verbose)\b/i,
   /произошла\s+(?:ошибк|сбой)/i,
   /внутренн[яи][яй]\s+(?:ошибк|сбой)/i,
   /(?:попробуйте|попробуй)\s+позже/i,

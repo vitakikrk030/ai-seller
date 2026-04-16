@@ -56,7 +56,6 @@ const bot = {
         hasBusinessConnection: !!options.business_connection_id,
       });
       const response = await tgRequest('sendMessage', payload);
-      try { require('../monitoring').recordSuccess('telegram'); } catch(e) {}
       log.info('telegram.bot.sendMessage: success', {
         chatId,
         telegramMessageId: response.data?.result?.message_id || null,
@@ -73,8 +72,6 @@ const bot = {
           ? `telegram_network_${networkCode}`
           : (err.message || 'sendMessage failed');
       console.error('Telegram send error:', telegram || err.message);
-      const severity = status === 401 || status === 403 ? 'critical' : 'warning';
-      try { require('../monitoring').recordError('telegram', normalizedMessage, severity); } catch(e) {}
       log.error('telegram.bot.sendMessage: failed', {
         chatId,
         error: normalizedMessage,
