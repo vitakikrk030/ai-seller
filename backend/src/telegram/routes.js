@@ -4,12 +4,7 @@ const router = express.Router();
 const { handleMessage } = require('./handler');
 const settings = require('../db/settings');
 const bot = require('./bot');
-const axios = require('axios');
 const config = require('../config');
-
-function getAPI() {
-  return `https://api.telegram.org/bot${config.get('BOT_TOKEN')}`;
-}
 
 // Telegram webhook endpoint
 router.post('/webhook', (req, res) => {
@@ -55,10 +50,7 @@ router.post('/webhook', (req, res) => {
           if (cardNumber) {
             await bot.sendMessage(cbq.message.chat.id, cardNumber);
           }
-          await axios.post(`${getAPI()}/answerCallbackQuery`, {
-            callback_query_id: cbq.id,
-            text: 'Номер карты отправлен для копирования',
-          });
+          await bot.answerCallbackQuery(cbq.id, 'Номер карты отправлен для копирования');
         } catch (e) {
           console.error('callbackQuery error:', e.message);
         }

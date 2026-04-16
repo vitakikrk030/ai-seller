@@ -2,7 +2,8 @@ require('dotenv').config();
 
 const envConfig = {
   PORT: process.env.PORT || 3001,
-  BOT_TOKEN: process.env.BOT_TOKEN,
+  // BOT_TOKEN is managed from DB settings (settings.bot_token) only.
+  BOT_TOKEN: null,
   OWNER_CHAT_ID: process.env.OWNER_CHAT_ID,
   WEBHOOK_URL: process.env.WEBHOOK_URL,
   WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
@@ -38,9 +39,6 @@ if (process.env.NODE_ENV === 'production') {
   if (!process.env.DATABASE_URL) {
     console.error('[FATAL] DATABASE_URL not set');
     process.exit(1);
-  }
-  if (!process.env.BOT_TOKEN) {
-    console.warn('[WARN] BOT_TOKEN not set — Telegram integration disabled');
   }
 }
 
@@ -96,11 +94,13 @@ function get(key) {
   // Check DB override first
   if (_dbSettings) {
     for (const [dbKey, configKey] of Object.entries(DB_KEY_MAP)) {
-      if (configKey === key && _dbSettings[dbKey]) {
+      if (configKey === key && Object.prototype.hasOwnProperty.call(_dbSettings, dbKey)) {
         return _dbSettings[dbKey];
       }
     }
   }
+  // BOT token must be controlled from DB settings only.
+  if (key === 'BOT_TOKEN') return null;
   return envConfig[key];
 }
 

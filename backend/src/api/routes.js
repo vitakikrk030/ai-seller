@@ -647,7 +647,7 @@ router.post('/integrations/reset', async (req, res) => {
 
     if (type === 'telegram') {
       // Delete webhook before clearing token
-      const token = await settings.get('bot_token') || process.env.BOT_TOKEN;
+      const token = (await settings.get('bot_token') || '').trim();
       if (token) {
         try { await axios.post(`https://api.telegram.org/bot${token}/deleteWebhook`); } catch {}
       }
@@ -682,7 +682,7 @@ router.get('/integrations/status', async (req, res) => {
 
   // Telegram
   try {
-    const token = await settings.get('bot_token') || process.env.BOT_TOKEN;
+    const token = (await settings.get('bot_token') || '').trim();
     if (!token) {
       result.telegram = { ok: false, error: 'Токен не задан', configured: false };
     } else {
@@ -746,7 +746,7 @@ router.get('/integrations/status', async (req, res) => {
 // Check Telegram bot connection
 router.post('/settings/test-telegram', async (req, res) => {
   try {
-    const token = await settings.get('bot_token') || process.env.BOT_TOKEN;
+    const token = (await settings.get('bot_token') || '').trim();
     if (!token) return res.json({ ok: false, error: 'Bot token не задан' });
 
     const resp = await axios.get(`https://api.telegram.org/bot${token}/getMe`);
@@ -781,7 +781,7 @@ router.post('/settings/change-token', async (req, res) => {
     }
 
     // 2. Delete webhook on OLD token (if exists)
-    const oldToken = await settings.get('bot_token') || process.env.BOT_TOKEN;
+    const oldToken = (await settings.get('bot_token') || '').trim();
     if (oldToken && oldToken !== token) {
       try {
         await axios.post(`https://api.telegram.org/bot${oldToken}/deleteWebhook`);
@@ -820,7 +820,7 @@ router.post('/settings/change-token', async (req, res) => {
 // Disconnect bot: remove webhook + clear token
 router.post('/settings/disconnect-bot', async (req, res) => {
   try {
-    const token = await settings.get('bot_token') || process.env.BOT_TOKEN;
+    const token = (await settings.get('bot_token') || '').trim();
 
     // Delete webhook
     if (token) {

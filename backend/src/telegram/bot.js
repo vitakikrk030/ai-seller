@@ -1,16 +1,25 @@
 const axios = require('axios');
 const config = require('../config');
 const log = require('../logger');
+const settings = require('../db/settings');
 
-function getAPI() {
-  return `https://api.telegram.org/bot${config.get('BOT_TOKEN')}`;
+async function getBotToken() {
+  const token = (await settings.get('bot_token') || '').trim();
+  return token || null;
+}
+
+async function getAPI() {
+  const token = await getBotToken();
+  if (!token) throw new Error('BOT_TOKEN is not configured in settings');
+  return `https://api.telegram.org/bot${token}`;
 }
 
 // Retry helper for transient Telegram errors (429, 5xx)
 async function tgRequest(method, payload, retries = 2) {
+  const api = await getAPI();
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await axios.post(`${getAPI()}/${method}`, payload);
+      return await axios.post(`${api}/${method}`, payload);
     } catch (err) {
       const status = err.response?.status;
       const retryAfter = err.response?.data?.parameters?.retry_after;
@@ -85,7 +94,8 @@ const bot = {
       if (webhookSecret) {
         webhookPayload.secret_token = webhookSecret;
       }
-      await axios.post(`${getAPI()}/setWebhook`, webhookPayload);
+      const api = await getAPI();
+      await axios.post(`${api}/setWebhook`, webhookPayload);
       console.log('Webhook set:', webhookUrl);
     } catch (err) {
       console.error('Webhook setup error:', err.response?.data || err.message);
@@ -94,10 +104,12 @@ const bot = {
 
   async getFileUrl(fileId) {
     try {
-      const resp = await axios.post(`${getAPI()}/getFile`, { file_id: fileId });
+      const api = await getAPI();
+      const token = await getBotToken();
+      const resp = await axios.post(`${api}/getFile`, { file_id: fileId });
       const filePath = resp.data?.result?.file_path;
       if (!filePath) return null;
-      return `https://api.telegram.org/file/bot${config.get('BOT_TOKEN')}/${filePath}`;
+      return `https://api.telegram.org/file/bot${token}/${filePath}`;
     } catch (err) {
       console.error('Telegram getFile error:', err.response?.data || err.message);
       return null;
@@ -108,6 +120,13 @@ const bot = {
     const ownerId = config.get('OWNER_CHAT_ID');
     if (!ownerId) return;
     await bot.sendMessage(ownerId, text, options);
+  },
+
+  async answerCallbackQuery(callbackQueryId, text) {
+    await tgRequest('answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      text,
+    });
   },
 };
 
