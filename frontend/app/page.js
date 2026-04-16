@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, Plug, Sun, Moon, LogOut, Activity, Bot } from 'lucide-react';
+import { MessageSquare, Plug, Sun, Moon, LogOut, Activity } from 'lucide-react';
 import ChatView from '../components/ChatView';
 import IntegrationsView from '../components/IntegrationsView';
 import MonitoringView from '../components/MonitoringView';
-import AISettingsView from '../components/AISettingsView';
 import StatsBar from '../components/StatsBar';
 import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
@@ -35,13 +34,6 @@ export default function Home() {
           <MessageSquare size={15} /> Чаты
         </button>
         <button
-          className={`nav-tab ${tab === 'ai-settings' ? 'active' : ''}`}
-          onClick={() => setTab('ai-settings')}
-          aria-current={tab === 'ai-settings' ? 'page' : undefined}
-        >
-          <Bot size={15} /> Настройки AI
-        </button>
-        <button
           className={`nav-tab ${tab === 'integrations' ? 'active' : ''}`}
           onClick={() => setTab('integrations')}
           aria-current={tab === 'integrations' ? 'page' : undefined}
@@ -67,7 +59,6 @@ export default function Home() {
       </nav>
 
       {tab === 'chats' && <ChatView />}
-      {tab === 'ai-settings' && <AISettingsView />}
       {tab === 'integrations' && <IntegrationsView />}
       {tab === 'monitoring' && <MonitoringView />}
     </div>

@@ -123,21 +123,11 @@ INSERT INTO settings (key, value, updated_at) VALUES
 ON CONFLICT (key) DO NOTHING;
 `;
 
-const promptSeed = `
-DELETE FROM prompt_settings WHERE key = 'sales_prompt';
-
-INSERT INTO prompt_settings (key, value, updated_at) VALUES
-  ('core_prompt', 'Ты AI-продавец в Telegram. Веди клиента к покупке коротко и уверенно, не выдумывай данные и не повторяй уже известное. Если владелец подтвердил оплату, спокойно подтверди заказ и объясни следующий шаг.', NOW()),
-  ('policy_prompt', 'Ты AI policy engine для Telegram-продаж. Возвращай только решение в JSON, не управляй side-effects напрямую и никогда не ставь статусы оплаты самостоятельно.', NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-`;
-
 async function migrate() {
   try {
     await ensureRuntimeSchema(pool);
     await pool.query(extraSchema);
     await pool.query(settingsSeed);
-    await pool.query(promptSeed);
     console.log('Migration completed successfully');
   } catch (err) {
     console.error('Migration failed:', err.message);

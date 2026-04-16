@@ -118,26 +118,6 @@ export const api = {
   // Monitoring
   getMonitoringSummary: () => fetchAPI('/monitoring/summary'),
 
-  // AI Settings
-  getAiSettings: () => fetchAPI('/ai-settings'),
-  updateAiSetting: (key, data) =>
-    fetchAPI(`/ai-settings/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-  bulkUpdateAiSettings: (entries) =>
-    fetchAPI('/ai-settings/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ entries }),
-    }),
-
-  // AI Preview
-  previewAiResponse: (message, scenario, userState) =>
-    fetchAPI('/ai-settings/preview', {
-      method: 'POST',
-      body: JSON.stringify({ message, scenario, userState }),
-    }),
-
   // Integrations status
   getIntegrationsStatus: () => fetchAPI('/integrations/status'),
 

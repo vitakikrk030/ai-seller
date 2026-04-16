@@ -1,5 +1,4 @@
 const aiClient = require('../ai/client');
-const prompts = require('../db/prompts');
 const log = require('../logger');
 
 const EMPTY_COLLECTED_DATA = {
@@ -10,30 +9,6 @@ const EMPTY_COLLECTED_DATA = {
   phone: null,
   address: null,
 };
-
-async function buildSystemPrompt(context = {}) {
-  const corePrompt = await prompts.get('core_prompt').catch(() => '');
-  const promptBase = (corePrompt || 'Ты AI-продавец в Telegram.').trim();
-  const contextHints = [];
-
-  if (context.scenario) {
-    contextHints.push(`Scenario: ${String(context.scenario)}`);
-  }
-  if (context.order) {
-    contextHints.push(`Order context: ${JSON.stringify(context.order)}`);
-  }
-  if (context.sensors) {
-    contextHints.push(`Message context: ${JSON.stringify(context.sensors)}`);
-  }
-
-  return [
-    promptBase,
-    'Отвечай клиенту обычным человеческим сообщением.',
-    'Не возвращай JSON, markdown, служебные пометки или объяснения для backend.',
-    'Нужен только готовый текст ответа клиенту.',
-    contextHints.length > 0 ? contextHints.join('\n') : null,
-  ].filter(Boolean).join('\n\n');
-}
 
 function mapHistory(history = []) {
   return history
@@ -56,9 +31,8 @@ function wrapDecision(reply) {
 }
 
 async function runPolicy(user, userMessage, context = {}, options = {}) {
-  const systemPrompt = await buildSystemPrompt(context);
   const history = mapHistory(context.history || []);
-  const messages = [{ role: 'system', content: systemPrompt }, ...history];
+  const messages = [...history];
   const lastMessage = messages[messages.length - 1];
 
   if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== userMessage) {

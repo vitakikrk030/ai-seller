@@ -38,13 +38,6 @@ async function ensureRuntimeSchema(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    CREATE TABLE IF NOT EXISTS prompt_settings (
-      id SERIAL PRIMARY KEY,
-      key VARCHAR(50) UNIQUE NOT NULL,
-      value TEXT NOT NULL,
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
     CREATE TABLE IF NOT EXISTS customer_memory (
       id SERIAL PRIMARY KEY,
       user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -61,19 +54,6 @@ async function ensureRuntimeSchema(pool) {
       last_order_summary JSONB DEFAULT '{}'::jsonb,
       total_spent NUMERIC DEFAULT 0,
       order_count INTEGER DEFAULT 0,
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS ai_speech_settings (
-      id SERIAL PRIMARY KEY,
-      key VARCHAR(255) UNIQUE NOT NULL,
-      label VARCHAR(255),
-      description TEXT,
-      value TEXT,
-      type VARCHAR(50) DEFAULT 'text',
-      category VARCHAR(100) DEFAULT 'general',
-      enabled BOOLEAN DEFAULT true,
-      sort_order INTEGER DEFAULT 0,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -173,31 +153,9 @@ async function ensureRuntimeSchema(pool) {
   `);
 
   await pool.query(`
-    DELETE FROM ai_speech_settings
-    WHERE key LIKE 'speech_%'
-       OR key LIKE 'offtopic_redirect_%'
-       OR key LIKE 'soft_response_%'
-       OR key LIKE 'ab_%'
-       OR key LIKE 'hint_waiting_%'
-       OR key LIKE 'nudge_%'
-       OR key IN ('toggle_ab_testing');
+    DROP TABLE IF EXISTS ai_speech_settings;
+    DROP TABLE IF EXISTS prompt_settings;
 
-    DELETE FROM prompt_settings WHERE key = 'sales_prompt';
-    DELETE FROM prompt_settings WHERE key = 'followup_prompt';
-
-    INSERT INTO prompt_settings (key, value, updated_at) VALUES
-      ('core_prompt', 'Ты AI-продавец в Telegram. Веди клиента к покупке коротко и уверенно, не выдумывай данные и не повторяй уже известное. Если оплата подтверждена владельцем, спокойно сообщи клиенту, что заказ подтверждён и что будет дальше.', NOW()),
-      ('policy_prompt', 'Ты AI policy engine для Telegram-продаж. Возвращай только решение в JSON и никогда не ставь статусы оплаты самостоятельно.', NOW())
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-
-    INSERT INTO ai_speech_settings (key, label, description, value, type, category, enabled, sort_order) VALUES
-      ('closer_pressure_level', 'Уровень давления', 'Насколько активно AI ведёт к покупке', '3', 'text', 'closer', true, 1),
-      ('closer_message_length', 'Длина сообщения', 'short / medium / long', 'short', 'text', 'closer', true, 2),
-      ('closer_initiative', 'Инициатива', 'low / medium / high', 'high', 'text', 'closer', true, 3),
-      ('style_closer_hint', 'Custom closer hint', 'Дополнительная инструкция для policy prompt', '', 'textarea', 'closer', true, 4)
-    ON CONFLICT (key) DO NOTHING;
-
-    DELETE FROM ai_speech_settings WHERE key = 'toggle_fallback';
     DELETE FROM settings WHERE key = 'policy_mode';
     DELETE FROM settings WHERE key = 'global_ai_enabled';
     DELETE FROM settings WHERE key = 'auto_reply';

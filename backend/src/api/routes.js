@@ -3,7 +3,6 @@ const router = express.Router();
 const users = require('../db/users');
 const messages = require('../db/messages');
 const orders = require('../db/orders');
-const prompts = require('../db/prompts');
 const settings = require('../db/settings');
 const memory = require('../db/memory');
 const policyRuns = require('../db/policy_runs');
@@ -319,28 +318,6 @@ router.post('/orders/:id/payment/verify', async (req, res) => {
       : await sendOwnerVerifiedReply(order, actor);
 
     res.json({ order, notification });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === PROMPTS ===
-
-router.get('/prompts', async (req, res) => { // @test-only — SettingsView removed from UI
-  try {
-    const data = await prompts.getAll();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/prompts/:key', async (req, res) => { // @test-only — SettingsView removed from UI
-  try {
-    const { value } = req.body;
-    if (!value) return res.status(400).json({ error: 'Value required' });
-    const result = await prompts.update(req.params.key, value);
-    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -811,71 +788,6 @@ router.get('/monitoring/metrics', async (req, res) => { // @test-only — UI use
   }
 });
 
-// === AI PREVIEW (тест без отправки клиенту) ===
-
-router.post('/ai-settings/preview', async (req, res) => {
-  try {
-    const { message, scenario, userState } = req.body;
-    if (!message) return res.status(400).json({ error: 'message required' });
-    const { previewResponse } = require('../ai');
-    const text = await previewResponse(message, scenario || null, userState || 'NEW');
-    if (!text) return res.json({ response: '(AI не ответил — проверьте API ключ)' });
-    // Прогоняем через safety
-    const safety = require('../ai/safety');
-    const safe = await safety.enforce(text, { userState: userState || 'NEW' });
-    res.json({ response: safe.text, passed: safe.passed, raw: text });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === AI SETTINGS ===
-
-const aiSettings = require('../db/ai_settings');
-
-// Получить все настройки AI (сгруппированные по категориям)
-router.get('/ai-settings', async (req, res) => {
-  try {
-    const all = await aiSettings.getAll();
-    // Группируем по категории
-    const grouped = {};
-    for (const row of all) {
-      if (!grouped[row.category]) grouped[row.category] = [];
-      grouped[row.category].push(row);
-    }
-    res.json(grouped);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Получить одну настройку по ключу
-router.get('/ai-settings/:key', async (req, res) => {
-  try {
-    const val = await aiSettings.getRaw(req.params.key);
-    if (val === null) return res.status(404).json({ error: 'Not found' });
-    res.json({ key: req.params.key, value: val });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Обновить одну настройку
-router.patch('/ai-settings/:key', async (req, res) => {
-  try {
-    const { value, enabled } = req.body;
-    if (value !== undefined) {
-      await aiSettings.set(req.params.key, value);
-    }
-    if (enabled !== undefined) {
-      await aiSettings.setEnabled(req.params.key, enabled);
-    }
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // === AI PROVIDER TEST ===
 
 router.post('/ai/test-provider', async (req, res) => {
@@ -954,19 +866,6 @@ router.get('/ai/usage', async (req, res) => {
       model: cfg.model,
       days,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Массовое обновление настроек
-router.post('/ai-settings/bulk', async (req, res) => {
-  try {
-    const { entries } = req.body;
-    if (!Array.isArray(entries)) return res.status(400).json({ error: 'entries must be array' });
-    await aiSettings.setMany(entries);
-    aiSettings.invalidateCache();
-    res.json({ ok: true, updated: entries.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
