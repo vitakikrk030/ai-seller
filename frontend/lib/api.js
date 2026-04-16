@@ -108,11 +108,6 @@ export const api = {
     fetchAPI(`/users/${userId}/messages/paginated?limit=${limit}${before ? `&before=${before}` : ''}`),
   searchMessages: (userId, q) =>
     fetchAPI(`/users/${userId}/messages/search?q=${encodeURIComponent(q)}`),
-  sendMessage: (userId, text) =>
-    fetchAPI(`/users/${userId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    }),
   deleteMessage: (id) =>
     fetchAPI(`/messages/${id}`, { method: 'DELETE' }),
   editMessage: (id, text) =>

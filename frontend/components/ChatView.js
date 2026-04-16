@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  ChevronLeft, Send,
+  ChevronLeft,
   Hash, Trash2, Search, Clock, Star, Copy, MoreHorizontal,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -181,11 +181,9 @@ export default function ChatView() {
   const [messages, setMessages] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customerMemory, setCustomerMemory] = useState(null);
-  const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState('all');
-  const [sending, setSending] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [mobilePanel, setMobilePanel] = useState('list');
@@ -213,7 +211,6 @@ export default function ChatView() {
   const [unreadSince, setUnreadSince] = useState(null); // message id before which are "read"
   const messagesEnd = useRef(null);
   const messagesTop = useRef(null);
-  const inputRef = useRef(null);
   const sseRef = useRef(null);
   const selectedRef = useRef(null);
 
@@ -375,42 +372,7 @@ export default function ChatView() {
     }
   }, [messages]);
 
-  // Auto-focus input
-  useEffect(() => {
-    if (selected && mobilePanel === 'chat') inputRef.current?.focus();
-  }, [selected, mobilePanel]);
-
   // ── Actions ──
-
-  async function sendMessage(e) {
-    e?.preventDefault();
-    if (!input.trim() || !selected || sending) return;
-    const text = input.trim();
-    setInput('');
-
-    setSending(true);
-    try {
-      const saved = await api.sendMessage(selected.id, text);
-      if (saved?.id) {
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === saved.id);
-          if (idx === -1) return [...prev, saved];
-          const next = [...prev];
-          next[idx] = { ...next[idx], ...saved };
-          return next;
-        });
-      }
-    } catch (err) {
-      try {
-        const refreshed = await api.getMessagesPaginated(selected.id, 50);
-        setMessages(refreshed);
-      } catch {}
-      setInput(text);
-      console.error('sendMessage failed:', err.message);
-    }
-    setSending(false);
-    inputRef.current?.focus();
-  }
 
   async function deleteMsg(id) {
     setMessages(prev => prev.filter(m => m.id !== id));
@@ -778,7 +740,7 @@ export default function ChatView() {
                       )}
                       <div className="cv-msg-footer">
                         <span className="cv-msg-role-label">
-                          {m.role === 'user' ? 'Клиент' : m.role === 'ai' ? 'AI' : 'Менеджер'}
+                          {m.role === 'user' ? 'Клиент' : m.role === 'ai' ? 'AI' : 'Система'}
                         </span>
                         <span className="cv-msg-time">{fmtTime(m.created_at)}</span>
                         {delivery && (
@@ -810,9 +772,6 @@ export default function ChatView() {
                 <button onClick={() => { navigator.clipboard?.writeText(msgMenu.text); setMsgMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', textAlign: 'left' }}>
                   <Copy size={13} /> Копировать
                 </button>
-                <button onClick={() => { setInput(msgMenu.text); setMsgMenu(null); inputRef.current?.focus(); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', textAlign: 'left' }}>
-                  <Send size={13} /> Ответить
-                </button>
                 {(msgMenu.role === 'admin' || msgMenu.role === 'ai') && (
                   <button onClick={() => { setEditingMsg({ id: msgMenu.id, text: msgMenu.text }); setMsgMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', textAlign: 'left' }}>
                     <Hash size={13} /> Редактировать
@@ -826,19 +785,18 @@ export default function ChatView() {
 
             {/* Input */}
             <div className="cv-bottom">
-              <form className="cv-input-area" onSubmit={sendMessage}>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  className="cv-input"
-                  placeholder="Сообщение клиенту..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                />
-                <button type="submit" className="cv-send" disabled={sending || !input.trim()}>
-                  <Send size={14} />
-                </button>
-              </form>
+              <div
+                style={{
+                  padding: '10px 14px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  background: 'var(--bg-soft)',
+                  color: 'var(--text-dim)',
+                  fontSize: 12,
+                }}
+              >
+                Диалог ведёт AI. Ручная отправка из CRM отключена.
+              </div>
             </div>
           </>
         ) : (

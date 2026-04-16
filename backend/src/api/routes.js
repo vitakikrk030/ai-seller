@@ -12,7 +12,7 @@ const shop = require('../shop');
 const ownerReviews = require('../db/owner_reviews');
 const { runPolicy } = require('../policy');
 const { buildOrderContext, syncUserState } = require('../domain/order_service');
-const { deliverOutbox, OutboxDeliveryError } = require('../telegram/outbox');
+const { deliverOutbox } = require('../telegram/outbox');
 
 // === USERS ===
 
@@ -142,40 +142,12 @@ router.get('/users/:id/messages', async (req, res) => { // @test-only — UI use
   }
 });
 
-// Admin sends message manually
+// Manual CRM send is disabled in AI-only mode.
 router.post('/users/:id/messages', async (req, res) => {
-  try {
-    const { text } = req.body;
-    const normalizedText = String(text || '').trim();
-    if (!normalizedText) return res.status(400).json({ error: 'Text required' });
-
-    const user = await users.getById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // Unified outbound pipeline only: outbox -> Telegram
-    console.log(`SEND TO (CRM): ${user.telegram_id} (user.id=${user.id})`);
-    const delivered = await deliverOutbox({
-      telegramId: user.telegram_id,
-      user,
-      outbox: [{ kind: 'reply', text: normalizedText }],
-      role: 'admin',
-      applyDelay: false,
-      broadcast: broadcastSSE,
-    });
-
-    const latest = delivered.at(-1) || (await messages.getByUserPaginated(user.id, 1)).at(-1) || null;
-    res.json(latest);
-  } catch (err) {
-    if (err instanceof OutboxDeliveryError) {
-      return res.status(502).json({
-        error: err.message,
-        delivery_status: 'failed',
-        message: err.failedMessage,
-        details: err.details,
-      });
-    }
-    res.status(500).json({ error: err.message });
-  }
+  return res.status(403).json({
+    error: 'Manual CRM send is disabled in AI-only mode',
+    code: 'AI_ONLY_MODE',
+  });
 });
 
 // Paginated messages

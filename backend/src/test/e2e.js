@@ -318,36 +318,39 @@ async function runScenario() {
       throw new Error('telegram_down');
     };
 
-    await withApiServer(async (baseUrl) => {
-      const failed = await axios.post(`${baseUrl}/api/users/${user.id}/messages`, {
-        text: 'Ручная проверка доставки',
-      }).catch((error) => error.response);
-      assert(failed.status === 502, 'Ошибки Telegram не игнорируются в admin send flow');
+    await handleMessage({
+      message_id: 5,
+      chat: { id: TG_ID },
+      from: { id: TG_ID, first_name: 'Ivan', last_name: 'Test', username: 'ivantest' },
+      text: 'Когда отправка?',
     });
+    await queue.drain();
 
     bot.sendMessage = stableBotStub;
-    const failedAdminMessage = (await messages.getByUser(user.id)).filter((message) => message.role === 'admin').at(-1);
-    assert(failedAdminMessage.delivery_status === 'failed', 'Failed delivery сохраняется как failed, а не как отправленная');
-    assert((failedAdminMessage.error_text || '').includes('telegram_down'), 'error_text сохраняет причину ошибки Telegram');
-    assert(Number(failedAdminMessage.retry_count || 0) === 1, 'Failed message получает retry_count');
-    assert(!!failedAdminMessage.next_retry_at, 'Failed message получает next_retry_at для retry worker');
+    const failedAiMessage = (await messages.getByUser(user.id)).filter((message) => message.role === 'ai').at(-1);
+    assert(failedAiMessage.delivery_status === 'failed', 'Ошибки Telegram не игнорируются: failed delivery фиксируется в AI flow');
+    assert((failedAiMessage.error_text || '').includes('telegram_down'), 'error_text сохраняет причину ошибки Telegram');
+    assert(Number(failedAiMessage.retry_count || 0) === 1, 'Failed message получает retry_count');
+    assert(!!failedAiMessage.next_retry_at, 'Failed message получает next_retry_at для retry worker');
 
-    await db.query('UPDATE messages SET next_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = $1', [failedAdminMessage.id]);
+    await db.query('UPDATE messages SET next_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = $1', [failedAiMessage.id]);
     const retried = await retryFailedDeliveries({ limit: 10, maxRetries: 4 });
     assert(retried.delivered >= 1, 'Retry worker повторно отправляет failed сообщение');
-    const retriedMessage = (await messages.getByUser(user.id)).find((message) => message.id === failedAdminMessage.id);
+    const retriedMessage = (await messages.getByUser(user.id)).find((message) => message.id === failedAiMessage.id);
     assert(retriedMessage.delivery_status === 'delivered', 'Retry worker переводит сообщение в delivered после успешной отправки');
 
     bot.sendMessage = async () => {
       throw new Error('telegram_down_persistent');
     };
-    await withApiServer(async (baseUrl) => {
-      await axios.post(`${baseUrl}/api/users/${user.id}/messages`, {
-        text: 'DLQ проверка',
-      }).catch(() => null);
+    await handleMessage({
+      message_id: 6,
+      chat: { id: TG_ID },
+      from: { id: TG_ID, first_name: 'Ivan', last_name: 'Test', username: 'ivantest' },
+      text: 'А можно быстрее?',
     });
+    await queue.drain();
     bot.sendMessage = stableBotStub;
-    const dlqCandidate = (await messages.getByUser(user.id)).filter((message) => message.role === 'admin').at(-1);
+    const dlqCandidate = (await messages.getByUser(user.id)).filter((message) => message.role === 'ai').at(-1);
     await db.query('UPDATE messages SET next_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = $1', [dlqCandidate.id]);
 
     bot.sendMessage = async () => {
