@@ -1,5 +1,6 @@
 const axios = require('axios');
 const config = require('../config');
+const log = require('../logger');
 
 function getAPI() {
   return `https://api.telegram.org/bot${config.get('BOT_TOKEN')}`;
@@ -38,12 +39,26 @@ const bot = {
       if (options.business_connection_id) {
         payload.business_connection_id = options.business_connection_id;
       }
+      log.debug('telegram.bot.sendMessage: request', {
+        chatId,
+        textLength: (text || '').length,
+        hasBusinessConnection: !!options.business_connection_id,
+      });
       const response = await tgRequest('sendMessage', payload);
       try { require('../monitoring').recordSuccess('telegram'); } catch(e) {}
+      log.info('telegram.bot.sendMessage: success', {
+        chatId,
+        telegramMessageId: response.data?.result?.message_id || null,
+      });
       return response.data?.result || null;
     } catch (err) {
       console.error('Telegram send error:', err.response?.data || err.message);
       try { require('../monitoring').recordError('telegram', err.message || 'sendMessage failed'); } catch(e) {}
+      log.error('telegram.bot.sendMessage: failed', {
+        chatId,
+        error: err.message || 'sendMessage failed',
+        status: err.response?.status || null,
+      });
       throw err;
     }
   },

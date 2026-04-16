@@ -310,6 +310,22 @@ async function runScenario() {
     assert(aiMessages.some((message) => message.text.includes('заказ принят в работу')), 'Post-payment reply объясняет клиенту следующий шаг');
     assert(policyRunRows.rows.some((row) => JSON.stringify(row.input_json).includes('owner_payment_verified')), 'Owner-triggered reply тоже логируется в policy_runs');
 
+    const beforeStaleCount = sentMessages.length;
+    await db.query(
+      "UPDATE users SET manager_active = true, manager_active_at = NOW() - INTERVAL '31 minutes' WHERE id = $1",
+      [user.id]
+    );
+    await handleMessage({
+      message_id: 5,
+      chat: { id: TG_ID },
+      from: { id: TG_ID, first_name: 'Ivan', last_name: 'Test', username: 'ivantest' },
+      text: 'Хочу ещё одну пару',
+    });
+    await queue.drain();
+    const refreshedUser = await users.getById(user.id);
+    assert(sentMessages.length > beforeStaleCount, 'Stale manager_active не блокирует ответ AI');
+    assert(refreshedUser.manager_active === false, 'Stale manager_active автоматически очищается');
+
     const stableBotStub = bot.sendMessage;
     bot.sendMessage = async () => {
       throw new Error('telegram_down');

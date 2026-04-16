@@ -1,6 +1,7 @@
 const messages = require('../db/messages');
 const settings = require('../db/settings');
 const bot = require('./bot');
+const log = require('../logger');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,6 +16,12 @@ async function deliverOutbox({
   role = 'ai',
   broadcast = null,
 }) {
+  log.debug('outbox.deliverOutbox: start', {
+    userId: user?.id || null,
+    telegramId,
+    outboxCount: Array.isArray(outbox) ? outbox.length : 0,
+    role,
+  });
   const delay = applyDelay ? parseInt(await settings.get('response_delay') || '0', 10) : 0;
   if (delay > 0 && delay <= 30) await sleep(delay * 1000);
 
@@ -30,6 +37,12 @@ async function deliverOutbox({
     }
 
     if (!text) continue;
+    log.debug('outbox.deliverOutbox: enqueue message', {
+      userId: user.id,
+      telegramId,
+      kind: item.kind || 'reply',
+      textLength: text.length,
+    });
 
     const saved = await messages.save(user.id, role, text, {
       deliveryStatus: 'pending',
@@ -38,8 +51,19 @@ async function deliverOutbox({
     if (broadcast) broadcast('message', { userId: user.id, message: saved });
 
     try {
+      log.debug('outbox.deliverOutbox: sending to telegram', {
+        userId: user.id,
+        telegramId,
+        messageId: saved.id,
+      });
       const sent = await bot.sendMessage(telegramId, text, sendOptions);
       const delivered = await messages.markDelivery(saved.id, 'delivered', {
+        telegramMessageId: sent?.message_id || null,
+      });
+      log.info('outbox.deliverOutbox: delivered', {
+        userId: user.id,
+        telegramId,
+        messageId: saved.id,
         telegramMessageId: sent?.message_id || null,
       });
       if (broadcast) broadcast('message', { userId: user.id, message: delivered || saved });
@@ -47,10 +71,20 @@ async function deliverOutbox({
       const failed = await messages.markDelivery(saved.id, 'failed', {
         errorText: err.message || 'send_failed',
       });
+      log.error('outbox.deliverOutbox: telegram send failed', {
+        userId: user.id,
+        telegramId,
+        messageId: saved.id,
+        error: err.message || 'send_failed',
+      });
       if (broadcast) broadcast('message', { userId: user.id, message: failed || saved });
       throw err;
     }
   }
+  log.debug('outbox.deliverOutbox: complete', {
+    userId: user?.id || null,
+    telegramId,
+  });
 }
 
 module.exports = {

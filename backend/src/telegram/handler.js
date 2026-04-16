@@ -7,6 +7,7 @@ const { deliverOutbox } = require('./outbox');
 const monitoring = require('../monitoring');
 const queue = require('../queue');
 const { processTurn } = require('../logic/sales');
+const log = require('../logger');
 
 function _broadcast(event, data) {
   try {
@@ -44,8 +45,26 @@ function checkAiMode(user) {
   if ((user.mode || 'ai') === 'manager') {
     return { shouldRespond: false, reason: 'manager_mode' };
   }
+  // Manager pause is valid only when active_at is recent.
+  if (user.manager_active && user.manager_active_at) {
+    const activeAtMs = new Date(user.manager_active_at).getTime();
+    if (Number.isFinite(activeAtMs) && activeAtMs > Date.now() - 30 * 60 * 1000) {
+      return { shouldRespond: false, reason: 'manager_pause' };
+    }
+  }
+  if (user.manager_active && !user.manager_active_at) {
+    log.warn('telegram.handleMessage: manager_active without timestamp; ignoring stale pause', {
+      userId: user.id,
+      telegramId: user.telegram_id,
+    });
+  }
   if (user.manager_active) {
-    return { shouldRespond: false, reason: 'manager_pause' };
+    users.setManagerActive(user.id, false).catch(() => {});
+    log.info('telegram.handleMessage: cleared stale manager pause', {
+      userId: user.id,
+      telegramId: user.telegram_id,
+    });
+    return { shouldRespond: true, reason: 'cleared_stale_manager_pause' };
   }
   return { shouldRespond: true, reason: 'ai_mode' };
 }
@@ -53,7 +72,13 @@ function checkAiMode(user) {
 async function handleMessage(msg, businessConnectionId) {
   const telegramId = msg.chat?.id || msg.from?.id;
   if (!telegramId) return;
-  if (msg.message_id && isDuplicate(msg.message_id, telegramId)) return;
+  if (msg.message_id && isDuplicate(msg.message_id, telegramId)) {
+    log.debug('telegram.handleMessage: duplicate update skipped', {
+      telegramId,
+      messageId: msg.message_id,
+    });
+    return;
+  }
 
   monitoring.recordMessageActivity();
 
@@ -85,6 +110,17 @@ async function handleMessage(msg, businessConnectionId) {
     const globalAi = await config.getSetting('global_ai_enabled');
     const autoReply = await config.getSetting('auto_reply');
     const user = await users.findOrCreate(telegramId, name, username);
+    log.debug('telegram.handleMessage: inbound accepted', {
+      telegramId,
+      userId: user.id,
+      hasPhoto,
+      hasText: !!text,
+      globalAi,
+      autoReply,
+      aiEnabled: !!user.ai_enabled,
+      mode: user.mode || 'ai',
+      managerActive: !!user.manager_active,
+    });
 
     const userMessage = await messages.save(user.id, 'user', text || '[фото]', {
       telegramMessageId: msg.message_id || null,
@@ -95,25 +131,84 @@ async function handleMessage(msg, businessConnectionId) {
     _broadcast('message', { userId: user.id, message: userMessage });
     if (text) memory.extractAndSave(user.id, text).catch(() => {});
 
-    if (globalAi === 'false' || autoReply === 'false' || !user.ai_enabled) return;
+    if (globalAi === 'false' || autoReply === 'false' || !user.ai_enabled) {
+      log.info('telegram.handleMessage: AI response skipped by settings', {
+        telegramId,
+        userId: user.id,
+        globalAi,
+        autoReply,
+        aiEnabled: !!user.ai_enabled,
+      });
+      return;
+    }
     const modeCheck = checkAiMode(user);
-    if (!modeCheck.shouldRespond) return;
-    if (queue.isCancelled(String(telegramId))) return;
+    if (!modeCheck.shouldRespond) {
+      log.info('telegram.handleMessage: AI response skipped by mode gate', {
+        telegramId,
+        userId: user.id,
+        reason: modeCheck.reason,
+      });
+      return;
+    }
+    if (queue.isCancelled(String(telegramId))) {
+      log.info('telegram.handleMessage: AI response skipped because queue cancelled', {
+        telegramId,
+        userId: user.id,
+      });
+      return;
+    }
 
-    queue.enqueue(telegramId, async () => {
-      if (queue.isCancelled(String(telegramId))) return;
+    const enqueueResult = queue.enqueue(telegramId, async () => {
+      if (queue.isCancelled(String(telegramId))) {
+        log.debug('telegram.handleMessage: queued task cancelled before execution', {
+          telegramId,
+          userId: user.id,
+        });
+        return;
+      }
       const freshUser = await users.getById(user.id);
-      if (!freshUser || !freshUser.ai_enabled) return;
-      if ((freshUser.mode || 'ai') === 'manager' || freshUser.manager_active) return;
+      if (!freshUser || !freshUser.ai_enabled) {
+        log.info('telegram.handleMessage: queued task skipped (user missing or ai disabled)', {
+          telegramId,
+          userId: user.id,
+        });
+        return;
+      }
+      const freshModeCheck = checkAiMode(freshUser);
+      if (!freshModeCheck.shouldRespond) {
+        log.info('telegram.handleMessage: queued task skipped by mode gate', {
+          telegramId,
+          userId: freshUser.id,
+          reason: freshModeCheck.reason,
+        });
+        return;
+      }
 
       const result = await processTurn(freshUser, {
         text: text || '[фото]',
         messageId: msg.message_id || null,
         hasPhoto,
       });
+      log.debug('telegram.handleMessage: processTurn completed', {
+        telegramId,
+        userId: freshUser.id,
+        outboxCount: result.execution.outbox.length,
+        actions: result.execution.actions.map((action) => action.type),
+      });
 
-      if (queue.isCancelled(String(telegramId))) return;
+      if (queue.isCancelled(String(telegramId))) {
+        log.info('telegram.handleMessage: outbox send skipped because queue cancelled after processTurn', {
+          telegramId,
+          userId: freshUser.id,
+        });
+        return;
+      }
       if (result.execution.outbox.length > 0) {
+        log.debug('telegram.handleMessage: sending outbox', {
+          telegramId,
+          userId: freshUser.id,
+          outboxCount: result.execution.outbox.length,
+        });
         await deliverOutbox({
           telegramId,
           user: freshUser,
@@ -122,8 +217,26 @@ async function handleMessage(msg, businessConnectionId) {
           applyDelay: true,
           broadcast: _broadcast,
         });
+      } else {
+        log.warn('telegram.handleMessage: empty outbox, nothing to send', {
+          telegramId,
+          userId: freshUser.id,
+        });
       }
     }, { userState: user.state });
+    if (!enqueueResult) {
+      log.error('telegram.handleMessage: failed to enqueue message', {
+        telegramId,
+        userId: user.id,
+      });
+    } else {
+      log.debug('telegram.handleMessage: message enqueued', {
+        telegramId,
+        userId: user.id,
+        queueTaskId: enqueueResult.id,
+        queuePosition: enqueueResult.position,
+      });
+    }
   } catch (err) {
     console.error(`Error handling message from ${telegramId}:`, err);
   }

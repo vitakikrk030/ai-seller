@@ -1,6 +1,7 @@
 const aiClient = require('../ai/client');
 const { buildPolicyPrompt } = require('./prompt');
 const { parsePolicyJson, validateDecision } = require('./schema');
+const log = require('../logger');
 
 async function runPolicy(user, userMessage, context, options = {}) {
   const systemPrompt = await buildPolicyPrompt(user, context);
@@ -26,6 +27,16 @@ async function runPolicy(user, userMessage, context, options = {}) {
   const rawOutput = response.text || '';
   const parsed = parsePolicyJson(rawOutput);
   const validation = validateDecision(parsed, context);
+  log.debug('policy.runPolicy: completed', {
+    userId: user.id,
+    rawLength: rawOutput.length,
+    parsed: !!parsed,
+    validationStatus: validation.valid ? 'passed' : 'failed',
+    validationErrors: validation.errors,
+    actionType: validation.decision?.action?.type || 'none',
+    nextStep: validation.decision?.next_step || null,
+    replyLength: (validation.decision?.reply || '').length,
+  });
 
   return {
     rawOutput,

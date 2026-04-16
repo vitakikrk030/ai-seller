@@ -3,6 +3,7 @@ const orders = require('../db/orders');
 const memory = require('../db/memory');
 const ownerReviews = require('../db/owner_reviews');
 const { buildOrderContext, syncUserState } = require('../domain/order_service');
+const log = require('../logger');
 
 function extractOrderFields(collectedData, fallbackKnown) {
   const data = collectedData || {};
@@ -56,6 +57,11 @@ async function reconcileInboundSignals(user, incoming, orderContext, sensors) {
         order_id: order.id,
         receipt_message_id: incoming.messageId || null,
       });
+      log.info('actuator.reconcileInboundSignals: payment claimed', {
+        userId: user.id,
+        orderId: order.id,
+        receiptMessageId: incoming.messageId || null,
+      });
     }
   }
 
@@ -63,6 +69,12 @@ async function reconcileInboundSignals(user, incoming, orderContext, sensors) {
 }
 
 async function executeDecision(user, decision, orderContext, sensors) {
+  log.debug('actuator.executeDecision: start', {
+    userId: user.id,
+    actionType: decision.action?.type || 'none',
+    hasReply: !!decision.reply,
+    nextStep: decision.next_step,
+  });
   const actions = [];
   const outbox = [];
   let order = orderContext.order;
@@ -77,6 +89,10 @@ async function executeDecision(user, decision, orderContext, sensors) {
         type: 'upsert_order_draft',
         order_id: order.id,
         fields,
+      });
+      log.debug('actuator.executeDecision: order draft updated', {
+        userId: user.id,
+        orderId: order.id,
       });
     }
   }
@@ -96,6 +112,10 @@ async function executeDecision(user, decision, orderContext, sensors) {
   if (decision.reply) {
     outbox.push({ kind: 'reply', text: decision.reply });
     actions.push({ type: 'queue_reply' });
+    log.debug('actuator.executeDecision: queued reply', {
+      userId: user.id,
+      replyLength: decision.reply.length,
+    });
   }
 
   if (decision.action.type === 'send_payment_details') {
@@ -114,9 +134,17 @@ async function executeDecision(user, decision, orderContext, sensors) {
         type: 'send_payment_details',
         order_id: order.id,
       });
+      log.info('actuator.executeDecision: payment details queued', {
+        userId: user.id,
+        orderId: order.id,
+      });
     } else {
       actions.push({
         type: 'skip_payment_details',
+        reason: !paymentData.cardNumber ? 'payment_settings_missing' : 'order_incomplete',
+      });
+      log.warn('actuator.executeDecision: payment details skipped', {
+        userId: user.id,
         reason: !paymentData.cardNumber ? 'payment_settings_missing' : 'order_incomplete',
       });
     }
@@ -126,6 +154,11 @@ async function executeDecision(user, decision, orderContext, sensors) {
     await syncUserState(user.id, order);
   }
 
+  log.debug('actuator.executeDecision: complete', {
+    userId: user.id,
+    outboxCount: outbox.length,
+    actions: actions.map((action) => action.type),
+  });
   return { order, actions, outbox };
 }
 
