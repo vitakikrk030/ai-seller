@@ -1,48 +1,92 @@
 const aiClient = require('../ai/client');
-const { buildPolicyPrompt } = require('./prompt');
-const { parsePolicyJson, validateDecision } = require('./schema');
+const prompts = require('../db/prompts');
 const log = require('../logger');
 
-async function runPolicy(user, userMessage, context, options = {}) {
-  const systemPrompt = await buildPolicyPrompt(user, context);
-  const history = (context.history || []).map((message) => ({
-    role: message.role === 'user' ? 'user' : 'assistant',
-    content: message.text,
-  }));
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-  ];
+const EMPTY_COLLECTED_DATA = {
+  product_ref: null,
+  product_name: null,
+  size: null,
+  full_name: null,
+  phone: null,
+  address: null,
+};
 
+async function buildSystemPrompt(context = {}) {
+  const corePrompt = await prompts.get('core_prompt').catch(() => '');
+  const promptBase = (corePrompt || 'Ты AI-продавец в Telegram.').trim();
+  const contextHints = [];
+
+  if (context.scenario) {
+    contextHints.push(`Scenario: ${String(context.scenario)}`);
+  }
+  if (context.order) {
+    contextHints.push(`Order context: ${JSON.stringify(context.order)}`);
+  }
+  if (context.sensors) {
+    contextHints.push(`Message context: ${JSON.stringify(context.sensors)}`);
+  }
+
+  return [
+    promptBase,
+    'Отвечай клиенту обычным человеческим сообщением.',
+    'Не возвращай JSON, markdown, служебные пометки или объяснения для backend.',
+    'Нужен только готовый текст ответа клиенту.',
+    contextHints.length > 0 ? contextHints.join('\n') : null,
+  ].filter(Boolean).join('\n\n');
+}
+
+function mapHistory(history = []) {
+  return history
+    .filter((message) => message?.text)
+    .map((message) => ({
+      role: message.role === 'user' ? 'user' : 'assistant',
+      content: message.text,
+    }));
+}
+
+function wrapDecision(reply) {
+  return {
+    version: 'v1',
+    reply,
+    next_step: null,
+    action: { type: 'none', payload: {} },
+    collected_data: { ...EMPTY_COLLECTED_DATA },
+    confidence: 'high',
+  };
+}
+
+async function runPolicy(user, userMessage, context = {}, options = {}) {
+  const systemPrompt = await buildSystemPrompt(context);
+  const history = mapHistory(context.history || []);
+  const messages = [{ role: 'system', content: systemPrompt }, ...history];
   const lastMessage = messages[messages.length - 1];
+
   if (!lastMessage || lastMessage.role !== 'user' || lastMessage.content !== userMessage) {
     messages.push({ role: 'user', content: userMessage });
   }
 
   const response = await aiClient.sendMessage({
     messages,
-    temperature: options.temperature ?? 0.2,
+    temperature: options.temperature ?? 0.3,
     maxTokens: options.maxTokens ?? 600,
   });
-  const rawOutput = response.text || '';
-  const parsed = parsePolicyJson(rawOutput);
-  const validation = validateDecision(parsed, context);
+
+  const reply = String(response.text || '').trim();
+  if (!reply) {
+    throw new Error('AI returned empty response');
+  }
+
   log.debug('policy.runPolicy: completed', {
     userId: user.id,
-    rawLength: rawOutput.length,
-    parsed: !!parsed,
-    validationStatus: validation.valid ? 'passed' : 'failed',
-    validationErrors: validation.errors,
-    actionType: validation.decision?.action?.type || 'none',
-    nextStep: validation.decision?.next_step || null,
-    replyLength: (validation.decision?.reply || '').length,
+    replyLength: reply.length,
+    historyCount: history.length,
   });
 
   return {
-    rawOutput,
-    parsed,
-    decision: validation.decision,
-    validation,
+    rawOutput: reply,
+    parsed: null,
+    decision: wrapDecision(reply),
+    validation: { valid: true, errors: [] },
   };
 }
 
@@ -53,26 +97,7 @@ async function generateResponse(user, userMessage, context = {}) {
 
 async function previewResponse(testMessage, scenario, userState = 'NEW') {
   const fakeUser = { id: 0, state: userState, name: 'Тест', telegram_id: 0 };
-  const context = {
-    scenario,
-    history: [],
-    catalog: { products: [] },
-    order: {
-      user_state: userState,
-      status: null,
-      known: {},
-      missing: ['product', 'size', 'full_name', 'phone', 'address'],
-      next_operational_step: 'clarify_need',
-      can_send_payment: false,
-    },
-    sensors: {
-      intent: 'unknown',
-      intent_confidence: 'low',
-      extracted: {},
-    },
-  };
-  const run = await runPolicy(fakeUser, testMessage, context);
-  return run.decision.reply;
+  return generateResponse(fakeUser, testMessage, { scenario, history: [] });
 }
 
 module.exports = {

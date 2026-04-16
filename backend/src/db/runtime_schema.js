@@ -6,7 +6,6 @@ async function ensureRuntimeSchema(pool) {
       name VARCHAR(255),
       username VARCHAR(255),
       state VARCHAR(50) DEFAULT 'NEW',
-      ai_enabled BOOLEAN DEFAULT true,
       last_seen TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -14,7 +13,7 @@ async function ensureRuntimeSchema(pool) {
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'ai', 'admin')),
+      role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'ai')),
       text TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -84,6 +83,7 @@ async function ensureRuntimeSchema(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS attention_reason VARCHAR(100);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS attention_override BOOLEAN DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0;
+    ALTER TABLE users DROP COLUMN IF EXISTS ai_enabled;
     ALTER TABLE users DROP COLUMN IF EXISTS mode;
     ALTER TABLE users DROP COLUMN IF EXISTS ai_mode;
     ALTER TABLE users DROP COLUMN IF EXISTS manager_active;
@@ -104,6 +104,15 @@ async function ensureRuntimeSchema(pool) {
     UPDATE messages
     SET delivery_status = 'delivered'
     WHERE delivery_status = 'received';
+
+    UPDATE messages
+    SET role = 'ai'
+    WHERE role = 'admin';
+
+    ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_role_check;
+    ALTER TABLE messages DROP CONSTRAINT IF EXISTS chk_messages_role;
+    ALTER TABLE messages ADD CONSTRAINT chk_messages_role
+      CHECK (role IN ('user', 'ai'));
 
     ALTER TABLE messages DROP CONSTRAINT IF EXISTS chk_messages_delivery_status;
     ALTER TABLE messages ADD CONSTRAINT chk_messages_delivery_status
@@ -190,6 +199,8 @@ async function ensureRuntimeSchema(pool) {
 
     DELETE FROM ai_speech_settings WHERE key = 'toggle_fallback';
     DELETE FROM settings WHERE key = 'policy_mode';
+    DELETE FROM settings WHERE key = 'global_ai_enabled';
+    DELETE FROM settings WHERE key = 'auto_reply';
 
     INSERT INTO settings (key, value, updated_at) VALUES
       ('policy_logging_enabled', 'true', NOW()),

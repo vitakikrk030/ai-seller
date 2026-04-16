@@ -36,42 +36,10 @@ router.get('/users/:id', async (req, res) => {
   }
 });
 
-router.delete('/users/:id', async (req, res) => {
-  try {
-    const deleted = await users.deleteById(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'User not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch('/users/:id/ai', async (req, res) => {
-  try {
-    const { enabled } = req.body;
-    await users.setAiEnabled(req.params.id, enabled);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.post('/users/:id/read', async (req, res) => {
   try {
     await users.markRead(req.params.id);
     res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Quick replies are intentionally disabled in AI-only mode:
-// the assistant, not backend templates, should drive the conversation.
-router.get('/users/:id/quick-replies', async (req, res) => {
-  try {
-    const user = await users.getById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json([]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -94,38 +62,10 @@ router.get('/users/:id/memory', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/memory', async (req, res) => {
-  try {
-    const allowedFields = ['full_name', 'phone', 'city', 'address', 'shoe_size', 'insole_cm', 'preferred_brand', 'shoe_type', 'notes'];
-    const data = {};
-    for (const f of allowedFields) {
-      if (req.body[f] !== undefined) data[f] = req.body[f];
-    }
-    const result = await memory.update(req.params.id, data);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.get('/users/:id/policy-runs', async (req, res) => {
   try {
     const data = await policyRuns.getByUser(req.params.id, parseInt(req.query.limit || '50', 10));
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch('/users/:id/state', async (req, res) => {
-  try {
-    const { state } = req.body;
-    const validStates = ['NEW', 'COLLECTING', 'PAYMENT_REVIEW', 'PAID', 'DONE'];
-    if (!state || !validStates.includes(state)) {
-      return res.status(400).json({ error: `Invalid state. Allowed: ${validStates.join(', ')}` });
-    }
-    const user = await users.updateState(req.params.id, state);
-    res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -140,14 +80,6 @@ router.get('/users/:id/messages', async (req, res) => { // @test-only — UI use
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
-// Manual CRM send is disabled in AI-only mode.
-router.post('/users/:id/messages', async (req, res) => {
-  return res.status(403).json({
-    error: 'Manual CRM send is disabled in AI-only mode',
-    code: 'AI_ONLY_MODE',
-  });
 });
 
 // Paginated messages
@@ -168,82 +100,6 @@ router.get('/users/:id/messages/search', async (req, res) => {
     if (!q) return res.json([]);
     const data = await messages.searchByUser(req.params.id, q);
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete message
-router.delete('/messages/:id', async (req, res) => {
-  try {
-    await messages.deleteById(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Edit message
-router.patch('/messages/:id', async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text required' });
-    const msg = await messages.updateById(req.params.id, text);
-    res.json(msg);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Clear chat history
-router.delete('/users/:id/messages', async (req, res) => {
-  try {
-    await messages.clearByUser(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Pin / unpin user
-router.post('/users/:id/pin', async (req, res) => {
-  try {
-    const { pinned } = req.body;
-    const db = require('../db');
-    await db.query('UPDATE users SET pinned = $1 WHERE id = $2', [!!pinned, req.params.id]);
-    broadcastSSE('user_update', { userId: parseInt(req.params.id) });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Manager override: set/clear needs_attention
-router.patch('/users/:id/attention', async (req, res) => {
-  try {
-    const { needs_attention, reason } = req.body;
-    const db = require('../db');
-    await db.query(
-      'UPDATE users SET needs_attention = $1, attention_reason = $2, attention_override = true WHERE id = $3',
-      [!!needs_attention, reason || null, req.params.id]
-    );
-    broadcastSSE('user_update', { userId: parseInt(req.params.id) });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Clear attention override
-router.delete('/users/:id/attention', async (req, res) => {
-  try {
-    const db = require('../db');
-    await db.query(
-      'UPDATE users SET needs_attention = false, attention_reason = null, attention_override = false WHERE id = $1',
-      [req.params.id]
-    );
-    broadcastSSE('user_update', { userId: parseInt(req.params.id) });
-    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -544,7 +400,7 @@ router.post('/settings', async (req, res) => {
       'ai_base_url', 'ai_api_key', 'ai_model',
       'bot_token', 'webhook_url', 'webhook_secret', 'owner_chat_id',
       'shop_api_url', 'shop_api_key',
-      'global_ai_enabled', 'response_delay', 'auto_reply',
+      'response_delay',
       'payment_card_number', 'payment_name',
       'payment_bank_name', 'payment_receiver_name',
     ];
@@ -841,7 +697,7 @@ router.get('/monitoring/summary', async (req, res) => {
     const paidOrders = parseInt(paidRow.rows[0]?.paid || 0);
     const conversion = totalDialogs > 0 ? Math.round((paidOrders / totalDialogs) * 100) : 0;
 
-    // 3. Missed clients: user sent message, no AI/admin reply within 5 min
+    // 3. Missed clients: user sent message, no AI reply within 5 min
     const missedRow = await db.query(`
       SELECT COUNT(DISTINCT m.user_id) as cnt
       FROM messages m
@@ -850,7 +706,7 @@ router.get('/monitoring/summary', async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM messages r
           WHERE r.user_id = m.user_id
-            AND r.role IN ('ai','admin')
+            AND r.role = 'ai'
             AND r.created_at > m.created_at
             AND r.created_at < m.created_at + INTERVAL '5 minutes'
         )

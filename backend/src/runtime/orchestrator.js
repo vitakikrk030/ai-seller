@@ -1,88 +1,61 @@
 const messages = require('../db/messages');
 const policyRuns = require('../db/policy_runs');
-const shop = require('../shop');
-const { collectSensors } = require('../sensors');
 const { runPolicy } = require('../policy');
-const { buildOrderContext } = require('../domain/order_service');
-const { reconcileInboundSignals, executeDecision } = require('../actuators');
 const log = require('../logger');
 
 async function processTurn(user, incoming) {
-  const userMessage = incoming.text || (incoming.hasPhoto ? 'Клиент отправил фото' : '');
-  const [history, catalog] = await Promise.all([
-    messages.getHistory(user.id, 15).catch(() => []),
-    shop.getCatalog().catch(() => ({ available: false, status: 'api_error', products: [] })),
-  ]);
-
-  const sensors = await collectSensors({
+  const userMessage = incoming.text || (incoming.hasPhoto ? '[фото]' : '[пустое сообщение]');
+  const history = await messages.getHistory(user.id, 20).catch(() => []);
+  const run = await runPolicy(
     user,
-    text: userMessage,
-    history,
-    catalog,
-    hasPhoto: incoming.hasPhoto,
-  });
-  log.debug('runtime.processTurn: sensors collected', {
-    userId: user.id,
-    intent: sensors.intent,
-    paymentClaimSignal: !!sensors.payment_claim_signal,
-    hasPhoto: !!sensors.has_photo,
-  });
+    userMessage,
+    {
+      history,
+      sensors: {
+        has_photo: !!incoming.hasPhoto,
+        message_id: incoming.messageId || null,
+      },
+    },
+    {
+      temperature: 0.3,
+      maxTokens: 700,
+    }
+  );
 
-  let orderContext = await buildOrderContext(user, sensors);
-  const preExecution = await reconcileInboundSignals(user, incoming, orderContext, sensors);
-  orderContext = await buildOrderContext(user, sensors);
+  const reply = String(run.decision.reply || '').trim();
+  if (!reply) {
+    throw new Error('AI returned empty response');
+  }
 
-  const mode = 'primary';
-  const policyContext = {
-    history,
-    catalog,
-    sensors,
-    order: orderContext,
-  };
-  const run = await runPolicy(user, userMessage, policyContext, { mode });
-  log.debug('runtime.processTurn: policy result', {
-    userId: user.id,
-    mode,
-    replyLength: (run.decision.reply || '').length,
-    nextStep: run.decision.next_step,
-    actionType: run.decision.action?.type || 'none',
-    validationStatus: run.validation.valid ? 'passed' : 'failed',
-    validationErrors: run.validation.errors,
-  });
-
-  const primaryExecution = await executeDecision(user, run.decision, orderContext, sensors);
   const execution = {
-    order: primaryExecution.order || preExecution.order || orderContext.order,
-    actions: [...preExecution.actions, ...primaryExecution.actions],
-    outbox: primaryExecution.outbox,
+    order: null,
+    actions: [{ type: 'ai_reply' }],
+    outbox: [{ kind: 'reply', text: reply }],
   };
-  log.debug('runtime.processTurn: actuator execution completed', {
+
+  log.debug('runtime.processTurn: ai relay completed', {
     userId: user.id,
+    replyLength: reply.length,
     outboxCount: execution.outbox.length,
-    actions: execution.actions.map((action) => action.type),
   });
 
   await policyRuns.create({
     user_id: user.id,
-    order_id: execution.order?.id || orderContext.order_id || null,
-    mode,
+    order_id: null,
+    mode: 'direct_ai',
     input_json: {
       incoming,
-      sensors,
-      order: orderContext,
-      catalog_status: catalog.status,
+      history_count: history.length,
     },
     raw_output: run.rawOutput,
     decision_json: run.decision,
-    validation_status: run.validation.valid ? 'passed' : 'failed',
-    validation_errors: run.validation.errors,
+    validation_status: 'passed',
+    validation_errors: [],
     backend_actions: execution.actions,
   }).catch(() => {});
 
   return {
-    mode,
-    sensors,
-    orderContext,
+    mode: 'direct_ai',
     decision: run.decision,
     validation: run.validation,
     execution,

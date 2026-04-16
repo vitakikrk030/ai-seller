@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   ChevronLeft,
-  Hash, Trash2, Search, Clock, Star, Copy, MoreHorizontal,
+  Hash, Search, Clock, Star,
 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -150,11 +150,10 @@ function TypingIndicator({ label }) {
   );
 }
 
-function ModeBadge({ aiEnabled }) {
-  if (!aiEnabled) return <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', background: 'rgba(148,163,184,0.12)', borderRadius: 999, padding: '3px 9px' }}>AI выкл</span>;
+function ModeBadge() {
   return (
     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent,#6366f1)', background: 'rgba(99,102,241,0.1)', borderRadius: 999, padding: '3px 9px' }}>
-      AI ведёт
+      AI-only
     </span>
   );
 }
@@ -191,7 +190,6 @@ export default function ChatView() {
   const [showProfile, setShowProfile] = useState(false);
   const [typingState, setTypingState] = useState({}); // userId → { client: bool, ai: bool }
   const typingTimers = useRef({});
-  const [msgMenu, setMsgMenu] = useState(null); // { id, x, y, text }
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cv_sidebar_width');
@@ -202,8 +200,6 @@ export default function ChatView() {
   const dragging = useRef(false);
   const dragStart = useRef(0);
   const dragWidth = useRef(SIDEBAR_DEFAULT);
-  const [editingMsg, setEditingMsg] = useState(null); // { id, text }
-  const [confirmAction, setConfirmAction] = useState(null); // { type, label, onConfirm }
   const [msgSearch, setMsgSearch] = useState('');
   const [msgSearchResults, setMsgSearchResults] = useState(null); // null = not searching
   const [hasMore, setHasMore] = useState(false);
@@ -374,51 +370,6 @@ export default function ChatView() {
 
   // ── Actions ──
 
-  async function deleteMsg(id) {
-    setMessages(prev => prev.filter(m => m.id !== id));
-    setMsgMenu(null);
-    try { await api.deleteMessage(id); } catch {
-      // restore on error — refetch
-      try { setMessages(await api.getMessagesPaginated(selected.id, 50)); } catch {}
-    }
-  }
-
-  async function saveEdit(id, text) {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, text, edited: true } : m));
-    setEditingMsg(null);
-    try { await api.editMessage(id, text); } catch {}
-  }
-
-  function confirmClearHistory() {
-    setConfirmAction({
-      label: 'Очистить историю сообщений?',
-      onConfirm: async () => {
-        setConfirmAction(null);
-        await api.clearMessages(selected.id);
-        setMessages([]);
-      },
-    });
-  }
-
-  function confirmDeleteDialog() {
-    setConfirmAction({
-      label: `Удалить диалог с ${selected.name || 'клиентом'}?`,
-      onConfirm: async () => {
-        setConfirmAction(null);
-        await api.deleteUser(selected.id);
-        setSelected(null);
-        setMessages([]);
-        setOrders([]);
-      },
-    });
-  }
-
-  async function togglePin(u) {
-    const pinned = !u.pinned;
-    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, pinned } : x));
-    try { await api.pinUser(u.id, pinned); } catch {}
-  }
-
   const selectUser = useCallback(async (u) => {
     setSelected(u);
     setLoadingMessages(true);
@@ -477,9 +428,8 @@ export default function ChatView() {
     if (filter === 'unread') list = list.filter(u => u.unread);
     if (filter === 'order') list = list.filter(u => u.order_product);
     if (filter === 'done') list = list.filter(u => u.state === 'DONE');
-    // Sort: pinned > needs_attention > priority (from server) > last_seen
+    // Sort by urgency and backend priority only.
     return [...list].sort((a, b) => {
-      if (a.pinned !== b.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
       if (a.needs_attention !== b.needs_attention) return (b.needs_attention ? 1 : 0) - (a.needs_attention ? 1 : 0);
       return (b.computed_priority || 0) - (a.computed_priority || 0);
     });
@@ -575,11 +525,10 @@ export default function ChatView() {
           {filteredUsers.map((u) => {
             const heat = heatLevel(u);
             const waitStr = fmtWait(u.wait_minutes);
-            const isAI = !!u.ai_enabled;
             return (
               <div
                 key={u.id}
-                className={`cv-list-item ${selected?.id === u.id ? 'cv-list-active' : ''} ${u.unread ? 'cv-list-unread' : ''} ${u.pinned ? 'cv-list-pinned' : ''} ${u.needs_attention ? 'cv-list-attention' : ''}`}
+                className={`cv-list-item ${selected?.id === u.id ? 'cv-list-active' : ''} ${u.unread ? 'cv-list-unread' : ''} ${u.needs_attention ? 'cv-list-attention' : ''}`}
                 onClick={() => selectUser(u)}
               >
                 <div className={`cv-heat cv-heat-${heat}`} />
@@ -587,19 +536,9 @@ export default function ChatView() {
                   <div className="cv-list-row1">
                     <span className={`cv-list-name ${u.unread ? 'cv-bold' : ''}`}>
                       {u.needs_attention && <span style={{ fontSize: 9, color: '#ef4444', marginRight: 4, fontWeight: 700 }}>!</span>}
-                      {u.pinned && <span style={{ fontSize: 9, color: 'var(--accent,#6366f1)', marginRight: 4, fontWeight: 700 }}>●</span>}
                       {u.name || 'Без имени'}
                     </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span className="cv-list-time">{u.last_message_at ? timeAgo(u.last_message_at) : ''}</span>
-                      <button
-                        className="cv-pin-btn"
-                        onClick={(e) => { e.stopPropagation(); togglePin(u); }}
-                        title={u.pinned ? 'Открепить' : 'Закрепить'}
-                      >
-                        {u.pinned ? '−' : '+'}
-                      </button>
-                    </div>
+                    <span className="cv-list-time">{u.last_message_at ? timeAgo(u.last_message_at) : ''}</span>
                   </div>
                   {u.needs_attention && u.attention_reason && (
                     <div style={{ fontSize: 10, color: '#ef4444', marginBottom: 2, fontWeight: 500 }}>{u.attention_reason}</div>
@@ -613,7 +552,7 @@ export default function ChatView() {
                   <div className="cv-list-chips">
                     <Chip color={stateColor(u.state)}>{stateLabel(u.state)}</Chip>
                     {heat !== 'cold' && <Chip variant={heat}>{HEAT_LABELS[heat]}</Chip>}
-                    <Chip variant={isAI ? 'ai-active' : 'wait'}>{isAI ? 'AI' : 'AI OFF'}</Chip>
+                    <Chip variant="ai-active">AI</Chip>
                     {u.order_price && <Chip>{u.order_price} р</Chip>}
                     {waitStr && u.unread && <Chip variant="wait"><Clock size={9} /> {waitStr}</Chip>}
                   </div>
@@ -638,7 +577,7 @@ export default function ChatView() {
       />
 
       {/* CENTER: Dialog */}
-      <div className={`cv-chat ${mobilePanel !== 'chat' ? 'cv-hidden-mobile' : ''}`} onClick={() => msgMenu && setMsgMenu(null)}>
+      <div className={`cv-chat ${mobilePanel !== 'chat' ? 'cv-hidden-mobile' : ''}`}>
         {selected ? (
           <>
             {/* Header */}
@@ -651,7 +590,7 @@ export default function ChatView() {
                 {selected.username && <span className="cv-chat-username">@{selected.username}</span>}
               </div>
               <div className="cv-chat-header-right">
-                <ModeBadge aiEnabled={selected.ai_enabled} />
+                <ModeBadge />
                 {selected.wait_minutes > 0 && selected.unread && (
                   <span className={`cv-wait-badge ${selected.wait_minutes > 30 ? 'cv-wait-danger' : 'cv-wait-warn'}`}>
                     <Clock size={10} /> {fmtWait(selected.wait_minutes)}
@@ -688,17 +627,6 @@ export default function ChatView() {
               {msgSearchResults !== null && <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{msgSearchResults.length} найдено</span>}
             </div>
 
-            {/* Inline confirm */}
-            {confirmAction && (
-              <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,0.07)', borderBottom: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <span style={{ fontSize: 13, color: '#dc2626' }}>{confirmAction.label}</span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={confirmAction.onConfirm} style={{ padding: '5px 12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Да</button>
-                  <button onClick={() => setConfirmAction(null)} style={{ padding: '5px 12px', background: 'none', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, cursor: 'pointer', fontSize: 12 }}>Отмена</button>
-                </div>
-              </div>
-            )}
-
             {/* Messages */}
             <div className="cv-messages" ref={messagesTop} onScroll={(e) => { if (e.target.scrollTop < 60 && hasMore && !loadingMore) loadMoreMessages(); }}>
               {loadingMore && <div style={{ textAlign: 'center', padding: '8px 0', fontSize: 11, color: 'var(--text-dim)' }}>Загрузка...</div>}
@@ -718,26 +646,14 @@ export default function ChatView() {
                   return <div key={item.key} className="cv-unread-sep"><span>Новые сообщения</span></div>;
                 }
                 const m = item.data;
-                const isEditing = editingMsg?.id === m.id;
                 const delivery = getDeliveryInfo(m);
                 const isPendingDelivery = !!delivery && ['pending', 'sent'].includes(delivery.status);
                 return (
                   <div key={item.key} className={`cv-msg-wrap cv-msg-wrap-${m.role}`}>
                     <div
                       className={`cv-msg cv-msg-${m.role} ${isPendingDelivery ? 'cv-msg-pending' : ''} ${delivery?.status === 'failed' ? 'cv-msg-failed' : ''}`}
-                      onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ id: m.id, text: m.text, role: m.role, x: e.clientX, y: e.clientY }); }}
                     >
-                      {isEditing ? (
-                        <form onSubmit={(e) => { e.preventDefault(); saveEdit(m.id, e.target.text.value); }}>
-                          <input name="text" defaultValue={m.text} autoFocus style={{ width: '100%', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 13, color: 'inherit', outline: 'none' }} />
-                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                            <button type="submit" style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 5, cursor: 'pointer', color: 'inherit' }}>Сохранить</button>
-                            <button type="button" onClick={() => setEditingMsg(null)} style={{ fontSize: 11, padding: '2px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.7 }}>Отмена</button>
-                          </div>
-                        </form>
-                      ) : (
-                        <div className="cv-msg-text">{m.text}{m.edited && <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 4 }}>ред.</span>}</div>
-                      )}
+                      <div className="cv-msg-text">{m.text}</div>
                       <div className="cv-msg-footer">
                         <span className="cv-msg-role-label">
                           {m.role === 'user' ? 'Клиент' : m.role === 'ai' ? 'AI' : 'Система'}
@@ -748,9 +664,6 @@ export default function ChatView() {
                             {delivery.text}
                           </span>
                         )}
-                        <button className="cv-msg-menu-btn" onClick={(e) => { e.stopPropagation(); setMsgMenu({ id: m.id, text: m.text, role: m.role, x: e.clientX, y: e.clientY }); }}>
-                          <MoreHorizontal size={12} />
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -765,24 +678,6 @@ export default function ChatView() {
               })()}
               <div ref={messagesEnd} />
             </div>
-
-            {/* Message context menu */}
-            {msgMenu && (
-              <div style={{ position: 'fixed', top: msgMenu.y, left: msgMenu.x, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 200, minWidth: 160, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-                <button onClick={() => { navigator.clipboard?.writeText(msgMenu.text); setMsgMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', textAlign: 'left' }}>
-                  <Copy size={13} /> Копировать
-                </button>
-                {(msgMenu.role === 'admin' || msgMenu.role === 'ai') && (
-                  <button onClick={() => { setEditingMsg({ id: msgMenu.id, text: msgMenu.text }); setMsgMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', textAlign: 'left' }}>
-                    <Hash size={13} /> Редактировать
-                  </button>
-                )}
-                <button onClick={() => { deleteMsg(msgMenu.id); }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444', textAlign: 'left' }}>
-                  <Trash2 size={13} /> Удалить
-                </button>
-              </div>
-            )}
-
             {/* Input */}
             <div className="cv-bottom">
               <div
@@ -854,20 +749,9 @@ export default function ChatView() {
               <Chip variant="ai-active">AI-only</Chip>
             </div>
             <div style={{ marginTop: 12 }}>
-              {selected.needs_attention ? (
-                <div>
-                  <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6, fontWeight: 500 }}>
-                    {selected.attention_reason || 'Требует внимания'}
-                  </div>
-                  <button onClick={async () => { await api.clearAttention(selected.id); loadUsers(); }} style={{ fontSize: 12, padding: '5px 12px', background: 'none', border: '1px solid var(--border)', borderRadius: 7, cursor: 'pointer', color: 'var(--text-dim)' }}>
-                    Снять флаг
-                  </button>
-                </div>
-              ) : (
-                <button onClick={async () => { await api.setAttention(selected.id, true, 'Отмечено менеджером'); loadUsers(); }} style={{ fontSize: 12, padding: '5px 12px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, cursor: 'pointer', color: '#ef4444' }}>
-                  Требует внимания
-                </button>
-              )}
+              <div style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                CRM показывает статус диалога и доставки, но не вмешивается в ход разговора.
+              </div>
             </div>
           </div>
 
@@ -888,15 +772,6 @@ export default function ChatView() {
               ))}
             </div>
           )}
-
-          <div className="cv-section">
-            <button className="cv-delete-btn" style={{ marginBottom: 8, background: 'rgba(148,163,184,0.1)', color: 'var(--text-dim)', border: '1px solid var(--border)' }} onClick={confirmClearHistory}>
-              Очистить историю
-            </button>
-            <button className="cv-delete-btn" onClick={confirmDeleteDialog}>
-              <Trash2 size={12} /> Удалить диалог
-            </button>
-          </div>
         </div>
       )}
     </div>

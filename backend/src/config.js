@@ -104,7 +104,7 @@ function get(key) {
   return envConfig[key];
 }
 
-// Get any setting by DB key (for global_ai_enabled, response_delay, etc.)
+// Get any setting by DB key (for response_delay and integration settings).
 async function getSetting(dbKey) {
   const settings = _getSettingsModule();
   if (settings) {

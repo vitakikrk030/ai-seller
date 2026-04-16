@@ -78,29 +78,10 @@ export const api = {
   getUsers: (search) =>
     fetchAPI(`/users${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   getUser: (id) => fetchAPI(`/users/${id}`),
-  toggleAI: (id, enabled) =>
-    fetchAPI(`/users/${id}/ai`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
-    }),
-  updateState: (id, state) =>
-    fetchAPI(`/users/${id}/state`, {
-      method: 'PATCH',
-      body: JSON.stringify({ state }),
-    }),
-  deleteUser: (id) =>
-    fetchAPI(`/users/${id}`, { method: 'DELETE' }),
   markRead: (id) =>
     fetchAPI(`/users/${id}/read`, { method: 'POST' }),
-  getQuickReplies: (id) =>
-    fetchAPI(`/users/${id}/quick-replies`),
   getMemory: (id) =>
     fetchAPI(`/users/${id}/memory`),
-  updateMemory: (id, data) =>
-    fetchAPI(`/users/${id}/memory`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
 
   // Messages
   getMessages: (userId) => fetchAPI(`/users/${userId}/messages`),
@@ -108,27 +89,6 @@ export const api = {
     fetchAPI(`/users/${userId}/messages/paginated?limit=${limit}${before ? `&before=${before}` : ''}`),
   searchMessages: (userId, q) =>
     fetchAPI(`/users/${userId}/messages/search?q=${encodeURIComponent(q)}`),
-  deleteMessage: (id) =>
-    fetchAPI(`/messages/${id}`, { method: 'DELETE' }),
-  editMessage: (id, text) =>
-    fetchAPI(`/messages/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ text }),
-    }),
-  clearMessages: (userId) =>
-    fetchAPI(`/users/${userId}/messages`, { method: 'DELETE' }),
-  pinUser: (id, pinned) =>
-    fetchAPI(`/users/${id}/pin`, {
-      method: 'POST',
-      body: JSON.stringify({ pinned }),
-    }),
-  setAttention: (id, needs_attention, reason) =>
-    fetchAPI(`/users/${id}/attention`, {
-      method: 'PATCH',
-      body: JSON.stringify({ needs_attention, reason }),
-    }),
-  clearAttention: (id) =>
-    fetchAPI(`/users/${id}/attention`, { method: 'DELETE' }),
 
   // Orders
   getUserOrders: (userId) => fetchAPI(`/users/${userId}/orders`),

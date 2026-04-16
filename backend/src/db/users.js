@@ -48,8 +48,6 @@ const users = {
         lo.size as order_size,
         lo.price as order_price,
         lo.status as order_status,
-        'ai'::text as active_actor,
-        0::int as pause_remaining,
         CASE
           WHEN u.state = 'PAYMENT_REVIEW' THEN 110
           WHEN u.state = 'COLLECTING' THEN 100
@@ -123,7 +121,7 @@ const users = {
         SELECT created_at FROM messages WHERE user_id = u.id AND role = 'user' ORDER BY created_at DESC LIMIT 1
       ) um ON true
       LEFT JOIN LATERAL (
-        SELECT created_at FROM messages WHERE user_id = u.id AND role IN ('admin', 'ai') ORDER BY created_at DESC LIMIT 1
+        SELECT created_at FROM messages WHERE user_id = u.id AND role = 'ai' ORDER BY created_at DESC LIMIT 1
       ) lr ON true
       LEFT JOIN (
         SELECT user_id, COUNT(*) as cnt FROM messages WHERE role = 'user' GROUP BY user_id
@@ -148,30 +146,6 @@ const users = {
     const result = await db.query(
       `SELECT * FROM users WHERE name ILIKE $1 OR username ILIKE $1 ORDER BY last_seen DESC LIMIT 100`,
       [`%${query}%`]
-    );
-    return result.rows;
-  },
-
-  async setAiEnabled(userId, enabled) {
-    await db.query('UPDATE users SET ai_enabled = $1 WHERE id = $2', [enabled, userId]);
-  },
-
-  async getInactive(days) {
-    const result = await db.query(
-      `SELECT * FROM users WHERE last_seen < NOW() - INTERVAL '1 day' * $1 AND state != 'DONE'`,
-      [days]
-    );
-    return result.rows;
-  },
-
-  async getStuckInOrder(minutes) {
-    const result = await db.query(
-      `SELECT * FROM users
-       WHERE state IN ('COLLECTING')
-         AND ai_enabled = true
-         AND last_seen < NOW() - INTERVAL '1 minute' * $1
-         AND last_seen > NOW() - INTERVAL '1 day'`,
-      [minutes]
     );
     return result.rows;
   },

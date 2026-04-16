@@ -105,7 +105,7 @@ const messages = {
        FROM messages m
        JOIN users u ON u.id = m.user_id
        WHERE m.delivery_status = 'failed'
-         AND m.role IN ('ai', 'admin')
+         AND m.role = 'ai'
          AND m.dlq_at IS NULL
          AND COALESCE(m.retry_count, 0) < $2
          AND (

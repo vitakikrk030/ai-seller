@@ -43,26 +43,16 @@ function Tooltip({ text }) {
   );
 }
 
-function Toggle({ value, onChange }) {
-  return (
-    <div onClick={onChange} style={{ width: 40, height: 22, borderRadius: 11, background: value ? 'var(--accent,#6366f1)' : 'var(--border)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-      <div style={{ position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-    </div>
-  );
-}
-
 // ─── Поведение AI ─────────────────────────────────────────────────────────
 
 function BehaviorSection() {
-  const [vals, setVals] = useState({ global_ai_enabled: 'true', auto_reply: 'true', response_delay: '0' });
+  const [vals, setVals] = useState({ response_delay: '0' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api.getSettings().then(data => {
       setVals({
-        global_ai_enabled: data.global_ai_enabled ?? 'true',
-        auto_reply: data.auto_reply ?? 'true',
         response_delay: data.response_delay ?? '0',
       });
     }).catch(() => {});
@@ -72,8 +62,6 @@ function BehaviorSection() {
     setSaving(true);
     try {
       await api.saveSettings([
-        { key: 'global_ai_enabled', value: vals.global_ai_enabled },
-        { key: 'auto_reply', value: vals.auto_reply },
         { key: 'response_delay', value: vals.response_delay },
       ]);
       setSaved(true);
@@ -82,34 +70,11 @@ function BehaviorSection() {
     setSaving(false);
   }
 
-  const on = (field) => vals[field] === 'true';
-  const toggle = (field) => setVals(v => ({ ...v, [field]: on(field) ? 'false' : 'true' }));
-
   return (
     <div>
       <Card>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <Label>AI включён</Label>
-            <Hint>Если выключено — AI не отвечает клиентам</Hint>
-          </div>
-          <Toggle value={on('global_ai_enabled')} onChange={() => toggle('global_ai_enabled')} />
-        </div>
-      </Card>
-
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <Label>Автоответ</Label>
-            <Hint>Если выключено — AI не пишет первым</Hint>
-          </div>
-          <Toggle value={on('auto_reply')} onChange={() => toggle('auto_reply')} />
-        </div>
-      </Card>
-
-      <Card>
         <Label tooltip="0 = мгновенно, рекомендуется 1–3 сек для естественности">Задержка ответа (сек)</Label>
-        <Hint>Имитирует живого человека</Hint>
+        <Hint>AI отвечает всегда. Здесь настраивается только естественная задержка перед отправкой.</Hint>
         <input
           type="number" min="0" max="30"
           value={vals.response_delay}
