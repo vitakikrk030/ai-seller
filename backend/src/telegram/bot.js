@@ -1,141 +1,24 @@
 const axios = require('axios');
 const config = require('../config');
 const log = require('../logger');
-const settings = require('../db/settings');
 
-async function getBotToken() {
-  const token = (await settings.get('bot_token') || '').trim();
-  return token || null;
-}
-
-async function getAPI() {
-  const token = await getBotToken();
-  if (!token) throw new Error('BOT_TOKEN is not configured in settings');
-  return `https://api.telegram.org/bot${token}`;
-}
-
-// Retry helper for transient Telegram errors (429, 5xx)
-async function tgRequest(method, payload, retries = 2) {
-  const api = await getAPI();
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await axios.post(`${api}/${method}`, payload);
-    } catch (err) {
-      const status = err.response?.status;
-      const retryAfter = err.response?.data?.parameters?.retry_after;
-      // Retry on 429 (rate limit) or 5xx (server errors)
-      if (attempt < retries && (status === 429 || (status >= 500 && status < 600))) {
-        const delay = retryAfter ? retryAfter * 1000 : 1000 * (attempt + 1);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
+function ensureToken() {
+  if (!config.TELEGRAM_TOKEN) {
+    throw new Error('TELEGRAM_TOKEN is not configured');
   }
 }
 
-const bot = {
-  getBotToken,
+async function sendMessage(chatId, text) {
+  ensureToken();
+  const response = await axios.post(
+    `https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`,
+    { chat_id: chatId, text }
+  );
+  log.info('telegram.bot.sendMessage: success', {
+    chatId,
+    telegramMessageId: response.data?.result?.message_id || null,
+  });
+  return response.data?.result || null;
+}
 
-  async sendMessage(chatId, text, options = {}) {
-    try {
-      const payload = {
-        chat_id: chatId,
-        text,
-        ...options,
-      };
-      if (options.parse_mode) {
-        payload.parse_mode = options.parse_mode;
-      }
-      if (options.business_connection_id) {
-        payload.business_connection_id = options.business_connection_id;
-      }
-      log.debug('telegram.bot.sendMessage: request', {
-        chatId,
-        textLength: (text || '').length,
-        hasBusinessConnection: !!options.business_connection_id,
-      });
-      const response = await tgRequest('sendMessage', payload);
-      log.info('telegram.bot.sendMessage: success', {
-        chatId,
-        telegramMessageId: response.data?.result?.message_id || null,
-      });
-      return response.data?.result || null;
-    } catch (err) {
-      const status = err.status || err.response?.status || null;
-      const telegram = err.telegram || err.response?.data || null;
-      const description = telegram?.description || null;
-      const networkCode = err.code || null;
-      const normalizedMessage = description
-        ? `telegram_api_${status || 'error'}: ${description}`
-        : networkCode
-          ? `telegram_network_${networkCode}`
-          : (err.message || 'sendMessage failed');
-      console.error('Telegram send error:', telegram || err.message);
-      log.error('telegram.bot.sendMessage: failed', {
-        chatId,
-        error: normalizedMessage,
-        status,
-      });
-      const wrapped = new Error(normalizedMessage);
-      wrapped.code = err.code || 'TELEGRAM_SEND_FAILED';
-      wrapped.status = status;
-      wrapped.telegram = telegram;
-      wrapped.cause = err;
-      throw wrapped;
-    }
-  },
-
-  async setupWebhook() {
-    const webhookUrl = config.get('WEBHOOK_URL');
-    if (!webhookUrl) {
-      console.log('WEBHOOK_URL not set, skipping webhook setup');
-      return;
-    }
-    try {
-      const webhookPayload = {
-        url: webhookUrl,
-        allowed_updates: [
-          'message',
-          'callback_query',
-          'business_connection',
-          'business_message',
-          'edited_business_message',
-        ],
-      };
-      // Add secret token for webhook verification
-      const webhookSecret = config.get('WEBHOOK_SECRET');
-      if (webhookSecret) {
-        webhookPayload.secret_token = webhookSecret;
-      }
-      const api = await getAPI();
-      await axios.post(`${api}/setWebhook`, webhookPayload);
-      console.log('Webhook set:', webhookUrl);
-    } catch (err) {
-      console.error('Webhook setup error:', err.response?.data || err.message);
-    }
-  },
-
-  async getFileUrl(fileId) {
-    try {
-      const api = await getAPI();
-      const token = await getBotToken();
-      const resp = await axios.post(`${api}/getFile`, { file_id: fileId });
-      const filePath = resp.data?.result?.file_path;
-      if (!filePath) return null;
-      return `https://api.telegram.org/file/bot${token}/${filePath}`;
-    } catch (err) {
-      console.error('Telegram getFile error:', err.response?.data || err.message);
-      return null;
-    }
-  },
-
-  async answerCallbackQuery(callbackQueryId, text) {
-    await tgRequest('answerCallbackQuery', {
-      callback_query_id: callbackQueryId,
-      text,
-    });
-  },
-};
-
-module.exports = bot;
+module.exports = { sendMessage };

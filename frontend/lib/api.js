@@ -1,134 +1,16 @@
 const API_BASE = '/api';
 
-function getAuthHeader() {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('auth_token');
-    if (token) return { Authorization: `Bearer ${token}` };
-  }
-  return {};
-}
-
-let _refreshing = null;
-
-async function tryRefresh() {
-  if (_refreshing) return _refreshing;
-  _refreshing = (async () => {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) return false;
-    try {
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      localStorage.setItem('auth_token', data.token);
-      if (data.refreshToken) localStorage.setItem('refresh_token', data.refreshToken);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      _refreshing = null;
-    }
-  })();
-  return _refreshing;
-}
-
-export async function fetchAPI(path, options = {}) {
-  const parseError = async (res, fallbackMessage) => {
+async function fetchAPI(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
     let payload = null;
     try { payload = await res.json(); } catch {}
-    const message = payload?.error || payload?.message || fallbackMessage || `API error: ${res.status}`;
-    const err = new Error(message);
-    err.status = res.status;
-    err.payload = payload;
-    return err;
-  };
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...options.headers },
-    ...options,
-  });
-  if (res.status === 401) {
-    // Try refresh before giving up
-    const refreshed = await tryRefresh();
-    if (refreshed) {
-      // Retry with new token
-      const retry = await fetch(`${API_BASE}${path}`, {
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...options.headers },
-        ...options,
-      });
-      if (retry.ok) return retry.json();
-      throw await parseError(retry, 'Unauthorized');
-    }
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/login';
-    }
-    throw new Error('Unauthorized');
+    throw new Error(payload?.error || `API error: ${res.status}`);
   }
-  if (!res.ok) throw await parseError(res);
   return res.json();
 }
 
 export const api = {
-  // Users
-  getUsers: (search) =>
-    fetchAPI(`/users${search ? `?search=${encodeURIComponent(search)}` : ''}`),
-  getUser: (id) => fetchAPI(`/users/${id}`),
-  markRead: (id) =>
-    fetchAPI(`/users/${id}/read`, { method: 'POST' }),
-  getMemory: (id) =>
-    fetchAPI(`/users/${id}/memory`),
-
-  // Messages
+  getUsers: () => fetchAPI('/users'),
   getMessages: (userId) => fetchAPI(`/users/${userId}/messages`),
-  getMessagesPaginated: (userId, limit = 50, before = null) =>
-    fetchAPI(`/users/${userId}/messages/paginated?limit=${limit}${before ? `&before=${before}` : ''}`),
-  searchMessages: (userId, q) =>
-    fetchAPI(`/users/${userId}/messages/search?q=${encodeURIComponent(q)}`),
-
-  // Orders
-  getUserOrders: (userId) => fetchAPI(`/users/${userId}/orders`),
-
-  // Settings (integrations)
-  getSettings: () => fetchAPI('/settings'),
-  saveSettings: (entries) =>
-    fetchAPI('/settings', {
-      method: 'POST',
-      body: JSON.stringify({ entries }),
-    }),
-  testTelegram: () =>
-    fetchAPI('/settings/test-telegram', { method: 'POST' }),
-  testShop: () =>
-    fetchAPI('/settings/test-shop', { method: 'POST' }),
-  changeToken: (token, webhook_url) =>
-    fetchAPI('/settings/change-token', {
-      method: 'POST',
-      body: JSON.stringify({ token, webhook_url }),
-    }),
-  disconnectBot: () =>
-    fetchAPI('/settings/disconnect-bot', { method: 'POST' }),
-
-  // Integrations status
-  getIntegrationsStatus: () => fetchAPI('/integrations/status'),
-
-  // Reset integration
-  resetIntegration: (type) =>
-    fetchAPI('/integrations/reset', {
-      method: 'POST',
-      body: JSON.stringify({ type }),
-    }),
-
-  // AI Usage
-  getAiUsage: (days = 30) => fetchAPI(`/ai/usage?days=${days}`),
-
-  // AI Provider test
-  testAiProvider: (base_url, api_key) =>
-    fetchAPI('/ai/test-provider', {
-      method: 'POST',
-      body: JSON.stringify({ base_url, api_key }),
-    }),
 };

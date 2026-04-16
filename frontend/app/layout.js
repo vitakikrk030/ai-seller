@@ -1,39 +1,14 @@
 import './globals.css';
-import { ThemeProvider } from '../lib/ThemeContext';
-import { AuthProvider } from '../lib/AuthContext';
-import ErrorBoundary from '../components/ErrorBoundary';
 
 export const metadata = {
-  title: 'AI Seller — CRM',
-  description: 'Telegram AI Seller Control Panel',
+  title: 'AI Seller',
+  description: 'Telegram relay chat',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var t = localStorage.getItem('theme');
-                  if (t === 'light' || t === 'dark') {
-                    document.documentElement.setAttribute('data-theme', t);
-                  }
-                } catch(e) {}
-              })();
-            `,
-          }}
-        />
-      </head>
-      <body>
-        <ThemeProvider>
-          <AuthProvider>
-            <ErrorBoundary>{children}</ErrorBoundary>
-          </AuthProvider>
-        </ThemeProvider>
-      </body>
+    <html lang="ru">
+      <body>{children}</body>
     </html>
   );
 }
