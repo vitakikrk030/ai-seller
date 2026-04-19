@@ -32,6 +32,16 @@ const AUTH_COOKIE_VALUE = crypto
   .update(`${ADMIN_LOGIN}:${ADMIN_PASSWORD}:sai-admin`)
   .digest('hex');
 const LOG_BUFFER_LIMIT = 1000;
+const TELEGRAM_ALLOWED_UPDATES = [
+  'message',
+  'edited_message',
+  'channel_post',
+  'edited_channel_post',
+  'callback_query',
+  'business_connection',
+  'business_message',
+  'edited_business_message',
+];
 let activeAiRequests = 0;
 let activeGetFileRequests = 0;
 let lastSaiRuntimeError = null;
@@ -587,6 +597,76 @@ function detectMessageType(message) {
   return 'unknown';
 }
 
+function getTelegramMessageContext(update) {
+  if (update.business_message) {
+    return {
+      message: update.business_message,
+      updateType: 'business_message',
+      businessConnectionId: update.business_message.business_connection_id || '',
+    };
+  }
+
+  if (update.edited_business_message) {
+    return {
+      message: update.edited_business_message,
+      updateType: 'edited_business_message',
+      businessConnectionId: update.edited_business_message.business_connection_id || '',
+    };
+  }
+
+  if (update.message) {
+    return {
+      message: update.message,
+      updateType: 'message',
+      businessConnectionId: '',
+    };
+  }
+
+  if (update.edited_message) {
+    return {
+      message: update.edited_message,
+      updateType: 'edited_message',
+      businessConnectionId: '',
+    };
+  }
+
+  if (update.channel_post) {
+    return {
+      message: update.channel_post,
+      updateType: 'channel_post',
+      businessConnectionId: '',
+    };
+  }
+
+  if (update.edited_channel_post) {
+    return {
+      message: update.edited_channel_post,
+      updateType: 'edited_channel_post',
+      businessConnectionId: '',
+    };
+  }
+
+  return {
+    message: null,
+    updateType: getTelegramUpdateType(update),
+    businessConnectionId: update.business_connection?.id || '',
+  };
+}
+
+function getTelegramUpdateType(update) {
+  if (!update || typeof update !== 'object') return 'unknown';
+  return [
+    'message',
+    'edited_message',
+    'channel_post',
+    'edited_channel_post',
+    'callback_query',
+    'business_connection',
+    'business_message',
+    'edited_business_message',
+  ].find((key) => update[key]) || 'unknown';
+}
+
 function truncateText(text) {
   return String(text || '').slice(0, MAX_INPUT_TEXT_LENGTH);
 }
@@ -1078,6 +1158,8 @@ async function requestAi(input) {
     traceId: input.traceId,
     userId: input.userId,
     chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
     messageType: input.messageType,
   })) {
     return null;
@@ -1098,6 +1180,8 @@ async function requestAi(input) {
       userId: input.userId,
       scope: 'ai.wait_timeout',
       chatId: input.chatId,
+      updateType: input.updateType || '',
+      businessConnectionId: input.businessConnectionId || '',
       messageType: input.messageType,
       status: 'error',
       active: activeAiRequests,
@@ -1116,6 +1200,8 @@ async function requestAi(input) {
       traceId: input.traceId,
       userId: input.userId,
       chatId: input.chatId,
+      updateType: input.updateType || '',
+      businessConnectionId: input.businessConnectionId || '',
       messageType: input.messageType,
       model: input.config.model,
       images: input.images.length,
@@ -1157,6 +1243,8 @@ async function requestAi(input) {
         userId: input.userId,
         scope: 'ai.reply',
         chatId: input.chatId,
+        updateType: input.updateType || '',
+        businessConnectionId: input.businessConnectionId || '',
         messageType: input.messageType,
         status: 'error',
         message: 'AI returned empty or invalid reply',
@@ -1168,6 +1256,8 @@ async function requestAi(input) {
       traceId: input.traceId,
       userId: input.userId,
       chatId: input.chatId,
+      updateType: input.updateType || '',
+      businessConnectionId: input.businessConnectionId || '',
       messageType: input.messageType,
       duration: Date.now() - startedAt,
       replyText: reply,
@@ -1184,6 +1274,8 @@ async function requestAi(input) {
           ? 'ai.timeout'
           : 'ai.request',
       chatId: input.chatId,
+      updateType: input.updateType || '',
+      businessConnectionId: input.businessConnectionId || '',
       messageType: input.messageType,
       duration: Date.now() - startedAt,
       status: 'error',
@@ -1200,6 +1292,8 @@ async function sendTelegramMessage(config, context, text) {
     traceId: context.traceId,
     userId: context.userId,
     chatId: context.chatId,
+    updateType: context.updateType || '',
+    businessConnectionId: context.businessConnectionId || '',
     messageType: context.messageType,
   })) {
     return;
@@ -1212,20 +1306,29 @@ async function sendTelegramMessage(config, context, text) {
       traceId: context.traceId,
       userId: context.userId,
       chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
       text,
       status: 'process',
     });
-    await httpClient.post(getTelegramApiUrl(config, 'sendMessage'), {
+    const payload = {
       chat_id: context.chatId,
       text,
-    }, {
+    };
+    if (context.businessConnectionId) {
+      payload.business_connection_id = context.businessConnectionId;
+    }
+
+    await httpClient.post(getTelegramApiUrl(config, 'sendMessage'), payload, {
       timeout: REQUEST_TIMEOUT_MS,
     });
     logEvent('TG_SEND', {
       traceId: context.traceId,
       userId: context.userId,
       chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
       duration: Date.now() - startedAt,
       status: 'ok',
@@ -1236,6 +1339,8 @@ async function sendTelegramMessage(config, context, text) {
       userId: context.userId,
       scope: 'telegram.sendMessage',
       chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
       duration: Date.now() - startedAt,
       status: 'error',
@@ -1252,6 +1357,7 @@ async function setTelegramWebhook(config) {
   try {
     const response = await httpClient.post(getTelegramApiUrl(config, 'setWebhook'), {
       url: config.webhook_url,
+      allowed_updates: TELEGRAM_ALLOWED_UPDATES,
     }, {
       timeout: REQUEST_TIMEOUT_MS,
     });
@@ -1613,10 +1719,23 @@ app.delete('/config', (req, res) => {
 });
 
 app.post('/api/telegram/webhook', async (req, res) => {
-  const message = req.body.message || req.body.edited_message || req.body.channel_post || req.body.edited_channel_post;
+  const updateContext = getTelegramMessageContext(req.body || {});
+  const message = updateContext.message;
   const chatId = message && message.chat && message.chat.id;
 
   if (!message || !chatId) {
+    if (updateContext.updateType === 'business_connection') {
+      logEvent('IN', {
+        traceId: createTraceId(),
+        status: 'ok',
+        scope: 'telegram.business_connection',
+        updateType: updateContext.updateType,
+        businessConnectionId: updateContext.businessConnectionId,
+        userId: req.body.business_connection?.user?.id || '',
+        chatId: req.body.business_connection?.user_chat_id || '',
+        text: 'Telegram Business connection update',
+      });
+    }
     res.sendStatus(200);
     return;
   }
@@ -1630,16 +1749,27 @@ app.post('/api/telegram/webhook', async (req, res) => {
   const phoneNumber = String(message.contact?.phone_number || '').trim();
 
   try {
-    const input = await normalizeTelegramMessage(config, { traceId, userId, chatId, messageType: detectMessageType(message) }, message);
+    const input = await normalizeTelegramMessage(config, {
+      traceId,
+      userId,
+      chatId,
+      updateType: updateContext.updateType,
+      businessConnectionId: updateContext.businessConnectionId,
+      messageType: detectMessageType(message),
+    }, message);
     input.chatId = chatId;
     input.userId = userId;
     input.traceId = traceId;
     input.config = config;
+    input.updateType = updateContext.updateType;
+    input.businessConnectionId = updateContext.businessConnectionId;
     logEvent('IN', {
       traceId,
       received: true,
       userId,
       chatId,
+      updateType: updateContext.updateType,
+      businessConnectionId: updateContext.businessConnectionId,
       firstName,
       lastName,
       username,
