@@ -38,6 +38,8 @@ const MEMORY_FACTS_TTL_DAYS = 90;
 const MEMORY_STATE_TTL_DAYS = 14;
 const MEMORY_MAX_MESSAGES = 5000;
 const MEMORY_HISTORY_CHAR_LIMIT = 3500;
+const BATCH_DEBOUNCE_MS = 3000;
+const BATCH_MAX_WINDOW_MS = 8000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -59,6 +61,7 @@ const TELEGRAM_ALLOWED_UPDATES = [
 let activeAiRequests = 0;
 let activeGetFileRequests = 0;
 let lastSaiRuntimeError = null;
+const chatBatches = new Map();
 const runtimeLogs = [];
 const logDir = path.join(__dirname, 'logs');
 const LOG_FILE_PATH = path.join(logDir, 'runtime.jsonl');
@@ -446,11 +449,13 @@ function updateCustomerMemoryFromInput(input) {
   persistMemoryStore();
 }
 
-function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT) {
+function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTraceIds = []) {
   const cleanChatId = getMemoryChatId(chatId);
+  const excluded = new Set((excludeTraceIds || []).filter(Boolean));
   if (!cleanChatId) return [];
   return memoryStore.messages
     .filter((message) => message.chatId === cleanChatId)
+    .filter((message) => !excluded.has(message.traceId))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .slice(-limit);
 }
@@ -470,7 +475,7 @@ function formatMemoryFacts(facts = {}) {
     .map(([key, label]) => `${label}: ${facts[key].value}`);
 }
 
-function buildMemoryContext(chatId) {
+function buildMemoryContext(chatId, options = {}) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
 
@@ -489,7 +494,7 @@ function buildMemoryContext(chatId) {
 
   let usedChars = 0;
   const history = [];
-  getRecentMemoryMessages(cleanChatId).reverse().forEach((message) => {
+  getRecentMemoryMessages(cleanChatId, MEMORY_RECENT_LIMIT, options.excludeTraceIds || []).reverse().forEach((message) => {
     const text = normalizeMemoryText(message.text);
     if (!text || usedChars + text.length > MEMORY_HISTORY_CHAR_LIMIT) return;
     usedChars += text.length;
@@ -507,6 +512,132 @@ function buildMemoryContext(chatId) {
     facts,
     state,
   };
+}
+
+function buildBatchText(inputs) {
+  const items = inputs
+    .map((input) => getMemoryMessageText(input))
+    .filter(Boolean);
+
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+
+  return [
+    'Клиент отправил несколько сообщений подряд:',
+    ...items.map((text, index) => `${index + 1}. ${text}`),
+  ].join('\n');
+}
+
+function buildBatchInput(inputs) {
+  const lastInput = inputs[inputs.length - 1];
+  const images = [];
+  inputs.forEach((input) => {
+    (input.images || []).forEach((image) => images.push(image));
+  });
+
+  const messageTypes = Array.from(new Set(inputs.map((input) => input.messageType).filter(Boolean)));
+  const hasMedia = inputs.some((input) => input.hasMedia);
+  const hasLinkInput = inputs.some((input) => input.hasLinkInput);
+
+  return {
+    ...lastInput,
+    traceId: lastInput.traceId,
+    messageType: messageTypes.length > 1 ? 'batch' : lastInput.messageType,
+    batchSize: inputs.length,
+    batchTraceIds: inputs.map((input) => input.traceId),
+    batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
+    text: buildBatchText(inputs),
+    images,
+    hasMedia,
+    hasLinkInput,
+  };
+}
+
+async function processInputBatch(inputs) {
+  if (!inputs.length) return;
+
+  const batchInput = buildBatchInput(inputs);
+  try {
+    batchInput.memoryContext = buildMemoryContext(batchInput.chatId, {
+      excludeTraceIds: batchInput.batchTraceIds,
+    });
+
+    inputs.forEach((input) => logMessageDelivered(input));
+    await waitAndMarkBatchRead(batchInput.config, inputs);
+
+    logEvent('BATCH', {
+      traceId: batchInput.traceId,
+      userId: batchInput.userId,
+      chatId: batchInput.chatId,
+      updateType: batchInput.updateType || '',
+      businessConnectionId: batchInput.businessConnectionId || '',
+      messageType: batchInput.messageType,
+      batchSize: batchInput.batchSize,
+      batchTraceIds: batchInput.batchTraceIds,
+      batchMessageIds: batchInput.batchMessageIds,
+      status: 'ok',
+    });
+
+    const stopTyping = startTypingLoop(batchInput.config, batchInput);
+    try {
+      const reply = await requestAi(batchInput);
+      if (typeof reply === 'string') {
+        appendMemoryMessage(batchInput, 'assistant', reply);
+        await sendHumanizedTelegramReply(batchInput.config, batchInput, reply);
+      }
+    } finally {
+      stopTyping();
+    }
+  } catch (e) {
+    logEvent('ERROR', {
+      traceId: batchInput.traceId,
+      userId: batchInput.userId,
+      scope: 'batch.process',
+      chatId: batchInput.chatId,
+      updateType: batchInput.updateType || '',
+      businessConnectionId: batchInput.businessConnectionId || '',
+      status: 'error',
+      error: e.message,
+    });
+  }
+}
+
+function flushChatBatch(chatId) {
+  const key = getMemoryChatId(chatId);
+  const batch = chatBatches.get(key);
+  if (!batch || batch.processing) return;
+
+  if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
+  if (batch.maxTimer) clearTimeout(batch.maxTimer);
+  chatBatches.delete(key);
+
+  processInputBatch(batch.inputs);
+}
+
+function enqueueInputForBatch(input) {
+  const key = getMemoryChatId(input);
+  if (!key) {
+    processInputBatch([input]);
+    return;
+  }
+
+  let batch = chatBatches.get(key);
+  if (!batch) {
+    batch = {
+      inputs: [],
+      startedAt: Date.now(),
+      debounceTimer: null,
+      maxTimer: null,
+      processing: false,
+    };
+    batch.maxTimer = setTimeout(() => flushChatBatch(key), BATCH_MAX_WINDOW_MS);
+    chatBatches.set(key, batch);
+  }
+
+  batch.inputs.push(input);
+
+  if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
+  batch.debounceTimer = setTimeout(() => flushChatBatch(key), BATCH_DEBOUNCE_MS);
 }
 
 function clearMemoryForChat(chatId) {
@@ -1148,6 +1279,26 @@ async function waitAndMarkMessageRead(config, context) {
     telegramRead,
     status: 'ok',
   });
+}
+
+async function waitAndMarkBatchRead(config, inputs) {
+  await wait(randomBetween(READ_DELAY_MIN_MS, READ_DELAY_MAX_MS));
+
+  for (const input of inputs) {
+    const telegramRead = await markTelegramBusinessMessageRead(config, input);
+    logEvent('MESSAGE_STATUS', {
+      traceId: input.traceId,
+      userId: input.userId,
+      chatId: input.chatId,
+      updateType: input.updateType || '',
+      businessConnectionId: input.businessConnectionId || '',
+      messageId: input.messageId || '',
+      messageType: input.messageType,
+      messageStatus: 'read',
+      telegramRead,
+      status: 'ok',
+    });
+  }
 }
 
 async function waitForSlot(type, chatId, messageType, getActiveCount, limit, timeoutMs) {
@@ -2343,22 +2494,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
       const memoryText = getMemoryMessageText(input);
       updateCustomerMemoryFromInput(input);
-      input.memoryContext = buildMemoryContext(input.chatId);
       appendMemoryMessage(input, 'user', memoryText);
-
-      logMessageDelivered(input);
-      await waitAndMarkMessageRead(config, input);
-
-      const stopTyping = startTypingLoop(config, input);
-      try {
-        const reply = await requestAi(input);
-        if (typeof reply === 'string') {
-          appendMemoryMessage(input, 'assistant', reply);
-          await sendHumanizedTelegramReply(config, input, reply);
-        }
-      } finally {
-        stopTyping();
-      }
+      enqueueInputForBatch(input);
     } catch (e) {
       logEvent('ERROR', {
         traceId,
