@@ -24,6 +24,10 @@ const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
+const TYPING_REFRESH_MS = 4500;
+const READ_DELAY_MIN_MS = 500;
+const READ_DELAY_MAX_MS = 2000;
+const LONG_REPLY_PART_LIMIT = 700;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -707,6 +711,89 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function randomBetween(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function getHumanTypingDelayMs(text) {
+  const length = String(text || '').length;
+  const base = length <= 100
+    ? 1000
+    : length <= 300
+      ? randomBetween(2000, 3000)
+      : randomBetween(3000, 5000);
+  return base + randomBetween(500, 1500);
+}
+
+function splitReplyForTelegram(reply) {
+  const text = String(reply || '').trim();
+  if (!text || text.length <= LONG_REPLY_PART_LIMIT) return text ? [text] : [];
+
+  const parts = [];
+  let current = '';
+  const chunks = text
+    .split(/(\n{2,})/)
+    .reduce((acc, chunk) => {
+      if (!chunk) return acc;
+      if (/^\n{2,}$/.test(chunk) && acc.length) {
+        acc[acc.length - 1] += chunk;
+      } else {
+        acc.push(chunk);
+      }
+      return acc;
+    }, []);
+
+  chunks.forEach((chunk) => {
+    if ((current + chunk).length <= LONG_REPLY_PART_LIMIT) {
+      current += chunk;
+      return;
+    }
+
+    if (current.trim()) {
+      parts.push(current.trim());
+      current = '';
+    }
+
+    if (chunk.length <= LONG_REPLY_PART_LIMIT) {
+      current = chunk;
+      return;
+    }
+
+    for (let index = 0; index < chunk.length; index += LONG_REPLY_PART_LIMIT) {
+      parts.push(chunk.slice(index, index + LONG_REPLY_PART_LIMIT).trim());
+    }
+  });
+
+  if (current.trim()) parts.push(current.trim());
+  return parts.filter(Boolean);
+}
+
+function scheduleReadReceipt(context) {
+  logEvent('MESSAGE_STATUS', {
+    traceId: context.traceId,
+    userId: context.userId,
+    chatId: context.chatId,
+    updateType: context.updateType || '',
+    businessConnectionId: context.businessConnectionId || '',
+    messageType: context.messageType,
+    messageStatus: 'delivered',
+    status: 'ok',
+  });
+
+  setTimeout(() => {
+    logEvent('MESSAGE_STATUS', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
+      messageType: context.messageType,
+      messageStatus: 'read',
+      status: 'ok',
+    });
+  }, randomBetween(READ_DELAY_MIN_MS, READ_DELAY_MAX_MS));
+}
+
 async function waitForSlot(type, chatId, messageType, getActiveCount, limit, timeoutMs) {
   if (getActiveCount() < limit) {
     return true;
@@ -1349,6 +1436,78 @@ async function sendTelegramMessage(config, context, text) {
   }
 }
 
+async function sendTelegramChatAction(config, context, action = 'typing') {
+  if (!config.telegram_token) return;
+
+  const payload = {
+    chat_id: context.chatId,
+    action,
+  };
+  if (context.businessConnectionId) {
+    payload.business_connection_id = context.businessConnectionId;
+  }
+
+  try {
+    await httpClient.post(getTelegramApiUrl(config, 'sendChatAction'), payload, {
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    logEvent('TG_ACTION', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
+      messageType: context.messageType,
+      action,
+      status: 'ok',
+    });
+  } catch (e) {
+    logEvent('ERROR', {
+      traceId: context.traceId,
+      userId: context.userId,
+      scope: 'telegram.sendChatAction',
+      chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
+      messageType: context.messageType,
+      status: 'error',
+      error: e.message,
+    });
+  }
+}
+
+function startTypingLoop(config, context) {
+  let stopped = false;
+  let timer = null;
+
+  const tick = async () => {
+    if (stopped) return;
+    await sendTelegramChatAction(config, context, 'typing');
+    if (!stopped) {
+      timer = setTimeout(tick, TYPING_REFRESH_MS);
+    }
+  };
+
+  tick();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
+}
+
+async function sendHumanizedTelegramReply(config, context, reply) {
+  const parts = splitReplyForTelegram(reply);
+  for (let index = 0; index < parts.length; index += 1) {
+    await sendTelegramChatAction(config, context, 'typing');
+    await wait(getHumanTypingDelayMs(parts[index]));
+    await sendTelegramMessage(config, context, parts[index]);
+    if (index < parts.length - 1) {
+      await wait(randomBetween(700, 1500));
+    }
+  }
+}
+
 async function setTelegramWebhook(config) {
   if (logMissingConfig('telegram.setWebhook', config, ['telegram_token', 'webhook_url'])) {
     return { ok: false, description: 'Missing telegram_token or webhook_url' };
@@ -1748,56 +1907,67 @@ app.post('/api/telegram/webhook', async (req, res) => {
   const username = String(message.from?.username || message.chat?.username || '').trim();
   const phoneNumber = String(message.contact?.phone_number || '').trim();
 
-  try {
-    const input = await normalizeTelegramMessage(config, {
-      traceId,
-      userId,
-      chatId,
-      updateType: updateContext.updateType,
-      businessConnectionId: updateContext.businessConnectionId,
-      messageType: detectMessageType(message),
-    }, message);
-    input.chatId = chatId;
-    input.userId = userId;
-    input.traceId = traceId;
-    input.config = config;
-    input.updateType = updateContext.updateType;
-    input.businessConnectionId = updateContext.businessConnectionId;
-    logEvent('IN', {
-      traceId,
-      received: true,
-      userId,
-      chatId,
-      updateType: updateContext.updateType,
-      businessConnectionId: updateContext.businessConnectionId,
-      firstName,
-      lastName,
-      username,
-      phoneNumber,
-      messageType: input.messageType,
-      text: input.text,
-      textLength: input.text.length,
-      images: input.images.length,
-      hasMedia: !!input.hasMedia,
-      hasLinkInput: !!input.hasLinkInput,
-      status: 'ok',
-    });
-    const reply = await requestAi(input);
-    if (typeof reply === 'string') {
-      await sendTelegramMessage(config, input, reply);
-    }
-  } catch (e) {
-    logEvent('ERROR', {
-      traceId,
-      userId,
-      scope: 'webhook',
-      chatId,
-      status: 'error',
-      error: e.message,
-    });
-  }
-
   res.sendStatus(200);
+
+  setImmediate(async () => {
+    try {
+      const input = await normalizeTelegramMessage(config, {
+        traceId,
+        userId,
+        chatId,
+        updateType: updateContext.updateType,
+        businessConnectionId: updateContext.businessConnectionId,
+        messageType: detectMessageType(message),
+      }, message);
+      input.chatId = chatId;
+      input.userId = userId;
+      input.traceId = traceId;
+      input.config = config;
+      input.updateType = updateContext.updateType;
+      input.businessConnectionId = updateContext.businessConnectionId;
+      logEvent('IN', {
+        traceId,
+        received: true,
+        userId,
+        chatId,
+        updateType: updateContext.updateType,
+        businessConnectionId: updateContext.businessConnectionId,
+        firstName,
+        lastName,
+        username,
+        phoneNumber,
+        messageType: input.messageType,
+        text: input.text,
+        textLength: input.text.length,
+        images: input.images.length,
+        hasMedia: !!input.hasMedia,
+        hasLinkInput: !!input.hasLinkInput,
+        status: 'ok',
+      });
+      scheduleReadReceipt(input);
+
+      const stopTyping = startTypingLoop(config, input);
+      try {
+        const reply = await requestAi(input);
+        if (typeof reply === 'string') {
+          await sendHumanizedTelegramReply(config, input, reply);
+        }
+      } finally {
+        stopTyping();
+      }
+    } catch (e) {
+      logEvent('ERROR', {
+        traceId,
+        userId,
+        scope: 'webhook',
+        chatId,
+        updateType: updateContext.updateType,
+        businessConnectionId: updateContext.businessConnectionId,
+        status: 'error',
+        error: e.message,
+      });
+    }
+  });
 });
 
 const server = app.listen(PORT, HOST);
