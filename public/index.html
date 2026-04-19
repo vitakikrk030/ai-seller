@@ -1,0 +1,3184 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>S.AI Control</title>
+    <style>
+      :root {
+        --bg: #0b0f14;
+        --panel: rgba(14, 18, 24, 0.82);
+        --panel-alt: rgba(11, 15, 20, 0.9);
+        --text: #dce4eb;
+        --muted: #87919d;
+        --soft: #9ca7b3;
+        --accent: #2ee6c9;
+        --danger: #ff7b72;
+        --ok: #2ee6c9;
+        --warn: #f4c96b;
+        --border: rgba(148, 163, 184, 0.1);
+        --hover: rgba(46, 230, 201, 0.075);
+        --shadow: 0 20px 56px rgba(0, 0, 0, 0.28);
+        --glow: 0 0 0 4px rgba(46, 230, 201, 0.08);
+      }
+
+      body.light {
+        --bg: #f6f8fa;
+        --panel: rgba(255, 255, 255, 0.8);
+        --panel-alt: rgba(252, 253, 255, 0.92);
+        --text: #0f1722;
+        --muted: #7d8796;
+        --soft: #98a2b1;
+        --accent: #14b8a6;
+        --danger: #dc5f55;
+        --ok: #14b8a6;
+        --warn: #d4a73c;
+        --border: rgba(107, 114, 128, 0.08);
+        --hover: rgba(20, 184, 166, 0.06);
+        --shadow: 0 18px 44px rgba(15, 23, 42, 0.05);
+        --glow: 0 0 0 4px rgba(20, 184, 166, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(46, 230, 201, 0.065), transparent 26%),
+          radial-gradient(circle at bottom right, rgba(46, 230, 201, 0.035), transparent 22%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 18%),
+          var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+
+      body:not(.light) .sidebar {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.008) 34%, transparent 72%),
+          rgba(7, 10, 14, 0.28);
+        backdrop-filter: blur(16px);
+      }
+
+      body:not(.light) .logo {
+        background: rgba(255, 255, 255, 0.045);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        color: color-mix(in srgb, white 88%, var(--muted) 12%);
+      }
+
+      body:not(.light) .nav-item {
+        color: color-mix(in srgb, var(--muted) 88%, white 12%);
+      }
+
+      body:not(.light) .nav-item.active {
+        background: linear-gradient(180deg, rgba(46, 230, 201, 0.085), rgba(46, 230, 201, 0.028));
+        border-color: rgba(46, 230, 201, 0.16);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+
+      body:not(.light) .status-inline,
+      body:not(.light) .logout-button,
+      body:not(.light) .compact-status,
+      body:not(.light) .mini-button,
+      body:not(.light) .log-badge {
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      body:not(.light) .list-item {
+        background: rgba(255, 255, 255, 0.018);
+      }
+
+      body:not(.light) .list-item[open] {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.024), rgba(255, 255, 255, 0.008)),
+          var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      body:not(.light) textarea,
+      body:not(.light) input,
+      body:not(.light) select,
+      body:not(.light) .test-output,
+      body:not(.light) .status-output,
+      body:not(.light) .summary-pill,
+      body:not(.light) .trace-group,
+      body:not(.light) .logs-column,
+      body:not(.light) .trace-card,
+      body:not(.light) .filters-shell {
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+      }
+
+      body:not(.light) .button-primary {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white 12%), color-mix(in srgb, var(--accent) 94%, black 6%));
+        box-shadow: 0 8px 24px rgba(46, 230, 201, 0.12);
+      }
+
+      body:not(.light) .button-secondary {
+        background: rgba(255, 255, 255, 0.025);
+      }
+
+      body:not(.light) .button-danger {
+        background: rgba(255, 123, 114, 0.03);
+      }
+
+      .app {
+        height: 100vh;
+        display: grid;
+        grid-template-columns: 72px 1fr;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 60%);
+        padding: 18px 10px 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        min-height: 0;
+      }
+
+      .logo {
+        font-size: 18px;
+        font-weight: 780;
+        letter-spacing: -0.04em;
+        width: 40px;
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      }
+
+      .logo:hover {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+        background: var(--hover);
+      }
+
+      .logo span {
+        color: var(--accent);
+      }
+
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .nav-item {
+        border: 1px solid transparent;
+        border-radius: 16px;
+        padding: 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        width: 44px;
+        height: 44px;
+      }
+
+      .nav-item.active {
+        background: linear-gradient(180deg, var(--hover), rgba(46, 230, 201, 0.02));
+        border-color: rgba(46, 230, 201, 0.12);
+        color: var(--text);
+      }
+
+      .nav-item.disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .nav-icon {
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .nav-icon svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .nav-text {
+        display: none;
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        display: flex;
+        justify-content: center;
+      }
+
+      .theme-toggle {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        border-radius: 999px;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        cursor: pointer;
+        box-shadow: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        line-height: 1;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+      }
+
+      .save-toast {
+        position: fixed;
+        right: 26px;
+        bottom: 24px;
+        z-index: 40;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 88%, transparent);
+        backdrop-filter: blur(14px);
+        color: var(--text);
+        font-size: 12px;
+        letter-spacing: 0.01em;
+        box-shadow: var(--shadow);
+        opacity: 0;
+        transform: translateY(10px);
+        pointer-events: none;
+        transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      }
+
+      .save-toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .save-toast.ok {
+        border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+      }
+
+      .save-toast.error {
+        border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+      }
+
+      .save-toast-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--ok);
+        flex: 0 0 auto;
+      }
+
+      .save-toast.error .save-toast-dot {
+        background: var(--danger);
+      }
+
+      .content {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 22px 34px 12px;
+        gap: 16px;
+      }
+
+      .header-title {
+        font-size: 22px;
+        font-weight: 620;
+        letter-spacing: -0.03em;
+      }
+
+      .header-subtitle {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+        max-width: 560px;
+      }
+
+      .header-meta {
+        display: flex;
+        align-items: flex-end;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-strip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 10px;
+        padding: 3px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 90%, transparent);
+        backdrop-filter: blur(14px);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+
+      .status-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+        padding: 6px 11px 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        letter-spacing: 0.01em;
+        min-height: 31px;
+        transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+      }
+
+      .status-inline:hover {
+        transform: translateY(-1px);
+      }
+
+      .status-inline span:last-child {
+        font-size: 10px;
+        letter-spacing: 0.01em;
+        color: color-mix(in srgb, var(--muted) 84%, var(--text) 16%);
+      }
+
+      .logout-button {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 90%, transparent);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 7px 11px;
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        line-height: 1;
+        min-height: 31px;
+        transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+      }
+
+      .logout-button:hover {
+        background: var(--hover);
+        color: var(--text);
+        transform: translateY(-1px);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--danger);
+        flex: 0 0 auto;
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent);
+      }
+
+      .status-inline.ok .status-dot {
+        background: var(--ok);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent);
+      }
+
+      .status-inline.warn .status-dot {
+        background: var(--warn);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 16%, transparent);
+      }
+
+      .status-inline.ok {
+        border-color: color-mix(in srgb, var(--ok) 18%, var(--border));
+      }
+
+      .status-inline.warn {
+        border-color: color-mix(in srgb, var(--warn) 18%, var(--border));
+      }
+
+      .status-inline:not(.ok):not(.warn) {
+        border-color: color-mix(in srgb, var(--danger) 16%, var(--border));
+      }
+
+      .status-time {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+        padding: 6px 11px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        min-height: 31px;
+        min-width: 82px;
+        color: color-mix(in srgb, var(--muted) 82%, var(--text) 18%);
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        line-height: 1;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+        justify-content: space-between;
+      }
+
+      .status-time-value {
+        color: var(--text);
+        font-size: 10px;
+        letter-spacing: 0.02em;
+        text-transform: none;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
+        min-width: 34px;
+        text-align: right;
+      }
+
+      .main {
+        padding: 0 34px 24px;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .view {
+        display: none;
+      }
+
+      .view.active {
+        display: block;
+      }
+
+      #view-inbox.view.active {
+        display: flex;
+      }
+
+      .list-shell {
+        display: grid;
+        gap: 8px;
+      }
+
+      #view-inbox .list-shell {
+        flex: 1 1 auto;
+      }
+
+      #view-inbox .list-item[open] {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100vh - 150px);
+      }
+
+      #view-inbox .list-panel {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .list-item {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.02);
+        overflow: hidden;
+      }
+
+      .list-item[open] {
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .list-summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+
+      .list-summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .list-summary-main {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .list-title {
+        font-size: 8px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 88%, transparent);
+        font-weight: 580;
+      }
+
+      .list-subtitle {
+        font-size: 9px;
+        color: color-mix(in srgb, var(--soft) 88%, transparent);
+        line-height: 1.45;
+      }
+
+      .list-caret {
+        color: var(--muted);
+        font-size: 14px;
+        transition: transform 0.16s ease;
+        flex: 0 0 auto;
+      }
+
+      .list-item[open] .list-caret {
+        transform: rotate(180deg);
+      }
+
+      .list-panel {
+        padding: 0 12px 12px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: var(--panel-alt);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 8px 10px;
+        font: inherit;
+        outline: none;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+        font-size: 13px;
+      }
+
+      textarea {
+        min-height: 112px;
+        resize: vertical;
+        line-height: 1.42;
+        padding: 9px 10px 10px;
+      }
+
+      #instruction {
+        min-height: 138px;
+        resize: none;
+        overflow: auto;
+        border-color: color-mix(in srgb, var(--border) 78%, transparent);
+      }
+
+      .instruction-resize-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding-top: 4px;
+      }
+
+      .instruction-resize-handle {
+        width: 20px;
+        height: 20px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background:
+          linear-gradient(135deg, transparent 0 42%, color-mix(in srgb, var(--muted) 42%, transparent) 42% 48%, transparent 48% 100%),
+          linear-gradient(135deg, transparent 0 58%, color-mix(in srgb, var(--muted) 32%, transparent) 58% 64%, transparent 64% 100%),
+          color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        cursor: ns-resize;
+        flex: 0 0 auto;
+        transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+      }
+
+      .instruction-resize-handle:hover {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+        background-color: var(--hover);
+      }
+
+      .instruction-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      textarea:focus,
+      input:focus,
+      select:focus {
+        border-color: rgba(46, 230, 201, 0.24);
+        box-shadow: var(--glow);
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .field + .field {
+        margin-top: 6px;
+      }
+
+      .field-label {
+        color: color-mix(in srgb, var(--muted) 86%, transparent);
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        line-height: 1.35;
+        font-weight: 560;
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+        align-items: end;
+      }
+
+      .filters-shell .field {
+        gap: 5px;
+      }
+
+      .filters-shell .field-label {
+        min-height: 11px;
+        font-size: 8px;
+        letter-spacing: 0.13em;
+        color: color-mix(in srgb, var(--muted) 74%, transparent);
+        font-weight: 540;
+      }
+
+      .filters-shell input,
+      .filters-shell select {
+        height: 36px;
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+
+      .actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .subsection {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+
+      .subsection:first-of-type {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+      }
+
+      .subsection-title {
+        color: color-mix(in srgb, var(--muted) 86%, transparent);
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        line-height: 1.35;
+        font-weight: 560;
+        margin-bottom: 4px;
+      }
+
+      .subsection-text {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.45;
+        margin-bottom: 10px;
+      }
+
+      button {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 5px 9px;
+        font: inherit;
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+        font-size: 11px;
+        line-height: 1.2;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+        color: #041513;
+        font-weight: 560;
+        box-shadow: 0 8px 20px rgba(46, 230, 201, 0.08);
+      }
+
+      .button-primary.is-dirty {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 88%, white 12%), var(--warn));
+        color: #2b2108;
+      }
+
+      .button-primary.is-saving {
+        opacity: 0.85;
+        pointer-events: none;
+        transform: none;
+      }
+
+      .button-primary.is-saved {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--ok) 82%, white 18%), color-mix(in srgb, var(--ok) 92%, black 8%));
+        color: #041513;
+      }
+
+      .button-primary.is-error {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 82%, white 18%), color-mix(in srgb, var(--danger) 92%, black 8%));
+        color: #fff7f6;
+      }
+
+      .button-secondary {
+        background: rgba(255, 255, 255, 0.02);
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .button-danger {
+        background: transparent;
+        border-color: rgba(255, 123, 114, 0.2);
+        color: var(--danger);
+      }
+
+      .button-secondary:hover,
+      .theme-toggle:hover,
+      .button-danger:hover {
+        background: var(--hover);
+      }
+
+      .compact-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 9px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.01em;
+      }
+
+      .compact-status .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--danger);
+        flex: 0 0 auto;
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent);
+      }
+
+      .compact-status.ok {
+        border-color: color-mix(in srgb, var(--ok) 18%, var(--border));
+      }
+
+      .compact-status.ok .status-dot {
+        background: var(--ok);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent);
+      }
+
+      .compact-status.warn {
+        border-color: color-mix(in srgb, var(--warn) 18%, var(--border));
+      }
+
+      .compact-status.warn .status-dot {
+        background: var(--warn);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 16%, transparent);
+      }
+
+      .test-output,
+      .status-output {
+        min-height: 72px;
+        white-space: pre-wrap;
+        line-height: 1.5;
+        color: var(--text);
+        padding: 11px 12px 12px;
+        border-radius: 14px;
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        font-size: 13px;
+      }
+
+      .log-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .log-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(124px, 148px));
+        gap: 8px;
+        justify-content: start;
+      }
+
+      .logs-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .logs-toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .logs-summary-wrap {
+        margin-top: 14px;
+      }
+
+      .summary-pill {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 9px 12px 10px;
+        background: var(--panel-alt);
+        min-height: 62px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .summary-label {
+        font-size: 8px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 86%, transparent);
+      }
+
+      .summary-value {
+        margin-top: 3px;
+        font-size: 13px;
+        font-weight: 620;
+        letter-spacing: -0.03em;
+      }
+
+      .summary-pill.ok .summary-value {
+        color: var(--ok);
+      }
+
+      .summary-pill.process .summary-value {
+        color: #5d9cec;
+      }
+
+      .summary-pill.error .summary-value {
+        color: var(--danger);
+      }
+
+      .trace-group {
+        border: 1px solid var(--border);
+        background: var(--panel-alt);
+        border-radius: 14px;
+        padding: 9px 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      }
+
+      .trace-group:hover {
+        transform: translateY(-1px);
+      }
+
+      .trace-group.active {
+        box-shadow: var(--glow);
+        border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+      }
+
+      .trace-group.error {
+        background: color-mix(in srgb, var(--danger) 5%, var(--panel-alt));
+        border-color: color-mix(in srgb, var(--danger) 24%, var(--border));
+      }
+
+      .trace-group-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .trace-group-main {
+        min-width: 0;
+        display: grid;
+        gap: 5px;
+      }
+
+      .trace-group-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .trace-group-chain {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 5px;
+        color: var(--text);
+        font-size: 10px;
+      }
+
+      .trace-step {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 7px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .trace-arrow {
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .trace-actions {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex: 0 0 auto;
+      }
+
+      .mini-button {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 4px 7px;
+        font-size: 8px;
+        line-height: 1;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .mini-button:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .log-item {
+        border: 1px solid var(--border);
+        background: var(--panel-alt);
+        border-radius: 13px;
+        padding: 9px 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        position: relative;
+      }
+
+      .log-item:hover {
+        transform: translateY(-1px);
+        background: color-mix(in srgb, var(--panel-alt) 92%, var(--hover));
+      }
+
+      .log-item.ok {
+        border-color: color-mix(in srgb, var(--ok) 18%, var(--border));
+      }
+
+      .log-item.process {
+        border-color: rgba(93, 156, 236, 0.24);
+      }
+
+      .log-item.error {
+        border-color: color-mix(in srgb, var(--danger) 24%, var(--border));
+      }
+
+      .log-item.active-trace {
+        box-shadow: var(--glow);
+        border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+      }
+
+      .log-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .log-event {
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .log-text {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .log-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 7px;
+        font-size: 8px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        flex: 0 0 auto;
+      }
+
+      .log-badge.ok {
+        color: var(--ok);
+      }
+
+      .log-badge.process {
+        color: #5d9cec;
+      }
+
+      .log-badge.error {
+        color: var(--danger);
+      }
+
+      .filters-shell {
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        border-radius: 14px;
+        padding: 10px;
+        max-width: 1040px;
+      }
+
+      .toggle-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 8px;
+      }
+
+      .toggle-line input {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--accent);
+      }
+
+      .trace-shell {
+        display: grid;
+        gap: 7px;
+        min-height: 0;
+        height: 100%;
+      }
+
+      .trace-title {
+        font-size: 9px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 86%, transparent);
+      }
+
+      .logs-workspace {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 0.88fr);
+        gap: 10px;
+        align-items: stretch;
+        max-width: 1160px;
+        height: clamp(420px, calc(100vh - 272px), 700px);
+        min-height: 0;
+      }
+
+      .logs-column {
+        min-width: 0;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        border-radius: 14px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .trace-column {
+        position: static;
+      }
+
+      .logs-panel {
+        max-width: 1200px;
+      }
+
+      .logs-column .status-output {
+        min-height: 82px;
+      }
+
+      #logsOutput,
+      #traceOutput {
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        flex: 1 1 auto;
+      }
+
+      .trace-column .status-output {
+        min-height: 104px;
+        height: 100%;
+      }
+
+      .trace-card {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        border-radius: 13px;
+        padding: 9px 10px 9px 14px;
+        position: relative;
+      }
+
+      .trace-card::before {
+        content: '';
+        position: absolute;
+        left: 7px;
+        top: 10px;
+        bottom: 10px;
+        width: 2px;
+        border-radius: 999px;
+        background: var(--border);
+      }
+
+      .trace-card.ok::before {
+        background: color-mix(in srgb, var(--ok) 70%, transparent);
+      }
+
+      .trace-card.process::before {
+        background: rgba(93, 156, 236, 0.6);
+      }
+
+      .trace-card.error::before {
+        background: color-mix(in srgb, var(--danger) 70%, transparent);
+      }
+
+      .trace-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 5px;
+      }
+
+      .trace-event {
+        font-size: 10px;
+        font-weight: 620;
+        color: var(--text);
+      }
+
+      .trace-meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .inbox-panel {
+        max-width: 1140px;
+        width: 100%;
+      }
+
+      .inbox-workspace {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+        gap: 8px;
+        max-width: 1100px;
+        flex: 1 1 auto;
+        height: calc(100vh - 220px);
+        min-height: 470px;
+        max-height: none;
+        overflow: hidden;
+      }
+
+      .inbox-resize-bar {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 6px;
+      }
+
+      .inbox-resize-handle {
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background:
+          linear-gradient(135deg, transparent 0 42%, color-mix(in srgb, var(--muted) 42%, transparent) 42% 48%, transparent 48% 100%),
+          linear-gradient(135deg, transparent 0 58%, color-mix(in srgb, var(--muted) 32%, transparent) 58% 64%, transparent 64% 100%),
+          color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        cursor: ns-resize;
+        flex: 0 0 auto;
+        transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+      }
+
+      .inbox-resize-handle:hover {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+        background-color: var(--hover);
+      }
+
+      .inbox-column {
+        min-width: 0;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        border-radius: 13px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .inbox-chat-list {
+        display: grid;
+        gap: 5px;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+
+      .chat-preview {
+        border: 1px solid var(--border);
+        background: var(--panel-alt);
+        border-radius: 11px;
+        padding: 7px 8px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      }
+
+      .chat-preview:hover {
+        transform: translateY(-1px);
+      }
+
+      .chat-preview.active {
+        box-shadow: var(--glow);
+        border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+      }
+
+      .chat-preview-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .chat-preview-id {
+        font-size: 9px;
+        font-weight: 620;
+        color: var(--text);
+      }
+
+      .chat-preview-time {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .chat-preview-text {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-word;
+      }
+
+      .chat-view {
+        display: grid;
+        gap: 7px;
+        min-height: 0;
+        height: 100%;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+
+      .chat-header {
+        display: grid;
+        gap: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0;
+      }
+
+      .chat-header-main {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .chat-identity {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .chat-name {
+        font-size: 11px;
+        font-weight: 620;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      .chat-submeta {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .chat-details-toggle {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 5px 8px;
+        font-size: 8px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        line-height: 1;
+        white-space: nowrap;
+        transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+      }
+
+      .chat-details-toggle:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .chat-details {
+        display: none;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px;
+      }
+
+      .chat-details.visible {
+        display: grid;
+      }
+
+      .chat-detail {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        border-radius: 9px;
+        padding: 6px 8px;
+        display: grid;
+        gap: 2px;
+      }
+
+      .chat-detail-label {
+        color: color-mix(in srgb, var(--muted) 82%, transparent);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .chat-detail-value {
+        color: var(--text);
+        font-size: 10px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .chat-thread {
+        display: grid;
+        gap: 7px;
+      }
+
+      .chat-bubble {
+        max-width: 74%;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 7px 9px;
+        background: var(--panel-alt);
+        display: grid;
+        gap: 3px;
+      }
+
+      .chat-bubble.in {
+        justify-self: start;
+      }
+
+      .chat-bubble.out {
+        justify-self: end;
+        background: color-mix(in srgb, var(--accent) 10%, var(--panel-alt));
+        border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+      }
+
+      .chat-bubble-role {
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--muted) 80%, transparent);
+      }
+
+      .chat-bubble-text {
+        color: var(--text);
+        font-size: 11px;
+        line-height: 1.38;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .chat-bubble-meta {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      @media (max-width: 980px) {
+        .log-summary-grid {
+          grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .filter-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .logs-workspace {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+
+        .inbox-workspace {
+          grid-template-columns: 1fr;
+          height: auto;
+          min-height: 0;
+          overflow: visible;
+        }
+
+        .inbox-resize-bar {
+          display: none;
+        }
+
+        .trace-column {
+          position: static;
+        }
+
+        #logsOutput,
+        #traceOutput,
+        .inbox-chat-list,
+        .chat-view {
+          height: auto;
+          max-height: none;
+          overflow: visible;
+        }
+
+        .chat-details {
+          grid-template-columns: 1fr;
+        }
+
+        #view-inbox.view.active {
+          display: block;
+        }
+
+        #view-inbox .list-item[open],
+        #view-inbox .list-panel {
+          min-height: 0;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .log-summary-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (min-width: 981px) {
+        #view-logs .list-shell {
+          max-width: 1280px;
+        }
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 1080px) {
+        
+      }
+
+      @media (max-width: 760px) {
+        body {
+          overflow: auto;
+        }
+
+        .app {
+          grid-template-columns: 1fr;
+          height: auto;
+          overflow: visible;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+          gap: 18px;
+        }
+
+        .nav {
+          flex-direction: row;
+          overflow: auto;
+          width: 100%;
+          justify-content: center;
+        }
+
+        .nav-item {
+          min-width: 44px;
+        }
+
+        .header,
+        .main {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .header-meta {
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <button id="logoButton" class="logo" title="S.AI" type="button" aria-label="Вернуться в AI Control">S<span>·</span></button>
+        <nav class="nav">
+          <button class="nav-item active" data-view="ai-control" type="button" title="AI Control" aria-label="AI Control">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4.5l1.8 3.7 4.2.6-3 2.9.7 4.3-3.7-2-3.7 2 .7-4.3-3-2.9 4.2-.6z" />
+              </svg>
+            </span>
+            <span class="nav-text">AI Control</span>
+          </button>
+          <button class="nav-item" data-view="integrations" type="button" title="Integrations" aria-label="Integrations">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8.5 8.5l7 7" />
+                <path d="M9.8 6.5h-2a3.3 3.3 0 0 0 0 6.6h2" />
+                <path d="M14.2 17.5h2a3.3 3.3 0 1 0 0-6.6h-2" />
+              </svg>
+            </span>
+            <span class="nav-text">Integrations</span>
+          </button>
+          <button class="nav-item" data-view="logs" type="button" title="Logs" aria-label="Logs">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7.5h10" />
+                <path d="M7 12h10" />
+                <path d="M7 16.5h6.5" />
+                <path d="M5.5 7.5h0" />
+                <path d="M5.5 12h0" />
+                <path d="M5.5 16.5h0" />
+              </svg>
+            </span>
+            <span class="nav-text">Logs</span>
+          </button>
+          <button class="nav-item" data-view="inbox" type="button" title="Inbox" aria-label="Inbox">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5.5 7.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H11l-3.5 3v-3H7.5a2 2 0 0 1-2-2z" />
+              </svg>
+            </span>
+            <span class="nav-text">Inbox</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">◐</button>
+        </div>
+      </aside>
+
+      <div class="content">
+        <header class="header">
+          <div>
+            <div id="headerTitle" class="header-title">AI Control</div>
+            <div id="headerSubtitle" class="header-subtitle">Управление поведением AI через instruction без изменения магистрали.</div>
+          </div>
+          <div class="header-meta">
+            <div class="header-actions">
+              <div class="status-strip">
+                <div id="telegramStatus" class="status-inline"><span class="status-dot"></span><span>Telegram</span></div>
+                <div id="saiStatus" class="status-inline"><span class="status-dot"></span><span>Core</span></div>
+                <div id="aiStatus" class="status-inline"><span class="status-dot"></span><span>AI</span></div>
+                <div class="status-time"><span>MSK</span><span id="mskTime" class="status-time-value">--:--</span></div>
+              </div>
+              <button id="logoutButton" class="logout-button" type="button">Выход</button>
+            </div>
+          </div>
+        </header>
+
+        <main class="main">
+          <section id="view-ai-control" class="view active">
+            <div class="list-shell">
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Инструкция</div>
+                    <div class="list-subtitle">Единственный способ управлять поведением AI. Без сценариев и логики в коде.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <textarea id="instruction" placeholder="Ты — консультант по продаже товара. Отвечай коротко, по делу, задавай вопросы и веди клиента к покупке."></textarea>
+                  <div class="instruction-actions">
+                    <button id="saveInstruction" class="button-primary" type="button">Сохранить</button>
+                    <div class="instruction-resize-bar">
+                      <div id="instructionResizeHandle" class="instruction-resize-handle" title="Потянуть вниз" aria-label="Изменить высоту инструкции"></div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Поведение</div>
+                    <div class="list-subtitle">Тон, длина и степень свободы ответа.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <div class="field">
+                      <label class="field-label" for="toneSelect">Тон</label>
+                      <select id="toneSelect">
+                        <option value="neutral">Нейтральный</option>
+                        <option value="friendly">Дружелюбный</option>
+                        <option value="sales">Продающий</option>
+                        <option value="concise">Краткий</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="responseLengthSelect">Длина ответа</label>
+                      <select id="responseLengthSelect">
+                        <option value="short">Короткий</option>
+                        <option value="medium">Средний</option>
+                        <option value="long">Длинный</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="creativitySelect">Креативность</label>
+                      <select id="creativitySelect">
+                        <option value="precise">Точный</option>
+                        <option value="balanced">Сбалансированный</option>
+                        <option value="creative">Креативный</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="saveBehavior" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Обработка входа</div>
+                    <div class="list-subtitle">Как AI трактует входящие медиа, ссылки и товарные примеры.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <div class="field">
+                      <label class="field-label" for="conversationModeSelect">Режим интерпретации</label>
+                      <select id="conversationModeSelect">
+                        <option value="general">Общий</option>
+                        <option value="retail">Розница / товарный запрос</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="mediaBehaviorSelect">Работа с медиа</label>
+                      <select id="mediaBehaviorSelect">
+                        <option value="describe_media">Описывать медиа</option>
+                        <option value="answer_from_media">Отвечать по медиа</option>
+                        <option value="text_first">Сначала текст</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="saveInputHandling" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Персона</div>
+                    <div class="list-subtitle">Базовая человеческая манера речи без игры в роль.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <div class="field">
+                      <label class="field-label" for="personaStyleSelect">Базовый стиль</label>
+                      <select id="personaStyleSelect">
+                        <option value="calm">Спокойный</option>
+                        <option value="conversational">Разговорный</option>
+                        <option value="reserved">Сдержанный</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="personaAgeSelect">Возраст</label>
+                      <select id="personaAgeSelect">
+                        <option value="23">23</option>
+                        <option value="27">27</option>
+                        <option value="35">35</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="savePersona" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Тест AI</div>
+                    <div class="list-subtitle">Быстрая проверка текущей policy-конфигурации.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <div class="field">
+                      <label class="field-label" for="testMessage">Сообщение</label>
+                      <input id="testMessage" placeholder="Напиши тестовое сообщение для AI" />
+                    </div>
+                    <div class="actions">
+                      <button id="runTest" class="button-primary" type="button">Отправить</button>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Ответ</div>
+                      <div id="testOutput" class="test-output muted">Ответ появится здесь.</div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section id="view-integrations" class="view">
+            <div class="list-shell">
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Telegram</div>
+                    <div class="list-subtitle">Токен бота и адрес webhook для приёма входящих сообщений.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="field">
+                    <label class="field-label" for="telegramToken">Telegram bot token</label>
+                    <input id="telegramToken" placeholder="Вставьте токен бота" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label" for="webhookUrl">Webhook URL или домен</label>
+                    <input id="webhookUrl" placeholder="https://my-domain.com" />
+                  </div>
+                  <div class="actions">
+                    <button id="saveTelegram" class="button-primary" type="button">Сохранить</button>
+                    <button id="checkTelegram" class="button-secondary" type="button">Проверить</button>
+                    <button id="deleteTelegram" class="button-secondary" type="button">Удалить</button>
+                  </div>
+                  <div style="margin-top: 18px;">
+                    <div id="telegramDetailStatus" class="compact-status"><span class="status-dot"></span><span>Не подключено</span></div>
+                  </div>
+                  <div class="field" style="margin-top: 12px;">
+                    <div class="field-label">Webhook</div>
+                    <div id="webhookInfo" class="status-output muted">Webhook пока не задан.</div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">AI Provider</div>
+                    <div class="list-subtitle">Провайдер, ключ, базовый URL и активная модель.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="subsection">
+                    <div class="subsection-title">Основное подключение</div>
+                    <div class="subsection-text">Провайдер, базовый URL и ключ для основных AI-ответов.</div>
+                    <div class="field">
+                      <label class="field-label" for="providerType">Provider</label>
+                      <select id="providerType">
+                        <option value="openai">OpenAI</option>
+                        <option value="custom">Custom API</option>
+                      </select>
+                    </div>
+                    <div id="customBaseUrlField" class="field" style="display:none;">
+                      <label class="field-label" for="aiBaseUrl">AI Base URL</label>
+                      <input id="aiBaseUrl" placeholder="https://api.openai.com/v1" />
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="aiApiKey">AI API Key</label>
+                      <input id="aiApiKey" placeholder="Введите AI_API_KEY" />
+                    </div>
+                    <div class="actions">
+                      <button id="saveAiProvider" class="button-primary" type="button">Сохранить</button>
+                      <button id="deleteAiProvider" class="button-secondary" type="button">Удалить</button>
+                    </div>
+                    <div style="margin-top: 18px;">
+                      <div id="aiDetailStatus" class="compact-status"><span class="status-dot"></span><span>Не подключено</span></div>
+                    </div>
+                  </div>
+
+                  <div class="subsection">
+                    <div class="subsection-title">Модель</div>
+                    <div class="subsection-text">Основная модель для ответов в чате.</div>
+                    <div class="field">
+                      <label class="field-label" for="integrationsModelSelect">Выбор модели</label>
+                      <select id="integrationsModelSelect">
+                        <option value="">Загрузка...</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="saveIntegrationsModel" class="button-primary" type="button">Сохранить</button>
+                      <button id="reloadIntegrationModels" class="button-secondary" type="button">Загрузить модели</button>
+                      <button id="deleteModel" class="button-secondary" type="button">Удалить</button>
+                    </div>
+                  </div>
+
+                  <div class="subsection">
+                    <div class="subsection-title">Voice / STT</div>
+                    <div class="subsection-text">Отдельный backend для распознавания voice и video note. Можно использовать тот же ключ, если провайдер поддерживает speech.</div>
+                    <div class="field">
+                      <label class="field-label" for="sttBaseUrl">STT Base URL</label>
+                      <input id="sttBaseUrl" placeholder="https://api.openai.com/v1" />
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="sttApiKey">STT API Key</label>
+                      <input id="sttApiKey" placeholder="Введите STT_API_KEY" />
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="sttModel">STT Model</label>
+                      <input id="sttModel" placeholder="gpt-4o-mini-transcribe" />
+                    </div>
+                    <div class="actions">
+                      <button id="saveSttProvider" class="button-primary" type="button">Сохранить STT</button>
+                    </div>
+                    <div style="margin-top: 18px;">
+                      <div id="sttDetailStatus" class="compact-status"><span class="status-dot"></span><span>Не подключено</span></div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <section id="view-logs" class="view">
+            <div class="list-shell logs-panel">
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Logs</div>
+                    <div class="list-subtitle">Последние события webhook, AI и отправки в Telegram.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="logs-toolbar">
+                    <div class="logs-toolbar-actions">
+                      <button id="refreshLogs" class="button-primary" type="button">Обновить</button>
+                      <button id="clearLogs" class="button-secondary" type="button">Очистить</button>
+                    </div>
+                  </div>
+                  <div class="logs-summary-wrap">
+                    <div class="log-summary-grid">
+                      <div class="summary-pill ok">
+                        <div class="summary-label">OK</div>
+                        <div id="logsOkCount" class="summary-value">0</div>
+                      </div>
+                      <div class="summary-pill process">
+                        <div class="summary-label">Process</div>
+                        <div id="logsProcessCount" class="summary-value">0</div>
+                      </div>
+                      <div class="summary-pill error">
+                        <div class="summary-label">Error</div>
+                        <div id="logsErrorCount" class="summary-value">0</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="filters-shell">
+                    <div class="filter-grid">
+                      <div class="field">
+                        <label class="field-label" for="logTypeFilter">Тип</label>
+                        <select id="logTypeFilter">
+                          <option value="">Все</option>
+                          <option value="IN">IN</option>
+                          <option value="STT_REQUEST">STT_REQUEST</option>
+                          <option value="STT_REPLY">STT_REPLY</option>
+                          <option value="STT_ERROR">STT_ERROR</option>
+                          <option value="AI_REQUEST">AI_REQUEST</option>
+                          <option value="AI_REPLY">AI_REPLY</option>
+                          <option value="TG_SEND">TG_SEND</option>
+                          <option value="ERROR">ERROR</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="logUserFilter">User ID</label>
+                        <input id="logUserFilter" placeholder="12345" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="logTraceFilter">Trace ID</label>
+                        <input id="logTraceFilter" placeholder="Например 6d7..." />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="logLimitFilter">Limit</label>
+                        <select id="logLimitFilter">
+                          <option value="50">50</option>
+                          <option value="100" selected>100</option>
+                          <option value="200">200</option>
+                          <option value="500">500</option>
+                        </select>
+                      </div>
+                    </div>
+                    <label class="toggle-line"><input id="logAutoRefresh" type="checkbox" /> Автообновление каждые 4 сек.</label>
+                  </div>
+                  <div class="logs-workspace">
+                    <div class="logs-column">
+                      <div class="trace-title">Trace list</div>
+                      <div id="logsOutput" class="log-list" style="margin-top: 10px;">
+                        <div class="status-output muted">Логи появятся здесь.</div>
+                      </div>
+                    </div>
+                    <div class="logs-column trace-column">
+                      <div class="trace-shell">
+                        <div class="trace-title">Trace view</div>
+                        <div id="traceOutput" class="status-output muted">Выберите событие, чтобы увидеть полную цепочку по traceId.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section id="view-inbox" class="view">
+            <div class="list-shell inbox-panel">
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Inbox</div>
+                    <div class="list-subtitle">Диалоги пользователей с AI в формате чата.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="logs-toolbar">
+                    <div class="logs-toolbar-actions">
+                      <button id="refreshInbox" class="button-primary" type="button">Обновить</button>
+                    </div>
+                  </div>
+                  <div class="inbox-workspace">
+                    <div class="inbox-column">
+                      <div class="trace-title">Chats</div>
+                      <div id="inboxList" class="inbox-chat-list" style="margin-top: 10px;">
+                        <div class="status-output muted">Диалоги появятся здесь.</div>
+                      </div>
+                    </div>
+                    <div class="inbox-column">
+                      <div class="trace-title">Conversation</div>
+                      <div id="inboxThread" class="status-output muted" style="margin-top: 10px;">Выберите чат слева, чтобы открыть диалог.</div>
+                    </div>
+                  </div>
+                  <div class="inbox-resize-bar">
+                    <div id="inboxResizeHandle" class="inbox-resize-handle" title="Потянуть вниз" aria-label="Изменить высоту Inbox"></div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div id="saveToast" class="save-toast" aria-live="polite">
+      <span class="save-toast-dot"></span>
+      <span id="saveToastText">Сохранено</span>
+    </div>
+
+    <script>
+      const themeKey = 'sai-theme';
+      const themeToggle = document.getElementById('themeToggle');
+      const saveToast = document.getElementById('saveToast');
+      const saveToastText = document.getElementById('saveToastText');
+      const logoButton = document.getElementById('logoButton');
+      const headerTitle = document.getElementById('headerTitle');
+      const headerSubtitle = document.getElementById('headerSubtitle');
+      const logoutButton = document.getElementById('logoutButton');
+      const instruction = document.getElementById('instruction');
+      const instructionResizeHandle = document.getElementById('instructionResizeHandle');
+      const toneSelect = document.getElementById('toneSelect');
+      const responseLengthSelect = document.getElementById('responseLengthSelect');
+      const creativitySelect = document.getElementById('creativitySelect');
+      const personaStyleSelect = document.getElementById('personaStyleSelect');
+      const personaAgeSelect = document.getElementById('personaAgeSelect');
+      const conversationModeSelect = document.getElementById('conversationModeSelect');
+      const mediaBehaviorSelect = document.getElementById('mediaBehaviorSelect');
+      const integrationsModelSelect = document.getElementById('integrationsModelSelect');
+      const testMessage = document.getElementById('testMessage');
+      const testOutput = document.getElementById('testOutput');
+      const logsOutput = document.getElementById('logsOutput');
+      const traceOutput = document.getElementById('traceOutput');
+      const inboxList = document.getElementById('inboxList');
+      const inboxThread = document.getElementById('inboxThread');
+      const inboxWorkspace = document.querySelector('.inbox-workspace');
+      const inboxResizeHandle = document.getElementById('inboxResizeHandle');
+      const logsOkCount = document.getElementById('logsOkCount');
+      const logsProcessCount = document.getElementById('logsProcessCount');
+      const logsErrorCount = document.getElementById('logsErrorCount');
+      const telegramStatus = document.getElementById('telegramStatus');
+      const saiStatus = document.getElementById('saiStatus');
+      const aiStatus = document.getElementById('aiStatus');
+      const mskTime = document.getElementById('mskTime');
+      const telegramToken = document.getElementById('telegramToken');
+      const webhookUrl = document.getElementById('webhookUrl');
+      const webhookInfo = document.getElementById('webhookInfo');
+      const aiApiKey = document.getElementById('aiApiKey');
+      const aiBaseUrl = document.getElementById('aiBaseUrl');
+      const sttApiKey = document.getElementById('sttApiKey');
+      const sttBaseUrl = document.getElementById('sttBaseUrl');
+      const sttModel = document.getElementById('sttModel');
+      const providerType = document.getElementById('providerType');
+      const customBaseUrlField = document.getElementById('customBaseUrlField');
+      const telegramDetailStatus = document.getElementById('telegramDetailStatus');
+      const aiDetailStatus = document.getElementById('aiDetailStatus');
+      const sttDetailStatus = document.getElementById('sttDetailStatus');
+      const logTypeFilter = document.getElementById('logTypeFilter');
+      const logUserFilter = document.getElementById('logUserFilter');
+      const logTraceFilter = document.getElementById('logTraceFilter');
+      const logLimitFilter = document.getElementById('logLimitFilter');
+      const logAutoRefresh = document.getElementById('logAutoRefresh');
+      const refreshInboxButton = document.getElementById('refreshInbox');
+      const saveInstructionButton = document.getElementById('saveInstruction');
+      const saveBehaviorButton = document.getElementById('saveBehavior');
+      const saveInputHandlingButton = document.getElementById('saveInputHandling');
+      const savePersonaButton = document.getElementById('savePersona');
+      const saveTelegramButton = document.getElementById('saveTelegram');
+      const saveAiProviderButton = document.getElementById('saveAiProvider');
+      const saveSttProviderButton = document.getElementById('saveSttProvider');
+      const saveIntegrationsModelButton = document.getElementById('saveIntegrationsModel');
+      const navItems = Array.from(document.querySelectorAll('.nav-item[data-view]'));
+      const views = {
+        'ai-control': document.getElementById('view-ai-control'),
+        integrations: document.getElementById('view-integrations'),
+        logs: document.getElementById('view-logs'),
+        inbox: document.getElementById('view-inbox'),
+      };
+
+      let currentStatus = null;
+      let logsRefreshTimer = null;
+      let currentTraceId = '';
+      let currentInboxChatId = '';
+      let currentInboxDetailsOpen = false;
+      let isInstructionResizing = false;
+      let instructionResizeStartY = 0;
+      let instructionResizeStartHeight = 0;
+      let isInboxResizing = false;
+      let inboxResizeStartY = 0;
+      let inboxResizeStartHeight = 0;
+      let saveToastTimer = null;
+      const saveButtonDefaults = new Map();
+      const saveButtonTimers = new WeakMap();
+      const UI_TIME_ZONE = 'Europe/Moscow';
+
+      function getStatusWeight(status) {
+        if (status === 'error') return 3;
+        if (status === 'process') return 2;
+        return 1;
+      }
+
+      function buildTraceGroups(items) {
+        const groups = new Map();
+
+        items.forEach((item) => {
+          const traceId = item.traceId || item.id || 'single';
+          if (!groups.has(traceId)) {
+            groups.set(traceId, {
+              traceId,
+              items: [],
+            });
+          }
+          groups.get(traceId).items.push(item);
+        });
+
+        return Array.from(groups.values()).map((group) => {
+          const sorted = [...group.items].sort((a, b) => new Date(a.time) - new Date(b.time));
+          const latest = sorted[sorted.length - 1] || {};
+          const preview = sorted.map((item) => item.event).filter(Boolean);
+          const status = sorted.reduce((acc, item) => {
+            return getStatusWeight(item.status || 'ok') > getStatusWeight(acc) ? (item.status || 'ok') : acc;
+          }, 'ok');
+          const errorItem = sorted.find((item) => item.event === 'ERROR' || item.status === 'error');
+
+          return {
+            traceId: group.traceId,
+            items: sorted,
+            latest,
+            status,
+            preview,
+            userId: latest.userId || sorted.find((item) => item.userId)?.userId || '',
+            chatId: latest.chatId || sorted.find((item) => item.chatId)?.chatId || '',
+            messageType: latest.messageType || sorted.find((item) => item.messageType)?.messageType || '',
+            duration: sorted
+              .filter((item) => typeof item.duration === 'number')
+              .reduce((sum, item) => sum + Number(item.duration || 0), 0),
+            hasError: !!errorItem,
+            errorText: errorItem ? (errorItem.error || errorItem.message || '') : '',
+            lastTime: latest.time || sorted[0]?.time || '',
+          };
+        }).sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
+      }
+
+      function formatTimeLabel(value) {
+        const date = value ? new Date(value) : null;
+        if (!date || Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: UI_TIME_ZONE,
+        });
+      }
+
+      function formatDateTimeLabel(value) {
+        const date = value ? new Date(value) : null;
+        if (!date || Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: UI_TIME_ZONE,
+        });
+      }
+
+      function updateMskClock() {
+        if (!mskTime) return;
+        mskTime.textContent = new Date().toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: UI_TIME_ZONE,
+        });
+      }
+
+      function buildChatDisplayName(chat) {
+        const name = [chat.firstName, chat.lastName].filter(Boolean).join(' ').trim();
+        if (name) return name;
+        if (chat.username) return `@${chat.username}`;
+        return `Chat ${chat.chatId}`;
+      }
+
+      function buildChatSecondaryMeta(chat) {
+        if (chat.username) return `@${chat.username}`;
+        if (chat.userId && String(chat.userId) !== String(chat.chatId)) return `User ${chat.userId}`;
+        return `ID ${chat.chatId}`;
+      }
+
+      function buildInboxChats(items) {
+        const chats = new Map();
+
+        items
+          .filter((item) => item.event === 'IN' || item.event === 'AI_REPLY')
+          .forEach((item) => {
+            const chatId = String(item.chatId || item.userId || '').trim();
+            if (!chatId) return;
+
+            if (!chats.has(chatId)) {
+              chats.set(chatId, {
+                chatId,
+                userId: item.userId || chatId,
+                firstName: '',
+                lastName: '',
+                username: '',
+                phoneNumber: '',
+                messages: [],
+              });
+            }
+
+            const chat = chats.get(chatId);
+            if (!chat.firstName && item.firstName) chat.firstName = item.firstName;
+            if (!chat.lastName && item.lastName) chat.lastName = item.lastName;
+            if (!chat.username && item.username) chat.username = item.username;
+            if (!chat.phoneNumber && item.phoneNumber) chat.phoneNumber = item.phoneNumber;
+
+            chat.messages.push({
+              id: item.id,
+              chatId,
+              userId: item.userId || chatId,
+              time: item.time,
+              type: item.event === 'IN' ? 'in' : 'out',
+              text: item.event === 'IN' ? (item.text || '') : (item.replyText || ''),
+              messageType: item.messageType || '',
+            });
+          });
+
+        return Array.from(chats.values())
+          .map((chat) => {
+            const messages = chat.messages
+              .filter((message) => String(message.text || '').trim())
+              .sort((a, b) => new Date(a.time) - new Date(b.time));
+            const lastMessage = messages[messages.length - 1] || null;
+
+            return {
+              ...chat,
+              messages,
+              lastMessage,
+              preview: lastMessage ? lastMessage.text : '',
+              lastTime: lastMessage ? lastMessage.time : '',
+            };
+          })
+          .filter((chat) => chat.messages.length)
+          .sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
+      }
+
+      function renderInboxThread(chat) {
+        if (!chat) {
+          inboxThread.className = 'status-output muted';
+          inboxThread.textContent = 'Выберите чат слева, чтобы открыть диалог.';
+          return;
+        }
+
+        const displayName = buildChatDisplayName(chat);
+        const secondaryMeta = buildChatSecondaryMeta(chat);
+
+        inboxThread.className = 'chat-view';
+        inboxThread.innerHTML = `
+          <div class="chat-header">
+            <div class="chat-header-main">
+              <div class="chat-identity">
+                <div class="chat-name">${escapeHtml(displayName)}</div>
+                <div class="chat-submeta">
+                  <span>${escapeHtml(secondaryMeta)}</span>
+                  <span>${escapeHtml(formatDateTimeLabel(chat.lastTime))}</span>
+                </div>
+              </div>
+              <button class="chat-details-toggle" type="button" data-chat-details-toggle>${currentInboxDetailsOpen ? 'Скрыть' : 'Подробнее'}</button>
+            </div>
+            <div class="chat-details${currentInboxDetailsOpen ? ' visible' : ''}">
+              <div class="chat-detail">
+                <div class="chat-detail-label">Имя</div>
+                <div class="chat-detail-value">${escapeHtml([chat.firstName, chat.lastName].filter(Boolean).join(' ').trim() || '—')}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Username</div>
+                <div class="chat-detail-value">${escapeHtml(chat.username ? `@${chat.username}` : '—')}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">User ID</div>
+                <div class="chat-detail-value">${escapeHtml(String(chat.userId || '—'))}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Chat ID</div>
+                <div class="chat-detail-value">${escapeHtml(String(chat.chatId || '—'))}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Телефон</div>
+                <div class="chat-detail-value">${escapeHtml(chat.phoneNumber || '—')}</div>
+              </div>
+            </div>
+          </div>
+          <div class="chat-thread">
+            ${chat.messages.map((message) => `
+              <div class="chat-bubble ${message.type}">
+                <div class="chat-bubble-role">${message.type === 'in' ? 'Пользователь' : 'AI'}</div>
+                <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
+                <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        const toggle = inboxThread.querySelector('[data-chat-details-toggle]');
+        if (toggle) {
+          toggle.addEventListener('click', () => {
+            currentInboxDetailsOpen = !currentInboxDetailsOpen;
+            renderInboxThread(chat);
+          });
+        }
+      }
+
+      function renderInboxChats(chats) {
+        if (!chats.length) {
+          inboxList.innerHTML = '<div class="status-output muted">Диалогов пока нет.</div>';
+          inboxThread.className = 'status-output muted';
+          inboxThread.textContent = 'Выберите чат слева, чтобы открыть диалог.';
+          currentInboxChatId = '';
+          return;
+        }
+
+        if (!currentInboxChatId || !chats.some((chat) => chat.chatId === currentInboxChatId)) {
+          currentInboxChatId = chats[0].chatId;
+        }
+
+        inboxList.innerHTML = chats.map((chat) => `
+          <div class="chat-preview${chat.chatId === currentInboxChatId ? ' active' : ''}" data-chat-id="${escapeHtml(chat.chatId)}">
+            <div class="chat-preview-head">
+              <div class="chat-preview-id">${escapeHtml(buildChatDisplayName(chat))}</div>
+              <div class="chat-preview-time">${escapeHtml(formatTimeLabel(chat.lastTime))}</div>
+            </div>
+            <div class="chat-submeta" style="margin-top: 4px;">
+              <span>${escapeHtml(buildChatSecondaryMeta(chat))}</span>
+            </div>
+            <div class="chat-preview-text">${escapeHtml(chat.preview || '—')}</div>
+          </div>
+        `).join('');
+
+        renderInboxThread(chats.find((chat) => chat.chatId === currentInboxChatId) || null);
+      }
+
+      function applyTheme(theme) {
+        document.body.classList.toggle('light', theme === 'light');
+        localStorage.setItem(themeKey, theme);
+        themeToggle.textContent = theme === 'light' ? '◑' : '◐';
+      }
+
+      function getSavedTheme() {
+        return localStorage.getItem(themeKey) || 'dark';
+      }
+
+      async function fetchJSON(url, options) {
+        const res = await fetch(url, options);
+        return res.json();
+      }
+
+      function showSaveToast(type, text) {
+        if (!saveToast || !saveToastText) return;
+        if (saveToastTimer) {
+          window.clearTimeout(saveToastTimer);
+          saveToastTimer = null;
+        }
+
+        saveToast.classList.remove('ok', 'error', 'visible');
+        saveToast.classList.add(type === 'error' ? 'error' : 'ok');
+        saveToastText.textContent = text;
+
+        window.requestAnimationFrame(() => {
+          saveToast.classList.add('visible');
+        });
+
+        saveToastTimer = window.setTimeout(() => {
+          saveToast.classList.remove('visible');
+        }, 1800);
+      }
+
+      function rememberButtonLabel(button) {
+        if (!button || saveButtonDefaults.has(button)) return;
+        saveButtonDefaults.set(button, button.textContent.trim());
+      }
+
+      function clearSaveButtonTimer(button) {
+        const timer = saveButtonTimers.get(button);
+        if (timer) {
+          window.clearTimeout(timer);
+          saveButtonTimers.delete(button);
+        }
+      }
+
+      function setSaveButtonState(button, state) {
+        if (!button) return;
+        rememberButtonLabel(button);
+        clearSaveButtonTimer(button);
+
+        const baseLabel = saveButtonDefaults.get(button) || 'Сохранить';
+        button.classList.remove('is-dirty', 'is-saving', 'is-saved', 'is-error');
+        button.disabled = false;
+        button.textContent = baseLabel;
+
+        if (state === 'dirty') {
+          button.classList.add('is-dirty');
+          return;
+        }
+
+        if (state === 'saving') {
+          button.classList.add('is-saving');
+          button.disabled = true;
+          return;
+        }
+
+        if (state === 'saved') {
+          button.classList.add('is-saved');
+          showSaveToast('ok', 'Сохранено');
+          saveButtonTimers.set(button, window.setTimeout(() => {
+            setSaveButtonState(button, 'idle');
+          }, 1800));
+          return;
+        }
+
+        if (state === 'error') {
+          button.classList.add('is-error');
+          showSaveToast('error', 'Ошибка сохранения');
+          saveButtonTimers.set(button, window.setTimeout(() => {
+            setSaveButtonState(button, 'dirty');
+          }, 2200));
+          return;
+        }
+      }
+
+      function bindDirtyState(button, fields) {
+        rememberButtonLabel(button);
+        setSaveButtonState(button, 'idle');
+        fields.forEach((field) => {
+          if (!field) return;
+          field.addEventListener('input', () => setSaveButtonState(button, 'dirty'));
+          field.addEventListener('change', () => setSaveButtonState(button, 'dirty'));
+        });
+      }
+
+      async function performSave(button, action) {
+        setSaveButtonState(button, 'saving');
+        try {
+          await action();
+          setSaveButtonState(button, 'saved');
+        } catch (error) {
+          setSaveButtonState(button, 'error');
+          throw error;
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+      }
+
+      function mapTone(value) {
+        const map = {
+          neutral: 'Нейтральный',
+          friendly: 'Дружелюбный',
+          sales: 'Продающий',
+          concise: 'Краткий',
+        };
+        return map[value] || value || '—';
+      }
+
+      function mapResponseLength(value) {
+        const map = {
+          short: 'Короткий',
+          medium: 'Средний',
+          long: 'Длинный',
+        };
+        return map[value] || value || '—';
+      }
+
+      function mapCreativity(value) {
+        const map = {
+          precise: 'Точный',
+          balanced: 'Сбалансированный',
+          creative: 'Креативный',
+        };
+        return map[value] || value || '—';
+      }
+
+      function mapPersonaStyle(value) {
+        const map = {
+          calm: 'Спокойный',
+          conversational: 'Разговорный',
+          reserved: 'Сдержанный',
+        };
+        return map[value] || value || '—';
+      }
+
+      function mapMediaBehavior(value) {
+        const map = {
+          describe_media: 'Описывать медиа',
+          answer_from_media: 'Отвечать по медиа',
+          text_first: 'Сначала текст',
+        };
+        return map[value] || value || '—';
+      }
+
+      function mapConversationMode(value) {
+        const map = {
+          general: 'Общий',
+          retail: 'Розница / товарный запрос',
+        };
+        return map[value] || value || '—';
+      }
+
+      function formatTraceText(item) {
+        if (item.event === 'AI_REQUEST') {
+          const parts = [];
+          if (item.instructionPreview) parts.push('Инструкция: ' + item.instructionPreview);
+          parts.push('Тон: ' + mapTone(item.tone));
+          parts.push('Длина ответа: ' + mapResponseLength(item.responseLength));
+          parts.push('Креативность: ' + mapCreativity(item.creativity));
+          parts.push('Персона: ' + mapPersonaStyle(item.personaStyle) + ', ' + (item.personaAge || '—') + ' лет');
+          parts.push('Режим интерпретации: ' + mapConversationMode(item.conversationMode));
+          parts.push('Работа с медиа: ' + mapMediaBehavior(item.mediaBehavior));
+          parts.push('Медиа во входе: ' + (item.hasMedia ? 'да' : 'нет'));
+          parts.push('Ссылка во входе: ' + (item.hasLinkInput ? 'да' : 'нет'));
+          if (typeof item.temperature === 'number') parts.push('Temperature: ' + item.temperature);
+          return parts.join('\n');
+        }
+
+        return item.text || item.replyText || item.error || item.message || '';
+      }
+
+      function normalizeStatusState(state) {
+        if (!state) return 'error';
+        const value = String(state).toLowerCase();
+        if (['ok', 'success', 'connected', 'available', 'active', 'ready'].includes(value)) return 'ok';
+        if (['warn', 'warning', 'pending', 'partial', 'degraded'].includes(value)) return 'warn';
+        return 'error';
+      }
+
+      function setChainStatus(node, label, state) {
+        const normalizedState = normalizeStatusState(state);
+        const stateClass = normalizedState === 'ok' ? ' ok' : normalizedState === 'warn' ? ' warn' : '';
+        node.className = 'status-inline' + stateClass;
+        node.innerHTML = '<span class="status-dot"></span><span>' + label + '</span>';
+      }
+
+      function setCompactStatus(node, text, state) {
+        const normalizedState = normalizeStatusState(state);
+        const stateClass = normalizedState === 'ok' ? ' ok' : normalizedState === 'warn' ? ' warn' : '';
+        node.className = 'compact-status' + stateClass;
+        node.innerHTML = '<span class="status-dot"></span><span>' + text + '</span>';
+      }
+
+      function syncProviderFields(data) {
+        const isCustom = !!data.base_url && data.base_url !== 'https://api.openai.com/v1';
+        providerType.value = isCustom ? 'custom' : 'openai';
+        customBaseUrlField.style.display = isCustom ? 'flex' : 'none';
+        aiBaseUrl.value = data.base_url || 'https://api.openai.com/v1';
+      }
+
+      function renderStatus(data) {
+        currentStatus = data;
+
+        setChainStatus(telegramStatus, 'Telegram', data.telegram_status || (data.telegram === 'подключен' ? 'ok' : 'error'));
+        setChainStatus(aiStatus, 'AI', data.ai_status || (data.ai === 'подключен' ? 'ok' : 'error'));
+        setChainStatus(saiStatus, 'Core', data.sai?.status || 'error');
+        setCompactStatus(telegramDetailStatus, data.telegram_label || (data.telegram === 'подключен' ? 'Подключено' : 'Ошибка'), data.telegram_status || (data.telegram === 'подключен' ? 'ok' : 'error'));
+        setCompactStatus(aiDetailStatus, data.ai_label || (data.ai === 'подключен' ? 'Подключено' : 'Ошибка'), data.ai_status || (data.ai === 'подключен' ? 'ok' : 'error'));
+        setCompactStatus(sttDetailStatus, data.stt_label || (data.stt === 'подключен' ? 'STT подключен' : 'STT не настроен'), data.stt_status || (data.stt === 'подключен' ? 'ok' : 'warning'));
+
+        instruction.value = data.instruction || '';
+        toneSelect.value = data.tone || 'neutral';
+        responseLengthSelect.value = data.response_length || 'medium';
+        creativitySelect.value = data.creativity || 'balanced';
+        personaStyleSelect.value = data.persona_style || 'calm';
+        personaAgeSelect.value = String(data.persona_age || '27');
+        conversationModeSelect.value = data.conversation_mode || 'general';
+        mediaBehaviorSelect.value = data.media_behavior || 'describe_media';
+        telegramToken.value = telegramToken.value || '';
+        webhookUrl.value = data.webhook_url || '';
+        syncProviderFields(data);
+        sttApiKey.value = data.stt_api_key || '';
+        sttBaseUrl.value = data.stt_base_url || 'https://api.openai.com/v1';
+        sttModel.value = data.stt_model || 'gpt-4o-mini-transcribe';
+
+        const webhookText = data.webhook?.url
+          ? ('URL: ' + data.webhook.url + (data.webhook.last_error_message ? '\nОшибка: ' + data.webhook.last_error_message : ''))
+          : (data.webhook_url ? 'Будет использован: ' + data.webhook_url : 'Webhook пока не задан.');
+        webhookInfo.className = 'status-output' + (data.webhook?.last_error_message ? '' : ' muted');
+        webhookInfo.textContent = webhookText;
+      }
+
+      async function loadStatus() {
+        try {
+          const data = await fetchJSON('/config/status');
+          renderStatus(data);
+          return data;
+        } catch (error) {
+          setChainStatus(telegramStatus, 'Telegram', 'error');
+          setChainStatus(saiStatus, 'Core', 'error');
+          setChainStatus(aiStatus, 'AI', 'error');
+          setCompactStatus(telegramDetailStatus, 'Ошибка', 'error');
+          setCompactStatus(aiDetailStatus, 'Ошибка', 'error');
+          setCompactStatus(sttDetailStatus, 'Ошибка', 'error');
+          webhookInfo.className = 'status-output';
+          webhookInfo.textContent = 'Не удалось загрузить статус webhook.';
+          return null;
+        }
+      }
+
+      async function loadModelsInto(selectNode) {
+        const data = await fetchJSON('/config/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ai_key: aiApiKey.value,
+            ai_url: providerType.value === 'custom' ? aiBaseUrl.value : 'https://api.openai.com/v1',
+          }),
+        });
+
+        selectNode.innerHTML = '';
+        const models = data.length ? data : [currentStatus?.model || 'gpt-4o-mini'];
+        models.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item;
+          option.textContent = item;
+          if (currentStatus?.model === item) option.selected = true;
+          selectNode.appendChild(option);
+        });
+      }
+
+      async function saveInstruction() {
+        await performSave(saveInstructionButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instruction: instruction.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveBehavior() {
+        await performSave(saveBehaviorButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tone: toneSelect.value,
+              response_length: responseLengthSelect.value,
+              creativity: creativitySelect.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveInputHandling() {
+        await performSave(saveInputHandlingButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversation_mode: conversationModeSelect.value,
+              media_behavior: mediaBehaviorSelect.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function savePersona() {
+        await performSave(savePersonaButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              persona_style: personaStyleSelect.value,
+              persona_age: personaAgeSelect.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveModel(selectNode) {
+        await performSave(saveIntegrationsModelButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: selectNode.value,
+            }),
+          });
+          await loadStatus();
+          await loadModelsInto(integrationsModelSelect);
+        });
+      }
+
+      async function runTest() {
+        testOutput.className = 'test-output muted';
+        testOutput.textContent = 'Отправка...';
+
+        const data = await fetchJSON('/config/test-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: testMessage.value,
+          }),
+        });
+
+        testOutput.className = 'test-output';
+        testOutput.textContent = data.ok ? data.reply : (data.error || 'AI не вернул ответ.');
+      }
+
+      async function saveTelegramConfig() {
+        await performSave(saveTelegramButton, async () => {
+          const data = await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              telegram_token: telegramToken.value,
+              webhook_url: webhookUrl.value,
+            }),
+          });
+          if (data.webhook?.description) {
+            webhookInfo.className = 'status-output' + (data.webhook.ok ? ' muted' : '');
+            webhookInfo.textContent = data.webhook.description;
+          }
+          await loadStatus();
+        });
+      }
+
+      async function deleteTelegramConfig() {
+        await fetchJSON('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            telegram_token: '',
+            webhook_url: '',
+          }),
+        });
+        telegramToken.value = '';
+        webhookUrl.value = '';
+        webhookInfo.className = 'status-output muted';
+        webhookInfo.textContent = 'Webhook пока не задан.';
+        await loadStatus();
+      }
+
+      async function checkTelegramConnection() {
+        const data = await loadStatus();
+        if (!data) return;
+        setCompactStatus(
+          telegramDetailStatus,
+          data.telegram_label || (data.telegram === 'подключен' ? 'Подключено' : 'Ошибка'),
+          data.telegram_status || (data.telegram === 'подключен' ? 'ok' : 'error')
+        );
+      }
+
+      async function saveAiProviderConfig() {
+        await performSave(saveAiProviderButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ai_key: aiApiKey.value,
+              ai_url: providerType.value === 'custom' ? aiBaseUrl.value : 'https://api.openai.com/v1',
+            }),
+          });
+          await loadStatus();
+          await loadModelsInto(integrationsModelSelect);
+        });
+      }
+
+      async function saveSttProviderConfig() {
+        await performSave(saveSttProviderButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stt_api_key: sttApiKey.value,
+              stt_base_url: sttBaseUrl.value,
+              stt_model: sttModel.value || 'gpt-4o-mini-transcribe',
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function deleteAiProviderConfig() {
+        await fetchJSON('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ai_key: '',
+            ai_url: '',
+          }),
+        });
+        aiApiKey.value = '';
+        aiBaseUrl.value = 'https://api.openai.com/v1';
+        providerType.value = 'openai';
+        customBaseUrlField.style.display = 'none';
+        await loadStatus();
+        await loadModelsInto(integrationsModelSelect);
+      }
+
+      async function deleteModelConfig() {
+        await fetchJSON('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: '',
+          }),
+        });
+        await loadStatus();
+        await loadModelsInto(integrationsModelSelect);
+      }
+
+      async function loadLogs() {
+        const params = new URLSearchParams();
+        if (logTypeFilter.value) params.set('type', logTypeFilter.value);
+        if (logUserFilter.value.trim()) params.set('userId', logUserFilter.value.trim());
+        if (logTraceFilter.value.trim()) params.set('traceId', logTraceFilter.value.trim());
+        params.set('limit', logLimitFilter.value || '100');
+
+        const data = await fetchJSON(`/logs?${params.toString()}`);
+        const items = Array.isArray(data.items) ? data.items : [];
+        const okCount = items.filter((item) => item.status === 'ok').length;
+        const processCount = items.filter((item) => item.status === 'process').length;
+        const errorCount = items.filter((item) => item.status === 'error' || item.event === 'ERROR').length;
+        logsOkCount.textContent = String(okCount);
+        logsProcessCount.textContent = String(processCount);
+        logsErrorCount.textContent = String(errorCount);
+
+        if (!items.length) {
+          logsOutput.innerHTML = '<div class="status-output muted">Логов пока нет.</div>';
+          traceOutput.className = 'status-output muted';
+          traceOutput.textContent = 'Выберите событие, чтобы увидеть полную цепочку по traceId.';
+          return;
+        }
+
+        const groups = buildTraceGroups(items);
+
+        logsOutput.innerHTML = groups.map((group) => {
+          const activeClass = currentTraceId && group.traceId === currentTraceId ? ' active' : '';
+          const chain = group.preview.map((event, index) => {
+            return `${index > 0 ? '<span class="trace-arrow">→</span>' : ''}<span class="trace-step">${escapeHtml(event)}</span>`;
+          }).join('');
+          const errorPreview = group.hasError ? `<div class="log-text" style="color: var(--danger);">⚠ ${escapeHtml(group.errorText || 'Ошибка в цепочке')}</div>` : '';
+          return `
+            <div class="trace-group ${escapeHtml(group.status)}${activeClass}" data-trace-id="${escapeHtml(group.traceId || '')}">
+              <div class="trace-group-head">
+                <div class="trace-group-main">
+                  <div class="trace-group-meta">
+                    <span>${escapeHtml(formatDateTimeLabel(group.lastTime))}</span>
+                    <span>${escapeHtml(group.traceId || '—')}</span>
+                    <span>${escapeHtml(String(group.userId || group.chatId || '—'))}</span>
+                    <span>${escapeHtml(group.messageType || 'system')}</span>
+                    <span>${group.duration ? `${escapeHtml(String(group.duration))}ms` : '—'}</span>
+                  </div>
+                  <div class="trace-group-chain">${chain}</div>
+                  ${errorPreview}
+                </div>
+                <div class="trace-actions">
+                  <span class="log-badge ${escapeHtml(group.status)}">${escapeHtml(group.status)}</span>
+                  <button class="mini-button" type="button" data-copy-trace="${escapeHtml(group.traceId || '')}">Copy</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        Array.from(logsOutput.querySelectorAll('.trace-group[data-trace-id]')).forEach((node) => {
+          node.addEventListener('click', () => {
+            const traceId = node.dataset.traceId;
+            if (!traceId) return;
+            loadTrace(traceId);
+          });
+        });
+
+        Array.from(logsOutput.querySelectorAll('[data-copy-trace]')).forEach((button) => {
+          button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const traceId = button.dataset.copyTrace;
+            if (!traceId) return;
+            try {
+              await navigator.clipboard.writeText(traceId);
+              button.textContent = 'Copied';
+              window.setTimeout(() => {
+                button.textContent = 'Copy';
+              }, 1200);
+            } catch {
+              button.textContent = 'Fail';
+              window.setTimeout(() => {
+                button.textContent = 'Copy';
+              }, 1200);
+            }
+          });
+        });
+
+        if (currentTraceId) {
+          await loadTrace(currentTraceId);
+        }
+      }
+
+      async function loadTrace(traceId) {
+        currentTraceId = traceId;
+        const data = await fetchJSON(`/logs/${encodeURIComponent(traceId)}`);
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        if (!items.length) {
+          traceOutput.className = 'status-output muted';
+          traceOutput.textContent = 'Для этого traceId событий не найдено.';
+          return;
+        }
+
+        traceOutput.className = 'status-output';
+        traceOutput.innerHTML = items.map((item) => {
+          const text = formatTraceText(item);
+          return `
+            <div class="trace-card ${escapeHtml(item.status || 'ok')}" style="margin-bottom:8px;">
+              <div class="trace-header">
+                <div class="trace-event">${escapeHtml(item.event)}</div>
+                <span class="log-badge ${escapeHtml(item.status || 'ok')}">${escapeHtml(item.status || 'ok')}</span>
+              </div>
+              <div class="trace-meta">
+                <span>${escapeHtml(formatDateTimeLabel(item.time))}</span>
+                <span>${escapeHtml(item.messageType || item.scope || 'system')}</span>
+                <span>${item.duration ? `${escapeHtml(String(item.duration))}ms` : '—'}</span>
+              </div>
+              <div class="log-text">${escapeHtml(text)}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      async function loadInbox() {
+        const data = await fetchJSON('/logs?limit=500');
+        const items = Array.isArray(data.items) ? data.items : [];
+        const chats = buildInboxChats(items);
+        renderInboxChats(chats);
+      }
+
+      function startLogsAutoRefresh() {
+        stopLogsAutoRefresh();
+        if (!logAutoRefresh.checked) return;
+        logsRefreshTimer = window.setInterval(() => {
+          if (views.logs.classList.contains('active')) {
+            loadLogs();
+          } else if (views.inbox.classList.contains('active')) {
+            loadInbox();
+          }
+        }, 4000);
+      }
+
+      function stopLogsAutoRefresh() {
+        if (logsRefreshTimer) {
+          window.clearInterval(logsRefreshTimer);
+          logsRefreshTimer = null;
+        }
+      }
+
+      async function clearLogs() {
+        await fetchJSON('/logs', { method: 'DELETE' });
+        currentTraceId = '';
+        await loadLogs();
+      }
+
+      async function logout() {
+        await fetch('/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+        });
+        window.location.replace('/login');
+      }
+
+      function switchView(view) {
+        Object.entries(views).forEach(([key, node]) => {
+          node.classList.toggle('active', key === view);
+        });
+
+        navItems.forEach((item) => {
+          item.classList.toggle('active', item.dataset.view === view);
+        });
+
+        if (view === 'integrations') {
+          stopLogsAutoRefresh();
+          headerTitle.textContent = 'Integrations';
+          headerSubtitle.textContent = 'Подключения, инфраструктура и проверка готовности цепочки.';
+        } else if (view === 'logs') {
+          headerTitle.textContent = 'Logs';
+          headerSubtitle.textContent = 'Поток webhook, AI и Telegram в реальном времени.';
+          loadLogs();
+          startLogsAutoRefresh();
+        } else if (view === 'inbox') {
+          headerTitle.textContent = 'Inbox';
+          headerSubtitle.textContent = 'Просмотр диалогов пользователей с AI как в мессенджере.';
+          loadInbox();
+          startLogsAutoRefresh();
+        } else {
+          stopLogsAutoRefresh();
+          headerTitle.textContent = 'AI Control';
+          headerSubtitle.textContent = 'Управление поведением AI через instruction без изменения магистрали.';
+        }
+      }
+
+      providerType.addEventListener('change', () => {
+        customBaseUrlField.style.display = providerType.value === 'custom' ? 'flex' : 'none';
+        if (providerType.value === 'openai') {
+          aiBaseUrl.value = 'https://api.openai.com/v1';
+        }
+      });
+
+      navItems.forEach((item) => {
+        item.addEventListener('click', () => switchView(item.dataset.view));
+      });
+
+      logoButton.addEventListener('click', () => switchView('ai-control'));
+
+      themeToggle.addEventListener('click', () => {
+        const nextTheme = document.body.classList.contains('light') ? 'dark' : 'light';
+        applyTheme(nextTheme);
+      });
+
+      bindDirtyState(saveInstructionButton, [instruction]);
+      bindDirtyState(saveBehaviorButton, [toneSelect, responseLengthSelect, creativitySelect]);
+      bindDirtyState(saveInputHandlingButton, [conversationModeSelect, mediaBehaviorSelect]);
+      bindDirtyState(savePersonaButton, [personaStyleSelect, personaAgeSelect]);
+      bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
+      bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
+      bindDirtyState(saveSttProviderButton, [sttBaseUrl, sttApiKey, sttModel]);
+      bindDirtyState(saveIntegrationsModelButton, [integrationsModelSelect]);
+
+      document.getElementById('saveInstruction').addEventListener('click', saveInstruction);
+      document.getElementById('saveBehavior').addEventListener('click', saveBehavior);
+      document.getElementById('saveInputHandling').addEventListener('click', saveInputHandling);
+      document.getElementById('savePersona').addEventListener('click', savePersona);
+      document.getElementById('runTest').addEventListener('click', runTest);
+      document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
+      document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);
+      document.getElementById('deleteTelegram').addEventListener('click', deleteTelegramConfig);
+      document.getElementById('saveAiProvider').addEventListener('click', saveAiProviderConfig);
+      document.getElementById('saveSttProvider').addEventListener('click', saveSttProviderConfig);
+      document.getElementById('deleteAiProvider').addEventListener('click', deleteAiProviderConfig);
+      document.getElementById('saveIntegrationsModel').addEventListener('click', () => saveModel(integrationsModelSelect));
+      document.getElementById('reloadIntegrationModels').addEventListener('click', () => loadModelsInto(integrationsModelSelect));
+      document.getElementById('deleteModel').addEventListener('click', deleteModelConfig);
+      refreshInboxButton.addEventListener('click', loadInbox);
+      document.getElementById('refreshLogs').addEventListener('click', loadLogs);
+      document.getElementById('clearLogs').addEventListener('click', clearLogs);
+      logAutoRefresh.addEventListener('change', startLogsAutoRefresh);
+      logTypeFilter.addEventListener('change', loadLogs);
+      logLimitFilter.addEventListener('change', loadLogs);
+      logUserFilter.addEventListener('change', loadLogs);
+      logTraceFilter.addEventListener('change', loadLogs);
+      logoutButton.addEventListener('click', logout);
+
+      inboxList.addEventListener('click', (event) => {
+        const chat = event.target.closest('[data-chat-id]');
+        if (!chat) return;
+        currentInboxChatId = chat.dataset.chatId || '';
+        loadInbox();
+      });
+
+      if (inboxResizeHandle && inboxWorkspace) {
+        inboxResizeHandle.addEventListener('mousedown', (event) => {
+          if (window.innerWidth <= 980) return;
+          isInboxResizing = true;
+          inboxResizeStartY = event.clientY;
+          inboxResizeStartHeight = inboxWorkspace.getBoundingClientRect().height;
+          document.body.style.userSelect = 'none';
+          event.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (event) => {
+          if (!isInboxResizing) return;
+          const nextHeight = Math.max(420, inboxResizeStartHeight + (event.clientY - inboxResizeStartY));
+          inboxWorkspace.style.height = `${nextHeight}px`;
+        });
+
+        window.addEventListener('mouseup', () => {
+          if (!isInboxResizing) return;
+          isInboxResizing = false;
+          document.body.style.userSelect = '';
+        });
+      }
+
+      if (instructionResizeHandle && instruction) {
+        instructionResizeHandle.addEventListener('mousedown', (event) => {
+          isInstructionResizing = true;
+          instructionResizeStartY = event.clientY;
+          instructionResizeStartHeight = instruction.getBoundingClientRect().height;
+          document.body.style.userSelect = 'none';
+          event.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (event) => {
+          if (!isInstructionResizing) return;
+          const nextHeight = Math.max(138, instructionResizeStartHeight + (event.clientY - instructionResizeStartY));
+          instruction.style.height = `${nextHeight}px`;
+        });
+
+        window.addEventListener('mouseup', () => {
+          if (!isInstructionResizing) return;
+          isInstructionResizing = false;
+          document.body.style.userSelect = '';
+        });
+      }
+
+      applyTheme(getSavedTheme());
+      updateMskClock();
+      window.setInterval(updateMskClock, 30000);
+      switchView('ai-control');
+      loadStatus().then(async () => {
+        await loadModelsInto(integrationsModelSelect);
+      });
+    </script>
+  </body>
+  </html>

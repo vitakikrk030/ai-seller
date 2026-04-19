@@ -1,116 +1,192 @@
-# AI Seller — Telegram CRM с AI-продавцом
+# S.AI
 
-Автоматический продавец в Telegram, который ведёт клиента от первого сообщения до оплаты.  
-Интеграция с каталогом магазина, распознавание фото товаров, CRM-панель для менеджера.
+S.AI is a minimal control layer between Telegram and AI:
 
-## Возможности
+`Telegram -> S.AI -> AI -> S.AI -> Telegram`
 
-- **AI-продавец** — генерирует живые ответы через OpenRouter (GPT-4o-mini)
-- **6-этапная воронка продаж** — NEW → WAITING_SIZE → WAITING_FORM → WAITING_PAYMENT → PAID → DONE
-- **4 режима AI** — AUTO, HYBRID, OBSERVE, AUTO_WITH_MANAGER_OVERRIDE
-- **Распознавание фото** — определяет товар по изображению через Vision API
-- **Soft Availability Mode** — AI никогда не говорит «нет в наличии», всегда предлагает альтернативы
-- **CRM-панель** — список диалогов, чат, карточка клиента, управление заказами
-- **Интеграция с каталогом** — fuzzy-поиск товаров, цены из API магазина
-- **Автоматические follow-up** — напоминания, реактивация, подталкивание к покупке
-- **Динамическая оплата** — реквизиты из настроек, inline-кнопка «Скопировать карту»
-- **Тёмная/светлая тема** — адаптивный интерфейс
+The system is intentionally simple:
+- Telegram webhook intake
+- unified input normalization
+- AI control layer
+- reply back to Telegram
+- trace logging
+- lightweight admin panel
 
-## Архитектура
+No queues, no database, no retry engine, no complex orchestration.
 
-```
-backend/          Node.js + Express (порт 3001)
-├── src/
-│   ├── ai/         OpenRouter AI, валидатор, offtopic, vision
-│   ├── api/        REST маршруты, JWT-авторизация
-│   ├── db/         PostgreSQL: users, messages, orders, settings
-│   ├── logic/      Стейт-машина продаж
-│   ├── scheduler/  Cron: follow-up, nudge, manager timeout
-│   ├── telegram/   Webhook, bot API, handler
-│   └── shop.js     Клиент каталога магазина
+## What is included
 
-frontend/         Next.js 14 (порт 3000)
-├── app/            Страницы (login, main)
-├── components/     ChatView, SettingsView, IntegrationsView
-└── lib/            API-клиент, AuthContext, ThemeContext
-```
+- Telegram webhook: `POST /api/telegram/webhook`
+- Admin auth: `/login`
+- Control panel:
+  - `AI Control`
+  - `Integrations`
+  - `Logs`
+- Runtime config persistence in `data/runtime-config.json`
+- Trace logs in `logs/runtime.jsonl`
+- Voice and video note support through STT -> text normalization
 
-## Быстрый старт
+## Requirements
 
-### 1. Требования
+- Node.js 20+ recommended
+- Public HTTPS domain for Telegram webhook
+- Telegram bot token
+- AI API key
 
-- Node.js 18+
-- PostgreSQL 14+
-- Telegram Bot Token ([@BotFather](https://t.me/BotFather))
-- OpenRouter API Key ([openrouter.ai](https://openrouter.ai))
+## Environment
 
-### 2. Установка
+Copy the example file and fill in real values:
 
 ```bash
-# Клонировать
-git clone <repo-url>
-cd ai-seller
-
-# Backend
-cd backend
 cp .env.example .env
-# Заполнить .env своими данными
-npm install
-npm run migrate
-npm start
-
-# Frontend (в отдельном терминале)
-cd frontend
-npm install
-npm run dev
 ```
 
-### 3. Настройка
+Main variables:
 
-1. Открыть `http://localhost:3000`
-2. Войти с логином/паролем из `.env` (по умолчанию: `admin` / `admin123`)
-3. Перейти в **Интеграции** → настроить Telegram Bot Token, OpenRouter API Key
-4. Установить Webhook URL → нажать «Проверить»
+```env
+HOST=0.0.0.0
+PORT=3001
+NODE_ENV=production
+TRUST_PROXY=true
 
-### 4. Production
+TELEGRAM_TOKEN=
+AI_API_KEY=
+AI_BASE_URL=https://api.openai.com/v1
+MODEL=gpt-4o-mini
+STT_API_KEY=
+STT_BASE_URL=https://api.openai.com/v1
+STT_MODEL=gpt-4o-mini-transcribe
+
+ADMIN_LOGIN=
+ADMIN_PASSWORD=
+```
+
+Optional control defaults:
+
+```env
+INSTRUCTION=
+TONE=neutral
+RESPONSE_LENGTH=medium
+CREATIVITY=balanced
+PERSONA_STYLE=calm
+PERSONA_AGE=27
+CONVERSATION_MODE=general
+MEDIA_BEHAVIOR=describe_media
+WEBHOOK_URL=
+LOG_LEVEL=info
+```
+
+## Local start
 
 ```bash
-# Backend
-cd backend
-npm run start:prod
-
-# Frontend
-cd frontend
-npm run build
+npm install
+npm run check
 npm start
 ```
 
-**Важно:** В production обязательно измените `ADMIN_PASSWORD` и `JWT_SECRET` в `.env`.
+Open:
 
-## Тесты
+- Login: `http://localhost:3001/login`
+- Health: `http://localhost:3001/health`
+
+## Production start
+
+1. Install dependencies:
 
 ```bash
-cd backend
-npm test
-# 376 assertions, 48 test suites
+npm install --omit=dev
 ```
 
-## API
+2. Create `.env` from `.env.example`
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| POST | `/api/login` | JWT-авторизация |
-| GET | `/api/users` | Список пользователей |
-| GET | `/api/users/:id/messages` | История сообщений |
-| POST | `/api/users/:id/messages` | Отправить сообщение от менеджера |
-| PATCH | `/api/users/:id/ai` | Вкл/выкл AI для пользователя |
-| PATCH | `/api/users/:id/ai-mode` | Режим AI (AUTO/HYBRID/OBSERVE/...) |
-| GET | `/api/orders` | Список заказов |
-| PATCH | `/api/orders/:id/status` | Обновить статус заказа |
-| GET/POST | `/api/settings` | Настройки системы |
-| GET/POST | `/api/prompts` | Управление промптами |
-| POST | `/api/telegram/webhook` | Telegram webhook |
+3. Start the service with PM2:
 
-## Лицензия
+```bash
+npm install -g pm2
+pm2 start ecosystem.config.cjs
+pm2 save
+```
 
-MIT
+4. Put the app behind HTTPS reverse proxy.
+
+Example Nginx location:
+
+```nginx
+location / {
+  proxy_pass http://127.0.0.1:3001;
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+5. In `Integrations -> Telegram`, set:
+- bot token
+- webhook domain or full webhook URL
+
+S.AI will normalize it to:
+
+```text
+https://your-domain.com/api/telegram/webhook
+```
+
+## Health check
+
+Public endpoint:
+
+```text
+GET /health
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "service": "s.ai",
+  "uptime": 42,
+  "webhook_open": true
+}
+```
+
+## Important runtime files
+
+- Config persistence: `data/runtime-config.json`
+- Trace logs: `logs/runtime.jsonl`
+
+These files are runtime state and should not be committed with production secrets.
+
+## Deployment notes
+
+- Keep `TRUST_PROXY=true` if you run behind Nginx, Caddy, Traefik, Render, Railway or similar proxy
+- Keep `NODE_ENV=production` in production
+- Make sure the public domain has valid HTTPS
+- Telegram webhook is intentionally open and does not require admin auth
+- The admin panel remains protected by login/password
+- Voice and video note STT can use a separate backend via `STT_API_KEY` and `STT_BASE_URL`
+
+## First live check
+
+After deploy, verify:
+
+1. `GET /health` returns `ok: true`
+2. `/login` opens
+3. `/config/status` works after login
+4. Telegram webhook is set
+5. One text message reaches:
+   - `IN`
+   - `AI_REQUEST`
+   - `AI_REPLY`
+   - `TG_SEND`
+6. One photo and one voice message also pass through end-to-end
+
+## Useful PM2 commands
+
+```bash
+pm2 status
+pm2 logs sai
+pm2 restart sai
+pm2 stop sai
+```

@@ -3,6 +3,9 @@ node_modules/
 
 # Environment
 .env
+.env.*
+!.env.example
+.env.example.local
 .env.local
 
 # Next.js
@@ -15,6 +18,10 @@ dist/
 # Logs
 logs/
 *.log
+
+# Runtime data
+data/runtime-config.json
+data/*.corrupt-*
 
 # OS
 .DS_Store
