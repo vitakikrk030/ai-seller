@@ -32,6 +32,12 @@ const HUMAN_TYPING_MIN_CPS = 9;
 const HUMAN_TYPING_MAX_CPS = 14;
 const HUMAN_TYPING_MIN_DELAY_MS = 2500;
 const HUMAN_TYPING_MAX_DELAY_MS = 14000;
+const MEMORY_RECENT_LIMIT = 10;
+const MEMORY_MESSAGES_TTL_DAYS = 7;
+const MEMORY_FACTS_TTL_DAYS = 90;
+const MEMORY_STATE_TTL_DAYS = 14;
+const MEMORY_MAX_MESSAGES = 5000;
+const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -58,6 +64,7 @@ const logDir = path.join(__dirname, 'logs');
 const LOG_FILE_PATH = path.join(logDir, 'runtime.jsonl');
 const dataDir = path.join(__dirname, 'data');
 const CONFIG_FILE_PATH = path.join(dataDir, 'runtime-config.json');
+const MEMORY_FILE_PATH = path.join(dataDir, 'memory.json');
 fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
@@ -227,6 +234,294 @@ function filterLogs(items, query = {}) {
     .filter((item) => !userId || String(item.userId || '') === userId)
     .slice(0, limit);
 }
+
+function createEmptyMemoryStore() {
+  return {
+    version: 1,
+    messages: [],
+    facts: {},
+    states: {},
+  };
+}
+
+function readMemoryStore() {
+  if (!fs.existsSync(MEMORY_FILE_PATH)) return createEmptyMemoryStore();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(MEMORY_FILE_PATH, 'utf8'));
+    return {
+      ...createEmptyMemoryStore(),
+      ...parsed,
+      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+      facts: parsed.facts && typeof parsed.facts === 'object' ? parsed.facts : {},
+      states: parsed.states && typeof parsed.states === 'object' ? parsed.states : {},
+    };
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'memory.read',
+      status: 'error',
+      error: error.message,
+    });
+    return createEmptyMemoryStore();
+  }
+}
+
+let memoryStore = readMemoryStore();
+
+function saveMemoryStore() {
+  const tempPath = `${MEMORY_FILE_PATH}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(memoryStore, null, 2));
+  fs.renameSync(tempPath, MEMORY_FILE_PATH);
+}
+
+function getMemoryCutoff(days) {
+  return Date.now() - days * 24 * 60 * 60 * 1000;
+}
+
+function cleanupMemoryStore() {
+  const messagesCutoff = getMemoryCutoff(MEMORY_MESSAGES_TTL_DAYS);
+  const factsCutoff = getMemoryCutoff(MEMORY_FACTS_TTL_DAYS);
+  const stateCutoff = getMemoryCutoff(MEMORY_STATE_TTL_DAYS);
+
+  memoryStore.messages = memoryStore.messages
+    .filter((message) => new Date(message.createdAt).getTime() >= messagesCutoff)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .slice(-MEMORY_MAX_MESSAGES);
+
+  Object.entries(memoryStore.facts).forEach(([chatId, facts]) => {
+    Object.entries(facts || {}).forEach(([key, fact]) => {
+      if (new Date(fact.updatedAt || 0).getTime() < factsCutoff) {
+        delete facts[key];
+      }
+    });
+    if (!Object.keys(facts || {}).length) delete memoryStore.facts[chatId];
+  });
+
+  Object.entries(memoryStore.states).forEach(([chatId, state]) => {
+    if (new Date(state.updatedAt || 0).getTime() < stateCutoff) {
+      delete memoryStore.states[chatId];
+    }
+  });
+}
+
+function persistMemoryStore() {
+  try {
+    cleanupMemoryStore();
+    saveMemoryStore();
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'memory.write',
+      status: 'error',
+      error: error.message,
+    });
+  }
+}
+
+function normalizeMemoryText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+}
+
+function getMemoryChatId(inputOrChatId) {
+  const raw = typeof inputOrChatId === 'object'
+    ? inputOrChatId.chatId || inputOrChatId.userId
+    : inputOrChatId;
+  return String(raw || '').trim();
+}
+
+function getMemoryMessageText(input) {
+  const text = normalizeMemoryText(input.text);
+  if (text) return text;
+  if (input.messageType === 'photo') return '[photo] Клиент прислал фото товара.';
+  if (input.messageType === 'video_note') return '[video_note] Клиент прислал video note.';
+  if (input.messageType === 'voice') return '[voice] Клиент прислал голосовое сообщение.';
+  if (input.hasMedia) return `[${input.messageType || 'media'}] Клиент прислал медиа.`;
+  return '';
+}
+
+function appendMemoryMessage(input, role, text) {
+  const chatId = getMemoryChatId(input);
+  const cleanText = normalizeMemoryText(text);
+  if (!chatId || !cleanText) return;
+
+  const telegramMessageId = role === 'user' ? String(input.messageId || '') : '';
+  const duplicate = memoryStore.messages.some((message) => (
+    message.chatId === chatId
+    && message.role === role
+    && telegramMessageId
+    && message.telegramMessageId === telegramMessageId
+  ));
+  if (duplicate) return;
+
+  memoryStore.messages.push({
+    id: crypto.randomUUID(),
+    chatId,
+    userId: String(input.userId || chatId),
+    role,
+    type: input.messageType || 'text',
+    text: cleanText,
+    telegramMessageId,
+    traceId: input.traceId || '',
+    createdAt: new Date().toISOString(),
+  });
+  persistMemoryStore();
+}
+
+function upsertMemoryFact(chatId, key, value, source) {
+  const cleanChatId = getMemoryChatId(chatId);
+  const cleanValue = normalizeMemoryText(value);
+  if (!cleanChatId || !key || !cleanValue) return;
+
+  if (!memoryStore.facts[cleanChatId]) memoryStore.facts[cleanChatId] = {};
+  memoryStore.facts[cleanChatId][key] = {
+    value: cleanValue,
+    confidence: 'explicit',
+    source: normalizeMemoryText(source).slice(0, 240),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function setConversationStage(chatId, stage, source) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId || !stage) return;
+  memoryStore.states[cleanChatId] = {
+    stage,
+    source: normalizeMemoryText(source).slice(0, 240),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function extractPhone(text) {
+  const match = String(text || '').match(/(?:\+?\d[\s().-]*){10,16}/);
+  return match ? match[0].replace(/[^\d+]/g, '') : '';
+}
+
+function extractShoeSize(text) {
+  const source = String(text || '');
+  const patterns = [
+    /(?:у\s+меня|мой\s+размер|мои?\s+размер|ношу|размер\s+у\s+меня)\s*(?:размер\s*)?(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?/i,
+    /(\d{2}(?:[.,]5)?)\s*(?:размер|р-р)\s*(?:у\s+меня|мой|мои|ношу)?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) return match[1].replace(',', '.');
+  }
+  return '';
+}
+
+function extractCity(text) {
+  const match = String(text || '').match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
+  return match ? match[1].trim() : '';
+}
+
+function inferConversationStage(input) {
+  const text = String(input.text || '').toLowerCase();
+  if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат)/i.test(text)) return 'waiting_payment';
+  if (/(беру|оформляем|оформить|куда платить|реквизит|оплатить|заказываю)/i.test(text)) return 'ready_to_buy';
+  if (/(фио|адрес|телефон|\+?\d[\s().-]*\d[\s().-]*\d[\s().-]*\d[\s().-]*\d)/i.test(text)) return 'collecting_order_info';
+  if (/(размер|сколько стоит|цена|налич|есть\s+\d{2}|какие есть|доставка)/i.test(text)) return 'choosing';
+  if (input.hasMedia || input.hasLinkInput || ['photo', 'document', 'video', 'video_note'].includes(input.messageType)) return 'interested';
+  return '';
+}
+
+function updateCustomerMemoryFromInput(input) {
+  const chatId = getMemoryChatId(input);
+  const source = input.text || getMemoryMessageText(input);
+  if (!chatId) return;
+
+  const phone = extractPhone(input.text);
+  if (phone) upsertMemoryFact(chatId, 'phone', phone, source);
+
+  const shoeSize = extractShoeSize(input.text);
+  if (shoeSize) upsertMemoryFact(chatId, 'shoeSize', shoeSize, source);
+
+  const city = extractCity(input.text);
+  if (city) upsertMemoryFact(chatId, 'city', city, source);
+
+  if (input.hasMedia || input.hasLinkInput) {
+    upsertMemoryFact(chatId, 'interest', getMemoryMessageText(input), source);
+  }
+
+  const stage = inferConversationStage(input);
+  if (stage) setConversationStage(chatId, stage, source);
+
+  persistMemoryStore();
+}
+
+function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return [];
+  return memoryStore.messages
+    .filter((message) => message.chatId === cleanChatId)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .slice(-limit);
+}
+
+function formatMemoryFacts(facts = {}) {
+  const labels = {
+    name: 'Name',
+    phone: 'Phone',
+    city: 'City',
+    address: 'Delivery address',
+    shoeSize: 'Shoe size',
+    interest: 'Interest',
+    lastProduct: 'Last product',
+  };
+  return Object.entries(labels)
+    .filter(([key]) => facts[key]?.value)
+    .map(([key, label]) => `${label}: ${facts[key].value}`);
+}
+
+function buildMemoryContext(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
+
+  const facts = memoryStore.facts[cleanChatId] || {};
+  const state = memoryStore.states[cleanChatId] || null;
+  const factLines = formatMemoryFacts(facts);
+  if (state?.stage) factLines.push(`Stage: ${state.stage}`);
+
+  const summary = factLines.length
+    ? [
+      'Client memory:',
+      ...factLines.map((line) => `- ${line}`),
+      'Use this only when relevant. Do not mention internal memory directly. Do not invent missing facts.',
+    ].join('\n')
+    : '';
+
+  let usedChars = 0;
+  const history = [];
+  getRecentMemoryMessages(cleanChatId).reverse().forEach((message) => {
+    const text = normalizeMemoryText(message.text);
+    if (!text || usedChars + text.length > MEMORY_HISTORY_CHAR_LIMIT) return;
+    usedChars += text.length;
+    history.push({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: text,
+      createdAt: message.createdAt,
+      type: message.type,
+    });
+  });
+
+  return {
+    summary,
+    history: history.reverse(),
+    facts,
+    state,
+  };
+}
+
+function clearMemoryForChat(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return false;
+  memoryStore.messages = memoryStore.messages.filter((message) => message.chatId !== cleanChatId);
+  delete memoryStore.facts[cleanChatId];
+  delete memoryStore.states[cleanChatId];
+  persistMemoryStore();
+  return true;
+}
+
+cleanupMemoryStore();
+persistMemoryStore();
+setInterval(() => persistMemoryStore(), 24 * 60 * 60 * 1000).unref();
 
 function parseCookies(cookieHeader) {
   return String(cookieHeader || '')
@@ -1289,14 +1584,31 @@ function buildAiMessages(input) {
     });
   });
 
-  const messages = [{ role: 'user', content }];
+  const messages = [];
   const systemPrompt = buildSystemPrompt(input.config);
   if (systemPrompt.trim()) {
-    messages.unshift({
+    messages.push({
       role: 'system',
       content: systemPrompt,
     });
   }
+
+  if (input.memoryContext?.summary) {
+    messages.push({
+      role: 'system',
+      content: input.memoryContext.summary,
+    });
+  }
+
+  (input.memoryContext?.history || []).forEach((message) => {
+    if (!message.content) return;
+    messages.push({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content,
+    });
+  });
+
+  messages.push({ role: 'user', content });
 
   return messages;
 }
@@ -1357,6 +1669,9 @@ async function requestAi(input) {
       hasLinkInput: !!input.hasLinkInput,
       text: input.text,
       instructionPreview: truncateLogText(input.config.instruction || ''),
+      memoryHistory: input.memoryContext?.history?.length || 0,
+      memoryStage: input.memoryContext?.state?.stage || '',
+      memoryFacts: Object.keys(input.memoryContext?.facts || {}),
     tone: input.config.tone,
     responseLength: input.config.response_length,
     creativity: input.config.creativity,
@@ -1766,6 +2081,23 @@ app.get('/logs/:traceId', (req, res) => {
   });
 });
 
+app.get('/memory/:chatId', (req, res) => {
+  const chatId = String(req.params.chatId || '').trim();
+  const context = buildMemoryContext(chatId);
+  res.json({
+    chatId,
+    facts: context.facts || {},
+    state: context.state || null,
+    recentMessages: getRecentMemoryMessages(chatId),
+  });
+});
+
+app.delete('/memory/:chatId', (req, res) => {
+  const chatId = String(req.params.chatId || '').trim();
+  const ok = clearMemoryForChat(chatId);
+  res.json({ ok });
+});
+
 app.delete('/logs', (req, res) => {
   runtimeLogs.length = 0;
   fs.writeFileSync(LOG_FILE_PATH, '');
@@ -2008,6 +2340,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
         hasLinkInput: !!input.hasLinkInput,
         status: 'ok',
       });
+
+      const memoryText = getMemoryMessageText(input);
+      updateCustomerMemoryFromInput(input);
+      input.memoryContext = buildMemoryContext(input.chatId);
+      appendMemoryMessage(input, 'user', memoryText);
+
       logMessageDelivered(input);
       await waitAndMarkMessageRead(config, input);
 
@@ -2015,6 +2353,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       try {
         const reply = await requestAi(input);
         if (typeof reply === 'string') {
+          appendMemoryMessage(input, 'assistant', reply);
           await sendHumanizedTelegramReply(config, input, reply);
         }
       } finally {

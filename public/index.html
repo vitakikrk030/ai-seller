@@ -1362,6 +1362,17 @@
         gap: 10px;
       }
 
+      .chat-header-main.memory-header {
+        padding-top: 4px;
+      }
+
+      .chat-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
       .chat-identity {
         display: grid;
         gap: 2px;
@@ -2149,6 +2160,7 @@
       let currentTraceId = '';
       let currentInboxChatId = '';
       let currentInboxDetailsOpen = false;
+      let currentInboxMemoryOpen = true;
       let isInstructionResizing = false;
       let instructionResizeStartY = 0;
       let instructionResizeStartHeight = 0;
@@ -2310,6 +2322,49 @@
           .sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
       }
 
+      function getMemoryValue(memory, key) {
+        return memory?.facts?.[key]?.value || '—';
+      }
+
+      function renderMemoryDetails(chat) {
+        const memory = chat.memory || {};
+        const stage = memory.state?.stage || '—';
+        const updatedAt = memory.state?.updatedAt || Object.values(memory.facts || {})
+          .map((fact) => fact.updatedAt)
+          .filter(Boolean)
+          .sort()
+          .pop() || '';
+
+        return `
+          <div class="chat-details${currentInboxMemoryOpen ? ' visible' : ''}">
+            <div class="chat-detail">
+              <div class="chat-detail-label">Размер</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'shoeSize'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Интерес</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'interest'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Stage</div>
+              <div class="chat-detail-value">${escapeHtml(stage)}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Телефон</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'phone'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Город</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'city'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Обновлено</div>
+              <div class="chat-detail-value">${escapeHtml(updatedAt ? formatDateTimeLabel(updatedAt) : '—')}</div>
+            </div>
+          </div>
+        `;
+      }
+
       function renderInboxThread(chat) {
         if (!chat) {
           inboxThread.className = 'status-output muted';
@@ -2355,6 +2410,19 @@
                 <div class="chat-detail-value">${escapeHtml(chat.phoneNumber || '—')}</div>
               </div>
             </div>
+            <div class="chat-header-main memory-header">
+              <div class="chat-identity">
+                <div class="chat-name">Память клиента</div>
+                <div class="chat-submeta">
+                  <span>Short context + явные факты</span>
+                </div>
+              </div>
+              <div class="chat-actions">
+                <button class="chat-details-toggle" type="button" data-memory-clear>Очистить</button>
+                <button class="chat-details-toggle" type="button" data-memory-toggle>${currentInboxMemoryOpen ? 'Скрыть' : 'Показать'}</button>
+              </div>
+            </div>
+            ${renderMemoryDetails(chat)}
           </div>
           <div class="chat-thread">
             ${chat.messages.map((message) => `
@@ -2372,6 +2440,22 @@
           toggle.addEventListener('click', () => {
             currentInboxDetailsOpen = !currentInboxDetailsOpen;
             renderInboxThread(chat);
+          });
+        }
+
+        const memoryToggle = inboxThread.querySelector('[data-memory-toggle]');
+        if (memoryToggle) {
+          memoryToggle.addEventListener('click', () => {
+            currentInboxMemoryOpen = !currentInboxMemoryOpen;
+            renderInboxThread(chat);
+          });
+        }
+
+        const memoryClear = inboxThread.querySelector('[data-memory-clear]');
+        if (memoryClear) {
+          memoryClear.addEventListener('click', async () => {
+            await fetchJSON(`/memory/${encodeURIComponent(chat.chatId)}`, { method: 'DELETE' });
+            await loadInbox();
           });
         }
       }
@@ -3028,6 +3112,13 @@
         const data = await fetchJSON('/logs?limit=500');
         const items = Array.isArray(data.items) ? data.items : [];
         const chats = buildInboxChats(items);
+        if (chats.length && (!currentInboxChatId || !chats.some((chat) => chat.chatId === currentInboxChatId))) {
+          currentInboxChatId = chats[0].chatId;
+        }
+        const activeChat = chats.find((chat) => chat.chatId === currentInboxChatId);
+        if (activeChat) {
+          activeChat.memory = await fetchJSON(`/memory/${encodeURIComponent(activeChat.chatId)}`);
+        }
         renderInboxChats(chats);
       }
 
