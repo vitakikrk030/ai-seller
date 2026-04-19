@@ -25,8 +25,8 @@ const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
 const TYPING_REFRESH_MS = 4500;
-const READ_DELAY_MIN_MS = 500;
-const READ_DELAY_MAX_MS = 2000;
+const READ_DELAY_MIN_MS = 2000;
+const READ_DELAY_MAX_MS = 5000;
 const LONG_REPLY_PART_LIMIT = 700;
 const HUMAN_TYPING_MIN_CPS = 9;
 const HUMAN_TYPING_MAX_CPS = 14;
@@ -824,7 +824,7 @@ async function markTelegramBusinessMessageRead(config, context) {
   }
 }
 
-function scheduleReadReceipt(config, context) {
+function logMessageDelivered(context) {
   logEvent('MESSAGE_STATUS', {
     traceId: context.traceId,
     userId: context.userId,
@@ -836,22 +836,23 @@ function scheduleReadReceipt(config, context) {
     messageStatus: 'delivered',
     status: 'ok',
   });
+}
 
-  setTimeout(async () => {
-    const telegramRead = await markTelegramBusinessMessageRead(config, context);
-    logEvent('MESSAGE_STATUS', {
-      traceId: context.traceId,
-      userId: context.userId,
-      chatId: context.chatId,
-      updateType: context.updateType || '',
-      businessConnectionId: context.businessConnectionId || '',
-      messageId: context.messageId || '',
-      messageType: context.messageType,
-      messageStatus: 'read',
-      telegramRead,
-      status: 'ok',
-    });
-  }, randomBetween(READ_DELAY_MIN_MS, READ_DELAY_MAX_MS));
+async function waitAndMarkMessageRead(config, context) {
+  await wait(randomBetween(READ_DELAY_MIN_MS, READ_DELAY_MAX_MS));
+  const telegramRead = await markTelegramBusinessMessageRead(config, context);
+  logEvent('MESSAGE_STATUS', {
+    traceId: context.traceId,
+    userId: context.userId,
+    chatId: context.chatId,
+    updateType: context.updateType || '',
+    businessConnectionId: context.businessConnectionId || '',
+    messageId: context.messageId || '',
+    messageType: context.messageType,
+    messageStatus: 'read',
+    telegramRead,
+    status: 'ok',
+  });
 }
 
 async function waitForSlot(type, chatId, messageType, getActiveCount, limit, timeoutMs) {
@@ -2007,7 +2008,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
         hasLinkInput: !!input.hasLinkInput,
         status: 'ok',
       });
-      scheduleReadReceipt(config, input);
+      logMessageDelivered(input);
+      await waitAndMarkMessageRead(config, input);
 
       const stopTyping = startTypingLoop(config, input);
       try {
