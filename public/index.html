@@ -1925,10 +1925,13 @@
                     </div>
                     <div class="field">
                       <label class="field-label" for="sttModel">STT Model</label>
-                      <input id="sttModel" placeholder="gpt-4o-mini-transcribe" />
+                      <select id="sttModel">
+                        <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                      </select>
                     </div>
                     <div class="actions">
                       <button id="saveSttProvider" class="button-primary" type="button">Сохранить STT</button>
+                      <button id="reloadSttModels" class="button-secondary" type="button">Загрузить модели</button>
                     </div>
                     <div style="margin-top: 18px;">
                       <div id="sttDetailStatus" class="compact-status"><span class="status-dot"></span><span>Не подключено</span></div>
@@ -2691,6 +2694,28 @@
         });
       }
 
+      async function loadSttModelsInto(selectNode) {
+        const data = await fetchJSON('/config/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ai_key: sttApiKey.value,
+            ai_url: sttBaseUrl.value,
+          }),
+        });
+
+        const currentModel = sttModel.value || currentStatus?.stt_model || 'gpt-4o-mini-transcribe';
+        selectNode.innerHTML = '';
+        const models = data.length ? data : [currentModel];
+        models.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item;
+          option.textContent = item;
+          if (currentModel === item) option.selected = true;
+          selectNode.appendChild(option);
+        });
+      }
+
       async function saveInstruction() {
         await performSave(saveInstructionButton, async () => {
           await fetchJSON('/config', {
@@ -2848,6 +2873,7 @@
             }),
           });
           await loadStatus();
+          await loadSttModelsInto(sttModel);
         });
       }
 
@@ -3106,6 +3132,7 @@
       document.getElementById('deleteTelegram').addEventListener('click', deleteTelegramConfig);
       document.getElementById('saveAiProvider').addEventListener('click', saveAiProviderConfig);
       document.getElementById('saveSttProvider').addEventListener('click', saveSttProviderConfig);
+      document.getElementById('reloadSttModels').addEventListener('click', () => loadSttModelsInto(sttModel));
       document.getElementById('deleteAiProvider').addEventListener('click', deleteAiProviderConfig);
       document.getElementById('saveIntegrationsModel').addEventListener('click', () => saveModel(integrationsModelSelect));
       document.getElementById('reloadIntegrationModels').addEventListener('click', () => loadModelsInto(integrationsModelSelect));
@@ -3178,6 +3205,7 @@
       switchView('ai-control');
       loadStatus().then(async () => {
         await loadModelsInto(integrationsModelSelect);
+        await loadSttModelsInto(sttModel);
       });
     </script>
   </body>
