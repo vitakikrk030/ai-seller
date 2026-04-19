@@ -28,6 +28,10 @@ const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 500;
 const READ_DELAY_MAX_MS = 2000;
 const LONG_REPLY_PART_LIMIT = 700;
+const HUMAN_TYPING_MIN_CPS = 9;
+const HUMAN_TYPING_MAX_CPS = 14;
+const HUMAN_TYPING_MIN_DELAY_MS = 2500;
+const HUMAN_TYPING_MAX_DELAY_MS = 14000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -607,6 +611,7 @@ function getTelegramMessageContext(update) {
       message: update.business_message,
       updateType: 'business_message',
       businessConnectionId: update.business_message.business_connection_id || '',
+      messageId: update.business_message.message_id || '',
     };
   }
 
@@ -615,6 +620,7 @@ function getTelegramMessageContext(update) {
       message: update.edited_business_message,
       updateType: 'edited_business_message',
       businessConnectionId: update.edited_business_message.business_connection_id || '',
+      messageId: update.edited_business_message.message_id || '',
     };
   }
 
@@ -623,6 +629,7 @@ function getTelegramMessageContext(update) {
       message: update.message,
       updateType: 'message',
       businessConnectionId: '',
+      messageId: update.message.message_id || '',
     };
   }
 
@@ -631,6 +638,7 @@ function getTelegramMessageContext(update) {
       message: update.edited_message,
       updateType: 'edited_message',
       businessConnectionId: '',
+      messageId: update.edited_message.message_id || '',
     };
   }
 
@@ -717,12 +725,17 @@ function randomBetween(min, max) {
 
 function getHumanTypingDelayMs(text) {
   const length = String(text || '').length;
-  const base = length <= 100
-    ? 1000
+  const cps = randomBetween(HUMAN_TYPING_MIN_CPS, HUMAN_TYPING_MAX_CPS);
+  const typingTime = Math.round((length / cps) * 1000);
+  const thinkingTime = length <= 100
+    ? randomBetween(500, 1200)
     : length <= 300
-      ? randomBetween(2000, 3000)
-      : randomBetween(3000, 5000);
-  return base + randomBetween(500, 1500);
+      ? randomBetween(900, 2200)
+      : randomBetween(1400, 3000);
+  return Math.min(
+    HUMAN_TYPING_MAX_DELAY_MS,
+    Math.max(HUMAN_TYPING_MIN_DELAY_MS, typingTime + thinkingTime + randomBetween(500, 1500)),
+  );
 }
 
 function splitReplyForTelegram(reply) {
@@ -768,27 +781,74 @@ function splitReplyForTelegram(reply) {
   return parts.filter(Boolean);
 }
 
-function scheduleReadReceipt(context) {
+async function markTelegramBusinessMessageRead(config, context) {
+  if (!config.telegram_token || !context.businessConnectionId || !context.messageId) {
+    return false;
+  }
+
+  const payload = {
+    business_connection_id: context.businessConnectionId,
+    chat_id: context.chatId,
+    message_id: context.messageId,
+  };
+
+  try {
+    await httpClient.post(getTelegramApiUrl(config, 'readBusinessMessage'), payload, {
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    logEvent('TG_READ', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
+      messageId: context.messageId,
+      messageType: context.messageType,
+      status: 'ok',
+    });
+    return true;
+  } catch (e) {
+    logEvent('ERROR', {
+      traceId: context.traceId,
+      userId: context.userId,
+      scope: 'telegram.readBusinessMessage',
+      chatId: context.chatId,
+      updateType: context.updateType || '',
+      businessConnectionId: context.businessConnectionId || '',
+      messageId: context.messageId,
+      messageType: context.messageType,
+      status: 'error',
+      error: e.message,
+    });
+    return false;
+  }
+}
+
+function scheduleReadReceipt(config, context) {
   logEvent('MESSAGE_STATUS', {
     traceId: context.traceId,
     userId: context.userId,
     chatId: context.chatId,
     updateType: context.updateType || '',
     businessConnectionId: context.businessConnectionId || '',
+    messageId: context.messageId || '',
     messageType: context.messageType,
     messageStatus: 'delivered',
     status: 'ok',
   });
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    const telegramRead = await markTelegramBusinessMessageRead(config, context);
     logEvent('MESSAGE_STATUS', {
       traceId: context.traceId,
       userId: context.userId,
       chatId: context.chatId,
       updateType: context.updateType || '',
       businessConnectionId: context.businessConnectionId || '',
+      messageId: context.messageId || '',
       messageType: context.messageType,
       messageStatus: 'read',
+      telegramRead,
       status: 'ok',
     });
   }, randomBetween(READ_DELAY_MIN_MS, READ_DELAY_MAX_MS));
@@ -1917,6 +1977,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
         chatId,
         updateType: updateContext.updateType,
         businessConnectionId: updateContext.businessConnectionId,
+        messageId: updateContext.messageId,
         messageType: detectMessageType(message),
       }, message);
       input.chatId = chatId;
@@ -1925,6 +1986,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       input.config = config;
       input.updateType = updateContext.updateType;
       input.businessConnectionId = updateContext.businessConnectionId;
+      input.messageId = updateContext.messageId;
       logEvent('IN', {
         traceId,
         received: true,
@@ -1932,6 +1994,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
         chatId,
         updateType: updateContext.updateType,
         businessConnectionId: updateContext.businessConnectionId,
+        messageId: updateContext.messageId,
         firstName,
         lastName,
         username,
@@ -1944,7 +2007,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
         hasLinkInput: !!input.hasLinkInput,
         status: 'ok',
       });
-      scheduleReadReceipt(input);
+      scheduleReadReceipt(config, input);
 
       const stopTyping = startTypingLoop(config, input);
       try {
