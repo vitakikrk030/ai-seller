@@ -12,6 +12,7 @@ const app = express();
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 3001);
 const REQUEST_TIMEOUT_MS = 15000;
+const AI_REQUEST_TIMEOUT_MS = 60000;
 const MAX_INPUT_TEXT_LENGTH = 4000;
 const AI_CONCURRENCY_LIMIT = 25;
 const GETFILE_CONCURRENCY_LIMIT = 10;
@@ -1846,7 +1847,7 @@ async function requestAi(input) {
           Authorization: `Bearer ${input.config.ai_key}`,
           'Content-Type': 'application/json',
         },
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: AI_REQUEST_TIMEOUT_MS,
       }
     );
 
