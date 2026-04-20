@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function nowIso() {
   return new Date().toISOString();
@@ -145,6 +145,26 @@ function createCustomerStore(options = {}) {
     const customerId = getCustomerId(inputOrChatId);
     if (!customerId) return null;
     const timestamp = nowIso();
+    const latest = statements.getLastOrder.get(customerId);
+    if (latest && patch.newOrder !== true) {
+      statements.updateOrder.run({
+        id: latest.id,
+        product: clean(patch.product) || latest.product || '',
+        size: clean(patch.size, 40) || latest.size || '',
+        price: clean(patch.price, 80) || latest.price || '',
+        full_name: clean(patch.fullName || patch.full_name) || latest.full_name || '',
+        phone: clean(patch.phone, 80) || latest.phone || '',
+        delivery_address: clean(patch.deliveryAddress || patch.delivery_address) || latest.delivery_address || '',
+        status: clean(patch.status, 80) || latest.status || 'draft',
+        payment_status: clean(patch.paymentStatus || patch.payment_status, 80) || latest.payment_status || 'not_requested',
+        payment_check_status: clean(patch.paymentCheckStatus || patch.payment_check_status, 80) || latest.payment_check_status || '',
+        payment_check_summary: clean(patch.paymentCheckSummary || patch.payment_check_summary) || latest.payment_check_summary || '',
+        proof_received_at: clean(patch.proofReceivedAt || patch.proof_received_at, 80) || latest.proof_received_at || '',
+        updated_at: timestamp,
+      });
+      return statements.getOrderById.get(latest.id);
+    }
+
     const result = statements.insertOrder.run({
       customer_id: customerId,
       product: clean(patch.product),
@@ -154,6 +174,10 @@ function createCustomerStore(options = {}) {
       phone: clean(patch.phone, 80),
       delivery_address: clean(patch.deliveryAddress || patch.delivery_address),
       status: clean(patch.status || 'draft', 80),
+      payment_status: clean(patch.paymentStatus || patch.payment_status || 'not_requested', 80),
+      payment_check_status: clean(patch.paymentCheckStatus || patch.payment_check_status, 80),
+      payment_check_summary: clean(patch.paymentCheckSummary || patch.payment_check_summary),
+      proof_received_at: clean(patch.proofReceivedAt || patch.proof_received_at, 80),
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -321,10 +345,9 @@ function runMigrations(db) {
     );
   `);
 
-  const applied = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(SCHEMA_VERSION);
-  if (applied) return;
-
-  db.exec(`
+  const hasV1 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(1);
+  if (!hasV1) {
+    db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       telegram_user_id TEXT,
@@ -408,7 +431,23 @@ function runMigrations(db) {
     );
   `);
 
-  db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(SCHEMA_VERSION, nowIso());
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(1, nowIso());
+  }
+
+  const hasV2 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(2);
+  if (!hasV2) {
+    addColumnIfMissing(db, 'orders', 'payment_status', 'TEXT');
+    addColumnIfMissing(db, 'orders', 'payment_check_status', 'TEXT');
+    addColumnIfMissing(db, 'orders', 'payment_check_summary', 'TEXT');
+    addColumnIfMissing(db, 'orders', 'proof_received_at', 'TEXT');
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(2, nowIso());
+  }
+}
+
+function addColumnIfMissing(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some((item) => item.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function prepareStatements(db) {
@@ -483,11 +522,35 @@ function prepareStatements(db) {
     `),
     getDialogState: db.prepare('SELECT * FROM dialog_states WHERE customer_id = ?'),
     insertOrder: db.prepare(`
-      INSERT INTO orders (customer_id, product, size, price, full_name, phone, delivery_address, status, created_at, updated_at)
-      VALUES (@customer_id, @product, @size, @price, @full_name, @phone, @delivery_address, @status, @created_at, @updated_at)
+      INSERT INTO orders (
+        customer_id, product, size, price, full_name, phone, delivery_address, status,
+        payment_status, payment_check_status, payment_check_summary, proof_received_at,
+        created_at, updated_at
+      )
+      VALUES (
+        @customer_id, @product, @size, @price, @full_name, @phone, @delivery_address, @status,
+        @payment_status, @payment_check_status, @payment_check_summary, @proof_received_at,
+        @created_at, @updated_at
+      )
     `),
     getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
     getLastOrder: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT 1'),
+    updateOrder: db.prepare(`
+      UPDATE orders
+      SET product = @product,
+          size = @size,
+          price = @price,
+          full_name = @full_name,
+          phone = @phone,
+          delivery_address = @delivery_address,
+          status = @status,
+          payment_status = @payment_status,
+          payment_check_status = @payment_check_status,
+          payment_check_summary = @payment_check_summary,
+          proof_received_at = @proof_received_at,
+          updated_at = @updated_at
+      WHERE id = @id
+    `),
     upsertBusinessConnection: db.prepare(`
       INSERT INTO business_connections (business_connection_id, business_user_id, user_chat_id, is_enabled, rights_json, updated_at)
       VALUES (@business_connection_id, @business_user_id, @user_chat_id, @is_enabled, @rights_json, @updated_at)
@@ -588,6 +651,11 @@ function buildProfileSummary(customer, facts, state, lastOrder) {
 
   if (lastOrder?.product || lastOrder?.status) {
     lines.push(`- Last order: ${[lastOrder.product, lastOrder.size && `size ${lastOrder.size}`, lastOrder.status].filter(Boolean).join(', ')}`);
+  }
+
+  if (lastOrder?.payment_status || lastOrder?.payment_check_status) {
+    lines.push(`- Payment: ${[lastOrder.payment_status, lastOrder.payment_check_status].filter(Boolean).join(', ')}`);
+    if (lastOrder.payment_check_summary) lines.push(`- Payment check note: ${lastOrder.payment_check_summary}`);
   }
 
   if (!lines.length) return '';

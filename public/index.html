@@ -1859,6 +1859,10 @@
                       <input id="managerTakeoverEnabled" type="checkbox" />
                       Менеджер может перехватить диалог
                     </label>
+                    <label class="toggle-line">
+                      <input id="aiCrmExtractorEnabled" type="checkbox" />
+                      AI сам обновляет CRM и заказ
+                    </label>
                     <div class="settings-grid">
                       <div class="field">
                         <label class="field-label" for="memoryRecentLimitSelect">Глубина памяти</label>
@@ -1907,6 +1911,53 @@
                     </div>
                     <div class="actions">
                       <button id="saveDialogueAutomation" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Оплата</div>
+                    <div class="list-subtitle">Реквизиты и предварительная AI-проверка чеков без финального подтверждения.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="paymentEnabled" type="checkbox" />
+                      Использовать оплату в диалоге
+                    </label>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <label class="field-label" for="paymentMethod">Способ оплаты</label>
+                        <select id="paymentMethod">
+                          <option value="card">Карта</option>
+                          <option value="sbp">СБП</option>
+                          <option value="other">Другое</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentCardNumber">Номер карты / реквизиты</label>
+                        <input id="paymentCardNumber" placeholder="2200 **** **** 1234" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentRecipientName">Получатель</label>
+                        <input id="paymentRecipientName" placeholder="Имя Фамилия" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentBank">Банк</label>
+                        <input id="paymentBank" placeholder="Например: Т-Банк" />
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="paymentComment">Комментарий для клиента</label>
+                      <input id="paymentComment" placeholder="После оплаты пришлите чек или скриншот" />
+                    </div>
+                    <div class="actions">
+                      <button id="savePayment" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
@@ -2209,11 +2260,18 @@
       const autoReplyEnabled = document.getElementById('autoReplyEnabled');
       const memoryEnabled = document.getElementById('memoryEnabled');
       const managerTakeoverEnabled = document.getElementById('managerTakeoverEnabled');
+      const aiCrmExtractorEnabled = document.getElementById('aiCrmExtractorEnabled');
       const memoryRecentLimitSelect = document.getElementById('memoryRecentLimitSelect');
       const batchDebounceSelect = document.getElementById('batchDebounceSelect');
       const replyModeSelect = document.getElementById('replyModeSelect');
       const humanTypingModeSelect = document.getElementById('humanTypingModeSelect');
       const managerReturnDelaySelect = document.getElementById('managerReturnDelaySelect');
+      const paymentEnabled = document.getElementById('paymentEnabled');
+      const paymentMethod = document.getElementById('paymentMethod');
+      const paymentCardNumber = document.getElementById('paymentCardNumber');
+      const paymentRecipientName = document.getElementById('paymentRecipientName');
+      const paymentBank = document.getElementById('paymentBank');
+      const paymentComment = document.getElementById('paymentComment');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
       const testMessage = document.getElementById('testMessage');
       const testOutput = document.getElementById('testOutput');
@@ -2254,6 +2312,7 @@
       const saveInputHandlingButton = document.getElementById('saveInputHandling');
       const savePersonaButton = document.getElementById('savePersona');
       const saveDialogueAutomationButton = document.getElementById('saveDialogueAutomation');
+      const savePaymentButton = document.getElementById('savePayment');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
       const saveSttProviderButton = document.getElementById('saveSttProvider');
@@ -2488,6 +2547,14 @@
             <div class="chat-detail">
               <div class="chat-detail-label">Последний заказ</div>
               <div class="chat-detail-value">${escapeHtml(lastOrder.product ? [lastOrder.product, lastOrder.size, lastOrder.status].filter(Boolean).join(' · ') : '—')}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Оплата</div>
+              <div class="chat-detail-value">${escapeHtml([lastOrder.payment_status, lastOrder.payment_check_status].filter(Boolean).join(' · ') || '—')}</div>
+            </div>
+            <div class="chat-detail wide">
+              <div class="chat-detail-label">Проверка чека</div>
+              <div class="chat-detail-value">${escapeHtml(lastOrder.payment_check_summary || '—')}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Stage</div>
@@ -2876,11 +2943,18 @@
         autoReplyEnabled.checked = data.auto_reply_enabled !== false;
         memoryEnabled.checked = data.memory_enabled !== false;
         managerTakeoverEnabled.checked = data.manager_takeover_enabled !== false;
+        aiCrmExtractorEnabled.checked = data.ai_crm_extractor_enabled !== false;
         memoryRecentLimitSelect.value = String(data.memory_recent_limit || 10);
         batchDebounceSelect.value = String(data.batch_debounce_ms ?? 3000);
         replyModeSelect.value = data.reply_mode || 'smart';
         humanTypingModeSelect.value = data.human_typing_mode || 'natural';
         managerReturnDelaySelect.value = String(data.manager_return_delay_ms || 180000);
+        paymentEnabled.checked = data.payment_enabled === true;
+        paymentMethod.value = data.payment_method || 'card';
+        paymentCardNumber.value = data.payment_card_number || '';
+        paymentRecipientName.value = data.payment_recipient_name || '';
+        paymentBank.value = data.payment_bank || '';
+        paymentComment.value = data.payment_comment || '';
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -3021,11 +3095,30 @@
               auto_reply_enabled: autoReplyEnabled.checked,
               memory_enabled: memoryEnabled.checked,
               manager_takeover_enabled: managerTakeoverEnabled.checked,
+              ai_crm_extractor_enabled: aiCrmExtractorEnabled.checked,
               memory_recent_limit: memoryRecentLimitSelect.value,
               batch_debounce_ms: batchDebounceSelect.value,
               reply_mode: replyModeSelect.value,
               human_typing_mode: humanTypingModeSelect.value,
               manager_return_delay_ms: managerReturnDelaySelect.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function savePayment() {
+        await performSave(savePaymentButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              payment_enabled: paymentEnabled.checked,
+              payment_method: paymentMethod.value,
+              payment_card_number: paymentCardNumber.value,
+              payment_recipient_name: paymentRecipientName.value,
+              payment_bank: paymentBank.value,
+              payment_comment: paymentComment.value,
             }),
           });
           await loadStatus();
@@ -3388,11 +3481,20 @@
         autoReplyEnabled,
         memoryEnabled,
         managerTakeoverEnabled,
+        aiCrmExtractorEnabled,
         memoryRecentLimitSelect,
         batchDebounceSelect,
         replyModeSelect,
         humanTypingModeSelect,
         managerReturnDelaySelect,
+      ]);
+      bindDirtyState(savePaymentButton, [
+        paymentEnabled,
+        paymentMethod,
+        paymentCardNumber,
+        paymentRecipientName,
+        paymentBank,
+        paymentComment,
       ]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
@@ -3404,6 +3506,7 @@
       document.getElementById('saveInputHandling').addEventListener('click', saveInputHandling);
       document.getElementById('savePersona').addEventListener('click', savePersona);
       document.getElementById('saveDialogueAutomation').addEventListener('click', saveDialogueAutomation);
+      document.getElementById('savePayment').addEventListener('click', savePayment);
       document.getElementById('runTest').addEventListener('click', runTest);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
       document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);

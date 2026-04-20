@@ -112,6 +112,13 @@ const runtimeConfig = {
   human_typing_mode: process.env.HUMAN_TYPING_MODE || 'natural',
   manager_takeover_enabled: process.env.MANAGER_TAKEOVER_ENABLED !== 'false',
   manager_return_delay_ms: Number(process.env.MANAGER_RETURN_DELAY_MS || MANAGER_RETURN_DELAY_MS),
+  ai_crm_extractor_enabled: process.env.AI_CRM_EXTRACTOR_ENABLED !== 'false',
+  payment_enabled: process.env.PAYMENT_ENABLED === 'true',
+  payment_method: process.env.PAYMENT_METHOD || 'card',
+  payment_card_number: process.env.PAYMENT_CARD_NUMBER || '',
+  payment_recipient_name: process.env.PAYMENT_RECIPIENT_NAME || '',
+  payment_bank: process.env.PAYMENT_BANK || '',
+  payment_comment: process.env.PAYMENT_COMMENT || '',
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -569,6 +576,18 @@ function extractLastProduct(text) {
   return '';
 }
 
+function isPaymentIntentText(text) {
+  return /(куда\s+платить|как\s+оплат|реквизит|карта|номер\s+карты|перевести|оплатить)/i.test(String(text || ''));
+}
+
+function isPaymentProofInput(input) {
+  const text = String(input.text || '').toLowerCase();
+  if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат|скрин.*оплат|receipt|payment)/i.test(text)) return true;
+  if (!input.hasMedia) return false;
+  const state = getDialogState(input.chatId);
+  return ['waiting_payment', 'ready_to_buy', 'collecting_order_info'].includes(state?.stage);
+}
+
 function inferConversationStage(input) {
   const text = String(input.text || '').toLowerCase();
   if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат)/i.test(text)) return 'waiting_payment';
@@ -609,6 +628,18 @@ function updateCustomerMemoryFromInput(input) {
 
   const stage = inferConversationStage(input);
   if (stage) setConversationStage(chatId, stage, source);
+
+  if (isPaymentIntentText(input.text)) {
+    safeCustomerStoreCall('customer.order.payment_requested', (store) => store.upsertOrder(chatId, {
+      product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
+      size: shoeSize || memoryStore.facts[chatId]?.shoeSize?.value || '',
+      fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
+      phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
+      deliveryAddress: deliveryAddress || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      status: 'waiting_payment',
+      paymentStatus: 'payment_details_sent',
+    }));
+  }
 
   if (stage === 'ready_to_buy' || stage === 'collecting_order_info') {
     safeCustomerStoreCall('customer.order.draft', (store) => store.upsertOrder(chatId, {
@@ -757,12 +788,226 @@ function buildBatchInput(inputs) {
   };
 }
 
+function shouldRunAiCrmExtractor(input) {
+  if (!parseConfigBoolean(input.config.ai_crm_extractor_enabled, true)) return false;
+  if (!hasRequiredConfig(input.config, ['ai_key', 'ai_url', 'model'])) return false;
+  const text = String(input.text || '');
+  return (
+    input.hasMedia
+    || input.hasLinkInput
+    || isPaymentIntentText(text)
+    || isPaymentProofInput(input)
+    || /(беру|оформ|заказ|фио|адрес|телефон|доставка|размер|оплат|чек|реквизит|куда платить|\+?\d[\s().-]*\d[\s().-]*\d)/i.test(text)
+  );
+}
+
+function parseJsonObject(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function requestAiJson(config, messages, meta = {}) {
+  if (logMissingConfig(meta.scope || 'ai.json', config, ['ai_key', 'ai_url', 'model'], meta)) return null;
+  try {
+    const response = await httpClient.post(
+      `${config.ai_url.replace(/\/$/, '')}/chat/completions`,
+      {
+        model: config.model,
+        messages,
+        temperature: 0.1,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.ai_key}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: AI_REQUEST_TIMEOUT_MS,
+      },
+    );
+    return parseJsonObject(extractAiReply(response.data?.choices?.[0]?.message?.content));
+  } catch (e) {
+    logEvent('ERROR', {
+      scope: meta.scope || 'ai.json',
+      traceId: meta.traceId || '',
+      userId: meta.userId || '',
+      chatId: meta.chatId || '',
+      status: 'error',
+      error: e.message,
+    });
+    return null;
+  }
+}
+
+function applyExtractedCustomerData(input, extracted) {
+  if (!extracted || typeof extracted !== 'object') return;
+  const chatId = getMemoryChatId(input);
+  const customer = extracted.customer && typeof extracted.customer === 'object' ? extracted.customer : {};
+  const order = extracted.order && typeof extracted.order === 'object' ? extracted.order : {};
+  const intent = extracted.intent && typeof extracted.intent === 'object' ? extracted.intent : {};
+  const confidence = extracted.confidence && typeof extracted.confidence === 'object' ? extracted.confidence : {};
+  const source = input.text || getMemoryMessageText(input);
+
+  [
+    ['fullName', customer.fullName],
+    ['phone', customer.phone],
+    ['city', customer.city],
+    ['deliveryAddress', customer.deliveryAddress],
+    ['shoeSize', customer.shoeSize],
+    ['interest', intent.interest],
+    ['lastProduct', order.product || intent.interest],
+  ].forEach(([key, value]) => {
+    if (!value) return;
+    upsertMemoryFact(chatId, key, value, source);
+    safeCustomerStoreCall('customer.fact.ai_extractor', (store) => store.upsertFact(chatId, key, value, source, confidence[key] || 'auto'));
+  });
+
+  const stage = extracted.stage || intent.stage || order.status;
+  if (stage) setConversationStage(chatId, stage, source);
+
+  if (order.product || order.size || order.status || customer.phone || customer.deliveryAddress || customer.fullName) {
+    safeCustomerStoreCall('customer.order.ai_extractor', (store) => store.upsertOrder(chatId, {
+      product: order.product || intent.interest || '',
+      size: order.size || customer.shoeSize || '',
+      price: order.price || '',
+      fullName: customer.fullName || '',
+      phone: customer.phone || '',
+      deliveryAddress: customer.deliveryAddress || '',
+      status: order.status || stage || 'draft',
+      paymentStatus: order.paymentStatus || '',
+    }));
+  }
+
+  logEvent('CRM_EXTRACT', {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    fields: Object.keys(customer).concat(Object.keys(order).map((key) => `order.${key}`)),
+    stage: stage || '',
+    status: 'ok',
+  });
+}
+
+async function runAiCrmExtractor(input) {
+  if (!shouldRunAiCrmExtractor(input)) return;
+  const json = await requestAiJson(input.config, [
+    {
+      role: 'system',
+      content: [
+        'Extract customer CRM and order facts from a retail Telegram conversation.',
+        'Return JSON only. Do not invent missing data. Use null/empty string for unknown fields.',
+        'Fields: customer.fullName, customer.phone, customer.city, customer.deliveryAddress, customer.shoeSize.',
+        'Fields: intent.stage, intent.interest, intent.buyingIntent.',
+        'Fields: order.product, order.size, order.price, order.status, order.paymentStatus.',
+        'Confidence values may be high, medium, low.',
+      ].join(' '),
+    },
+    {
+      role: 'user',
+      content: [
+        `Current message type: ${input.messageType}`,
+        `Current message: ${input.text}`,
+        input.memoryContext?.summary ? `Known profile:\n${input.memoryContext.summary}` : '',
+      ].filter(Boolean).join('\n\n'),
+    },
+  ], {
+    scope: 'ai.crm_extract',
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+  });
+  applyExtractedCustomerData(input, json);
+}
+
+function getCardLast4(cardNumber) {
+  const digits = String(cardNumber || '').replace(/\D/g, '');
+  return digits.slice(-4);
+}
+
+async function runPaymentProofPrecheck(input) {
+  if (!parseConfigBoolean(input.config.payment_enabled, false)) return;
+  if (!isPaymentProofInput(input)) return;
+  if (!input.images.length) return;
+
+  const content = [
+    {
+      type: 'text',
+      text: [
+        'You are doing a preliminary payment receipt check for a retail order.',
+        'Return JSON only with status: likely_paid, needs_manual_check, mismatch, or unreadable.',
+        'Never mark payment as finally confirmed. Only analyze visible receipt/screenshot data.',
+        `Expected recipient: ${input.config.payment_recipient_name || ''}`,
+        `Expected bank: ${input.config.payment_bank || ''}`,
+        `Expected card last4: ${getCardLast4(input.config.payment_card_number) || ''}`,
+        `Message: ${input.text}`,
+        'Check visible successful transfer status, recipient, bank/card digits, amount, date/time. If something is unclear, use needs_manual_check or unreadable.',
+      ].join('\n'),
+    },
+    ...input.images.map((url) => ({ type: 'image_url', image_url: { url } })),
+  ];
+
+  const json = await requestAiJson(input.config, [
+    {
+      role: 'system',
+      content: 'Return JSON only: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.',
+    },
+    {
+      role: 'user',
+      content,
+    },
+  ], {
+    scope: 'ai.payment_precheck',
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+  });
+
+  if (!json || typeof json !== 'object') return;
+  const status = ['likely_paid', 'needs_manual_check', 'mismatch', 'unreadable'].includes(json.status)
+    ? json.status
+    : 'needs_manual_check';
+  safeCustomerStoreCall('customer.order.payment_precheck', (store) => store.upsertOrder(input.chatId, {
+    status: 'waiting_payment_check',
+    paymentStatus: 'proof_received',
+    paymentCheckStatus: status,
+    paymentCheckSummary: json.summary || '',
+    proofReceivedAt: new Date().toISOString(),
+  }));
+  setConversationStage(input.chatId, 'waiting_payment', input.text || 'payment proof received');
+  logEvent('PAYMENT_CHECK', {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    paymentCheckStatus: status,
+    paymentCheckSummary: json.summary || '',
+    status: 'ok',
+  });
+}
+
 async function processInputBatch(inputs) {
   if (!inputs.length) return;
 
   const batchInput = buildBatchInput(inputs);
   batchInput.batchStartedAt = new Date().toISOString();
   try {
+    batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
+      excludeTraceIds: batchInput.batchTraceIds,
+      limit: getConfigMemoryLimit(batchInput.config),
+    }) : { summary: '', history: [], facts: {}, state: null };
+
+    await runAiCrmExtractor(batchInput);
+    await runPaymentProofPrecheck(batchInput);
+
     batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
       excludeTraceIds: batchInput.batchTraceIds,
       limit: getConfigMemoryLimit(batchInput.config),
@@ -1183,6 +1428,13 @@ function getRuntimeSnapshot() {
     human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
     manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
     manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
+    ai_crm_extractor_enabled: parseConfigBoolean(runtimeConfig.ai_crm_extractor_enabled, true),
+    payment_enabled: parseConfigBoolean(runtimeConfig.payment_enabled, false),
+    payment_method: runtimeConfig.payment_method,
+    payment_card_number: runtimeConfig.payment_card_number,
+    payment_recipient_name: runtimeConfig.payment_recipient_name,
+    payment_bank: runtimeConfig.payment_bank,
+    payment_comment: runtimeConfig.payment_comment,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -1358,6 +1610,41 @@ function applyConfigUpdate(body) {
   if (Object.prototype.hasOwnProperty.call(body, 'manager_return_delay_ms')) {
     runtimeConfig.manager_return_delay_ms = getConfigManagerReturnDelayMs({ manager_return_delay_ms: body.manager_return_delay_ms });
     process.env.MANAGER_RETURN_DELAY_MS = String(runtimeConfig.manager_return_delay_ms);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'ai_crm_extractor_enabled')) {
+    runtimeConfig.ai_crm_extractor_enabled = parseConfigBoolean(body.ai_crm_extractor_enabled, true);
+    process.env.AI_CRM_EXTRACTOR_ENABLED = String(runtimeConfig.ai_crm_extractor_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_enabled')) {
+    runtimeConfig.payment_enabled = parseConfigBoolean(body.payment_enabled, false);
+    process.env.PAYMENT_ENABLED = String(runtimeConfig.payment_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_method')) {
+    runtimeConfig.payment_method = body.payment_method || 'card';
+    process.env.PAYMENT_METHOD = runtimeConfig.payment_method;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_card_number')) {
+    runtimeConfig.payment_card_number = body.payment_card_number || '';
+    process.env.PAYMENT_CARD_NUMBER = runtimeConfig.payment_card_number;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_recipient_name')) {
+    runtimeConfig.payment_recipient_name = body.payment_recipient_name || '';
+    process.env.PAYMENT_RECIPIENT_NAME = runtimeConfig.payment_recipient_name;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_bank')) {
+    runtimeConfig.payment_bank = body.payment_bank || '';
+    process.env.PAYMENT_BANK = runtimeConfig.payment_bank;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_comment')) {
+    runtimeConfig.payment_comment = body.payment_comment || '';
+    process.env.PAYMENT_COMMENT = runtimeConfig.payment_comment;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'webhook_url')) {
@@ -2180,6 +2467,30 @@ function getPersonaAgeGuidance(personaAge) {
   return `Write with the natural rhythm of an adult around ${age} years old in messenger. Do not mention age and do not roleplay it explicitly.`;
 }
 
+function getPaymentGuidance(config) {
+  if (!parseConfigBoolean(config.payment_enabled, false)) return '';
+
+  const card = String(config.payment_card_number || '').trim();
+  const recipient = String(config.payment_recipient_name || '').trim();
+  const bank = String(config.payment_bank || '').trim();
+  const comment = String(config.payment_comment || '').trim();
+  const details = [
+    card && `Payment card/details: ${card}`,
+    recipient && `Recipient: ${recipient}`,
+    bank && `Bank: ${bank}`,
+    comment && `Payment note for client: ${comment}`,
+  ].filter(Boolean);
+
+  return [
+    'Payment policy:',
+    'When the client asks how to pay or where to transfer, provide the configured payment details briefly and ask them to send a receipt or screenshot after payment.',
+    ...details,
+    'If the client sends a receipt, screenshot, or payment file, treat it as payment proof for preliminary checking only.',
+    'Compare visible recipient, bank, card/account digits, amount, date/time, and successful transfer status when available.',
+    'Never say that payment is finally confirmed based only on a screenshot. Say that the receipt was received and looks preliminary correct / needs manual check / does not match, and that final confirmation happens after checking the banking app.',
+  ].join('\n');
+}
+
 function buildSystemPrompt(config) {
   const parts = [];
 
@@ -2194,6 +2505,8 @@ function buildSystemPrompt(config) {
   parts.push(getPersonaAgeGuidance(config.persona_age));
   parts.push(getConversationModeGuidance(config.conversation_mode));
   parts.push(getMediaBehaviorGuidance(config.media_behavior));
+  const paymentGuidance = getPaymentGuidance(config);
+  if (paymentGuidance) parts.push(paymentGuidance);
 
   return parts.join('\n\n');
 }
@@ -2311,6 +2624,9 @@ async function requestAi(input) {
     humanTypingMode: normalizeHumanTypingMode(input.config.human_typing_mode),
     managerTakeoverEnabled: parseConfigBoolean(input.config.manager_takeover_enabled, true),
     managerReturnDelayMs: getConfigManagerReturnDelayMs(input.config),
+    aiCrmExtractorEnabled: parseConfigBoolean(input.config.ai_crm_extractor_enabled, true),
+    paymentEnabled: parseConfigBoolean(input.config.payment_enabled, false),
+    paymentMethod: input.config.payment_method || '',
     temperature: payload.temperature,
     status: 'process',
   });
@@ -2641,6 +2957,13 @@ app.get('/config/status', async (req, res) => {
     human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
     manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
     manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
+    ai_crm_extractor_enabled: parseConfigBoolean(runtimeConfig.ai_crm_extractor_enabled, true),
+    payment_enabled: parseConfigBoolean(runtimeConfig.payment_enabled, false),
+    payment_method: runtimeConfig.payment_method || 'card',
+    payment_card_number: runtimeConfig.payment_card_number || '',
+    payment_recipient_name: runtimeConfig.payment_recipient_name || '',
+    payment_bank: runtimeConfig.payment_bank || '',
+    payment_comment: runtimeConfig.payment_comment || '',
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -2936,6 +3259,13 @@ app.delete('/config', (req, res) => {
   runtimeConfig.human_typing_mode = 'natural';
   runtimeConfig.manager_takeover_enabled = true;
   runtimeConfig.manager_return_delay_ms = MANAGER_RETURN_DELAY_MS;
+  runtimeConfig.ai_crm_extractor_enabled = true;
+  runtimeConfig.payment_enabled = false;
+  runtimeConfig.payment_method = 'card';
+  runtimeConfig.payment_card_number = '';
+  runtimeConfig.payment_recipient_name = '';
+  runtimeConfig.payment_bank = '';
+  runtimeConfig.payment_comment = '';
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -2961,6 +3291,13 @@ app.delete('/config', (req, res) => {
   process.env.HUMAN_TYPING_MODE = 'natural';
   process.env.MANAGER_TAKEOVER_ENABLED = 'true';
   process.env.MANAGER_RETURN_DELAY_MS = String(MANAGER_RETURN_DELAY_MS);
+  process.env.AI_CRM_EXTRACTOR_ENABLED = 'true';
+  process.env.PAYMENT_ENABLED = 'false';
+  process.env.PAYMENT_METHOD = 'card';
+  process.env.PAYMENT_CARD_NUMBER = '';
+  process.env.PAYMENT_RECIPIENT_NAME = '';
+  process.env.PAYMENT_BANK = '';
+  process.env.PAYMENT_COMMENT = '';
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
