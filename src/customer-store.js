@@ -662,7 +662,7 @@ function buildProfileSummary(customer, facts, state, lastOrder) {
   return [
     'Customer profile:',
     ...lines,
-    'Use this naturally when relevant. Do not mention internal memory directly. Confirm saved phone or delivery address before using them for a new order. Do not invent missing facts.',
+    'Use this naturally when relevant. Do not mention internal memory directly. Do not mention saved phone or delivery address before checkout. Confirm saved phone or delivery address only when the client is clearly placing an order and product size/quantity are already clear. Prefer one natural next question instead of forms or numbered checklists. Do not invent missing facts.',
   ].join('\n');
 }
 
