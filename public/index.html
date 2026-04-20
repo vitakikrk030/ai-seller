@@ -1747,6 +1747,21 @@
                 <div class="list-panel">
                   <div class="stack">
                     <div class="field">
+                      <div class="field-label">Финальный system prompt</div>
+                      <div class="field-hint">Read-only preview того, что реально собирается перед отправкой в AI. Память конкретного клиента добавляется отдельно в запросе.</div>
+                      <pre id="finalSystemPromptPreview" class="status-output muted">Загрузка...</pre>
+                    </div>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <div class="field-label">Capabilities</div>
+                        <div id="capabilitiesOutput" class="status-output muted">Загрузка...</div>
+                      </div>
+                      <div class="field">
+                        <div class="field-label">Prompt warnings</div>
+                        <div id="promptWarningsOutput" class="status-output muted">Конфликтов не найдено.</div>
+                      </div>
+                    </div>
+                    <div class="field">
                       <label class="toggle-line">
                         <input id="promptBehaviorEnabled" type="checkbox" />
                         Behavior / Persona prompt
@@ -2351,6 +2366,9 @@
       const paymentRecipientName = document.getElementById('paymentRecipientName');
       const paymentBank = document.getElementById('paymentBank');
       const paymentComment = document.getElementById('paymentComment');
+      const finalSystemPromptPreview = document.getElementById('finalSystemPromptPreview');
+      const capabilitiesOutput = document.getElementById('capabilitiesOutput');
+      const promptWarningsOutput = document.getElementById('promptWarningsOutput');
       const promptBehaviorEnabled = document.getElementById('promptBehaviorEnabled');
       const promptBehaviorText = document.getElementById('promptBehaviorText');
       const promptRetailEnabled = document.getElementById('promptRetailEnabled');
@@ -2546,6 +2564,9 @@
                 lastName: '',
                 username: '',
                 phoneNumber: '',
+                updateType: '',
+                businessConnectionId: '',
+                diagnostics: [],
                 messages: [],
               });
             }
@@ -2555,6 +2576,8 @@
             if (!chat.lastName && item.lastName) chat.lastName = item.lastName;
             if (!chat.username && item.username) chat.username = item.username;
             if (!chat.phoneNumber && item.phoneNumber) chat.phoneNumber = item.phoneNumber;
+            if (!chat.updateType && item.updateType) chat.updateType = item.updateType;
+            if (!chat.businessConnectionId && item.businessConnectionId) chat.businessConnectionId = item.businessConnectionId;
 
             chat.messages.push({
               id: item.id,
@@ -2566,6 +2589,17 @@
               text: item.event === 'IN' ? (item.text || '') : (item.replyText || ''),
               messageType: item.messageType || '',
             });
+          });
+
+        items
+          .filter((item) => ['ERROR', 'BATCH', 'MESSAGE_STATUS', 'AI_REQUEST', 'TG_SEND'].includes(item.event))
+          .forEach((item) => {
+            const chatId = String(item.chatId || item.userId || '').trim();
+            if (!chatId || !chats.has(chatId)) return;
+            const chat = chats.get(chatId);
+            if (!chat.updateType && item.updateType) chat.updateType = item.updateType;
+            if (!chat.businessConnectionId && item.businessConnectionId) chat.businessConnectionId = item.businessConnectionId;
+            chat.diagnostics.push(item);
           });
 
         return Array.from(chats.values())
@@ -2589,6 +2623,43 @@
 
       function getMemoryValue(memory, key) {
         return memory?.facts?.[key]?.value || '—';
+      }
+
+      function mapLeadStage(stage) {
+        const map = {
+          interested: 'Смотрит',
+          choosing: 'Выбирает',
+          ready_to_buy: 'Готов купить',
+          collecting_order_info: 'Собираем данные',
+          waiting_payment: 'Ждём оплату',
+          waiting_payment_check: 'Чек получен',
+        };
+        return map[stage] || stage || '—';
+      }
+
+      function renderChatDiagnostics(chat) {
+        const diagnostics = Array.isArray(chat.diagnostics) ? chat.diagnostics.slice(-8) : [];
+        const errors = diagnostics.filter((item) => item.event === 'ERROR');
+        const batch = diagnostics.filter((item) => item.event === 'BATCH').pop();
+        const aiRequest = diagnostics.filter((item) => item.event === 'AI_REQUEST').pop();
+        const sent = diagnostics.filter((item) => item.event === 'TG_SEND').pop();
+        const rows = [
+          ['Источник', chat.updateType || '—'],
+          ['Business ID', chat.businessConnectionId || '—'],
+          ['Batch', batch ? `${batch.batchSize || 1} сообщений · reply ${batch.replyToMessageId || '—'}` : '—'],
+          ['Applied prompts', aiRequest?.appliedPrompts ? Object.entries(aiRequest.appliedPrompts).map(([key, value]) => `${key}:${value ? 'on' : 'off'}`).join(', ') : '—'],
+          ['Последняя отправка', sent ? `TG_SEND ok · ${sent.replyToMessageId ? `reply ${sent.replyToMessageId}` : 'без reply'}` : '—'],
+          ['Почему AI мог не ответить', errors.length ? errors.map((item) => item.error || item.message || item.scope || 'ошибка').join(' · ') : 'нет явной причины'],
+        ];
+
+        return `
+          <div class="chat-detail wide">
+            <div class="chat-detail-label">Диагностика</div>
+            <div class="crm-message-list">
+              ${rows.map(([label, value]) => `<div class="crm-message-item">${escapeHtml(label)}: ${escapeHtml(value)}</div>`).join('')}
+            </div>
+          </div>
+        `;
       }
 
       function renderMemoryDetails(chat) {
@@ -2651,8 +2722,8 @@
               <div class="chat-detail-value">${escapeHtml(lastOrder.payment_check_summary || '—')}</div>
             </div>
             <div class="chat-detail">
-              <div class="chat-detail-label">Stage</div>
-              <div class="chat-detail-value">${escapeHtml(stage)}</div>
+              <div class="chat-detail-label">Статус клиента</div>
+              <div class="chat-detail-value">${escapeHtml(mapLeadStage(stage))}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Режим</div>
@@ -2662,6 +2733,7 @@
               <div class="chat-detail-label">Обновлено</div>
               <div class="chat-detail-value">${escapeHtml(updatedAt ? formatDateTimeLabel(updatedAt) : '—')}</div>
             </div>
+            ${renderChatDiagnostics(chat)}
             <div class="chat-detail wide">
               <div class="chat-detail-label">Последние 20 сообщений</div>
               <div class="crm-message-list">
@@ -2717,6 +2789,14 @@
               <div class="chat-detail">
                 <div class="chat-detail-label">Телефон</div>
                 <div class="chat-detail-value">${escapeHtml(chat.phoneNumber || '—')}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Источник</div>
+                <div class="chat-detail-value">${escapeHtml(chat.updateType || '—')}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Business connection</div>
+                <div class="chat-detail-value">${escapeHtml(chat.businessConnectionId || '—')}</div>
               </div>
             </div>
             <div class="chat-header-main memory-header">
@@ -2980,8 +3060,33 @@
           parts.push('Работа с медиа: ' + mapMediaBehavior(item.mediaBehavior));
           parts.push('Медиа во входе: ' + (item.hasMedia ? 'да' : 'нет'));
           parts.push('Ссылка во входе: ' + (item.hasLinkInput ? 'да' : 'нет'));
+          if (item.appliedPrompts) {
+            const applied = Object.entries(item.appliedPrompts)
+              .map(([key, value]) => `${key}: ${value ? 'on' : 'off'}`)
+              .join(', ');
+            parts.push('Applied prompts: ' + applied);
+          }
+          if (Array.isArray(item.promptWarnings) && item.promptWarnings.length) {
+            parts.push('Prompt warnings:\n' + item.promptWarnings.map((warning) => `- ${warning}`).join('\n'));
+          }
+          if (item.memoryStage) parts.push('Memory stage: ' + item.memoryStage);
+          if (Array.isArray(item.memoryFacts) && item.memoryFacts.length) parts.push('Memory facts: ' + item.memoryFacts.join(', '));
+          if (item.batchDebounceMs !== undefined) parts.push('Batch debounce: ' + item.batchDebounceMs + 'ms');
+          if (item.replyMode) parts.push('Reply mode: ' + item.replyMode);
           if (typeof item.temperature === 'number') parts.push('Temperature: ' + item.temperature);
           return parts.join('\n');
+        }
+
+        if (item.event === 'BATCH') {
+          return [
+            `Собрано сообщений: ${item.batchSize || 1}`,
+            `Message IDs: ${Array.isArray(item.batchMessageIds) ? item.batchMessageIds.join(', ') : '—'}`,
+            `Reply target: ${item.replyToMessageId || '—'}`,
+          ].join('\n');
+        }
+
+        if (item.event === 'MESSAGE_STATUS') {
+          return `Статус сообщения: ${item.messageStatus || '—'}${item.telegramRead !== undefined ? `\nTelegram read: ${item.telegramRead ? 'ok' : 'local'}` : ''}`;
         }
 
         return item.text || item.replyText || item.error || item.message || '';
@@ -3016,8 +3121,34 @@
         aiBaseUrl.value = data.base_url || 'https://api.openai.com/v1';
       }
 
+      function renderSystemVisibility(data) {
+        if (finalSystemPromptPreview) {
+          finalSystemPromptPreview.className = 'status-output';
+          finalSystemPromptPreview.textContent = data.final_system_prompt || 'System prompt пустой.';
+        }
+
+        if (capabilitiesOutput) {
+          const capabilities = data.capabilities || {};
+          capabilitiesOutput.className = 'status-output';
+          capabilitiesOutput.textContent = [
+            `Text AI: ${capabilities.textAi || '—'}`,
+            `Vision: ${capabilities.vision || '—'}`,
+            `STT: ${capabilities.stt || '—'}`,
+            `Telegram Business: ${capabilities.telegramBusiness || '—'}`,
+            `AI timeout: ${capabilities.aiTimeoutMs || '—'} ms`,
+          ].join('\n');
+        }
+
+        if (promptWarningsOutput) {
+          const warnings = Array.isArray(data.prompt_conflict_warnings) ? data.prompt_conflict_warnings : [];
+          promptWarningsOutput.className = 'status-output' + (warnings.length ? '' : ' muted');
+          promptWarningsOutput.textContent = warnings.length ? warnings.map((item) => `• ${item}`).join('\n') : 'Конфликтов не найдено.';
+        }
+      }
+
       function renderStatus(data) {
         currentStatus = data;
+        renderSystemVisibility(data);
 
         setChainStatus(telegramStatus, 'Telegram', data.telegram_status || (data.telegram === 'подключен' ? 'ok' : 'error'));
         setChainStatus(aiStatus, 'AI', data.ai_status || (data.ai === 'подключен' ? 'ok' : 'error'));

@@ -2601,6 +2601,63 @@ function getPaymentGuidance(config) {
   });
 }
 
+function getPromptLayerState(config, memoryContext = null) {
+  return {
+    instruction: !!String(config.instruction || '').trim(),
+    behavior: parseConfigBoolean(config.prompt_behavior_enabled, true),
+    retail: config.conversation_mode === 'retail' && parseConfigBoolean(config.prompt_retail_enabled, true),
+    media: parseConfigBoolean(config.prompt_media_enabled, true),
+    memory: parseConfigBoolean(config.memory_enabled, true)
+      && parseConfigBoolean(config.prompt_memory_enabled, true)
+      && !!memoryContext?.summary,
+    payment: parseConfigBoolean(config.payment_enabled, false)
+      && parseConfigBoolean(config.prompt_payment_enabled, true),
+    crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
+      && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
+    paymentCheck: parseConfigBoolean(config.payment_enabled, false)
+      && parseConfigBoolean(config.prompt_payment_check_enabled, true),
+  };
+}
+
+function getPromptConflictWarnings(config) {
+  const warnings = [];
+  const instruction = String(config.instruction || '').toLowerCase();
+  const retail = String(config.prompt_retail_text || '').toLowerCase();
+
+  if (instruction.includes('не выдум') && /(identify|определ|модель|product type)/i.test(config.prompt_retail_text || '')) {
+    warnings.push('Instruction просит не выдумывать модель, а retail prompt может просить определить товар. Лучше уточнить: определять только при уверенности.');
+  }
+
+  if (instruction.includes('не тороп') && /(immediately|сразу|toward purchase|вести к покупке)/i.test(config.prompt_retail_text || '')) {
+    warnings.push('Instruction просит не торопить клиента, а retail prompt может слишком активно вести к покупке. Нужен приоритет “один следующий шаг”.');
+  }
+
+  if (instruction.includes('всегда есть') && /(availability|налич|провер)/i.test(config.prompt_retail_text || '')) {
+    warnings.push('Instruction говорит, что товары всегда в наличии, а prompt может просить проверять наличие.');
+  }
+
+  if (retail.includes('numbered') && instruction.includes('спис')) {
+    warnings.push('Проверьте правила списков/нумерации: лучше запретить анкеты по умолчанию и разрешать списки только по запросу клиента.');
+  }
+
+  return warnings;
+}
+
+function getCapabilitySnapshot(config) {
+  const model = String(config.model || '').toLowerCase();
+  const hasAi = !!(config.ai_key && config.ai_url && config.model);
+  const visionKnown = /gpt-4|gpt-5|vision|vl|qwen-vl|gemini|claude|pixtral|llava/i.test(model);
+  return {
+    textAi: hasAi ? 'available' : 'missing',
+    vision: hasAi ? (visionKnown ? 'likely' : 'unknown') : 'missing',
+    stt: config.stt_api_key && config.stt_base_url && config.stt_model ? 'available' : 'missing',
+    telegramBusiness: config.telegram_token ? 'configured' : 'missing',
+    aiTimeoutMs: AI_REQUEST_TIMEOUT_MS,
+    model: config.model || '',
+    sttModel: config.stt_model || '',
+  };
+}
+
 function buildSystemPrompt(config) {
   const parts = [];
 
@@ -2626,6 +2683,15 @@ function buildSystemPrompt(config) {
   if (paymentGuidance) parts.push(paymentGuidance);
 
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
+}
+
+function buildFinalPromptPreview(config = runtimeConfig) {
+  return {
+    systemPrompt: buildSystemPrompt(config),
+    appliedPrompts: getPromptLayerState(config),
+    conflictWarnings: getPromptConflictWarnings(config),
+    capabilities: getCapabilitySnapshot(config),
+  };
 }
 
 function buildAiMessages(input) {
@@ -2726,6 +2792,8 @@ async function requestAi(input) {
       memoryHistory: input.memoryContext?.history?.length || 0,
       memoryStage: input.memoryContext?.state?.stage || '',
       memoryFacts: Object.keys(input.memoryContext?.facts || {}),
+      appliedPrompts: getPromptLayerState(input.config, input.memoryContext),
+      promptWarnings: getPromptConflictWarnings(input.config),
     tone: input.config.tone,
     responseLength: input.config.response_length,
     creativity: input.config.creativity,
@@ -3081,6 +3149,9 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
+    final_system_prompt: buildFinalPromptPreview(runtimeConfig).systemPrompt,
+    prompt_conflict_warnings: getPromptConflictWarnings(runtimeConfig),
+    capabilities: getCapabilitySnapshot(runtimeConfig),
     prompt_behavior_enabled: parseConfigBoolean(runtimeConfig.prompt_behavior_enabled, true),
     prompt_behavior_text: runtimeConfig.prompt_behavior_text || DEFAULT_BEHAVIOR_PROMPT,
     prompt_retail_enabled: parseConfigBoolean(runtimeConfig.prompt_retail_enabled, true),
@@ -3186,6 +3257,10 @@ app.get('/config/status', async (req, res) => {
   status.sai_label = getSaiStatusLabel(status.sai);
 
   res.json(status);
+});
+
+app.get('/config/final-prompt', (req, res) => {
+  res.json(buildFinalPromptPreview(getRuntimeSnapshot()));
 });
 
 app.get('/logs', (req, res) => {
