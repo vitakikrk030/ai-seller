@@ -26,13 +26,13 @@ const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
 const TYPING_REFRESH_MS = 4500;
-const READ_DELAY_MIN_MS = 2000;
-const READ_DELAY_MAX_MS = 5000;
+const READ_DELAY_MIN_MS = 1200;
+const READ_DELAY_MAX_MS = 3500;
 const LONG_REPLY_PART_LIMIT = 700;
-const HUMAN_TYPING_MIN_CPS = 9;
-const HUMAN_TYPING_MAX_CPS = 14;
-const HUMAN_TYPING_MIN_DELAY_MS = 2500;
-const HUMAN_TYPING_MAX_DELAY_MS = 14000;
+const HUMAN_TYPING_MIN_CPS = 12;
+const HUMAN_TYPING_MAX_CPS = 18;
+const HUMAN_TYPING_MIN_DELAY_MS = 1600;
+const HUMAN_TYPING_MAX_DELAY_MS = 10000;
 const MEMORY_RECENT_LIMIT = 10;
 const MEMORY_MESSAGES_TTL_DAYS = 7;
 const MEMORY_FACTS_TTL_DAYS = 90;
@@ -40,7 +40,7 @@ const MEMORY_STATE_TTL_DAYS = 14;
 const MEMORY_MAX_MESSAGES = 5000;
 const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
-const BATCH_MAX_WINDOW_MS = 8000;
+const BATCH_MAX_WINDOW_MS = 6500;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -529,6 +529,17 @@ function buildBatchText(inputs) {
   ].join('\n');
 }
 
+function pickReplyTargetMessageId(inputs) {
+  const mediaInput = inputs.find((input) => (
+    input.messageId
+    && (input.hasMedia || ['photo', 'document', 'video', 'video_note', 'voice'].includes(input.messageType))
+  ));
+  if (mediaInput) return mediaInput.messageId;
+
+  const lastWithMessageId = [...inputs].reverse().find((input) => input.messageId);
+  return lastWithMessageId ? lastWithMessageId.messageId : '';
+}
+
 function buildBatchInput(inputs) {
   const lastInput = inputs[inputs.length - 1];
   const images = [];
@@ -547,6 +558,7 @@ function buildBatchInput(inputs) {
     batchSize: inputs.length,
     batchTraceIds: inputs.map((input) => input.traceId),
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
+    replyToMessageId: pickReplyTargetMessageId(inputs),
     text: buildBatchText(inputs),
     images,
     hasMedia,
@@ -576,6 +588,7 @@ async function processInputBatch(inputs) {
       batchSize: batchInput.batchSize,
       batchTraceIds: batchInput.batchTraceIds,
       batchMessageIds: batchInput.batchMessageIds,
+      replyToMessageId: batchInput.replyToMessageId || '',
       status: 'ok',
     });
 
@@ -1915,6 +1928,9 @@ async function sendTelegramMessage(config, context, text) {
   }
 
   const startedAt = Date.now();
+  const replyToMessageId = context.useReply && context.replyToMessageId
+    ? context.replyToMessageId
+    : '';
 
   try {
     logEvent('TG_SEND', {
@@ -1924,6 +1940,7 @@ async function sendTelegramMessage(config, context, text) {
       updateType: context.updateType || '',
       businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
+      replyToMessageId,
       text,
       status: 'process',
     });
@@ -1933,6 +1950,9 @@ async function sendTelegramMessage(config, context, text) {
     };
     if (context.businessConnectionId) {
       payload.business_connection_id = context.businessConnectionId;
+    }
+    if (replyToMessageId) {
+      payload.reply_to_message_id = replyToMessageId;
     }
 
     await httpClient.post(getTelegramApiUrl(config, 'sendMessage'), payload, {
@@ -1945,10 +1965,30 @@ async function sendTelegramMessage(config, context, text) {
       updateType: context.updateType || '',
       businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
+      replyToMessageId,
       duration: Date.now() - startedAt,
       status: 'ok',
     });
   } catch (e) {
+    if (replyToMessageId) {
+      logEvent('ERROR', {
+        traceId: context.traceId,
+        userId: context.userId,
+        scope: 'telegram.sendMessage.reply',
+        chatId: context.chatId,
+        updateType: context.updateType || '',
+        businessConnectionId: context.businessConnectionId || '',
+        messageType: context.messageType,
+        replyToMessageId,
+        duration: Date.now() - startedAt,
+        status: 'error',
+        error: e.message,
+      });
+
+      await sendTelegramMessage(config, { ...context, useReply: false }, text);
+      return;
+    }
+
     logEvent('ERROR', {
       traceId: context.traceId,
       userId: context.userId,
@@ -2029,7 +2069,10 @@ async function sendHumanizedTelegramReply(config, context, reply) {
   for (let index = 0; index < parts.length; index += 1) {
     await sendTelegramChatAction(config, context, 'typing');
     await wait(getHumanTypingDelayMs(parts[index]));
-    await sendTelegramMessage(config, context, parts[index]);
+    await sendTelegramMessage(config, {
+      ...context,
+      useReply: index === 0 && !!context.replyToMessageId,
+    }, parts[index]);
     if (index < parts.length - 1) {
       await wait(randomBetween(700, 1500));
     }
