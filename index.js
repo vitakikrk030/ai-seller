@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
 const axios = require('axios');
+const { createCustomerStore } = require('./src/customer-store');
 
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0';
@@ -41,6 +42,13 @@ const MEMORY_MAX_MESSAGES = 5000;
 const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
 const BATCH_MAX_WINDOW_MS = 6500;
+const MIN_MEMORY_RECENT_LIMIT = 3;
+const MAX_MEMORY_RECENT_LIMIT = 20;
+const MIN_BATCH_DEBOUNCE_MS = 0;
+const MAX_BATCH_DEBOUNCE_MS = 10000;
+const MANAGER_RETURN_DELAY_MS = 180000;
+const MIN_MANAGER_RETURN_DELAY_MS = 30000;
+const MAX_MANAGER_RETURN_DELAY_MS = 900000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -63,12 +71,15 @@ let activeAiRequests = 0;
 let activeGetFileRequests = 0;
 let lastSaiRuntimeError = null;
 const chatBatches = new Map();
+const managerReturnTimers = new Map();
+const managerPendingInputs = new Map();
 const runtimeLogs = [];
 const logDir = path.join(__dirname, 'logs');
 const LOG_FILE_PATH = path.join(logDir, 'runtime.jsonl');
 const dataDir = path.join(__dirname, 'data');
 const CONFIG_FILE_PATH = path.join(dataDir, 'runtime-config.json');
 const MEMORY_FILE_PATH = path.join(dataDir, 'memory.json');
+const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
 fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
@@ -93,6 +104,14 @@ const runtimeConfig = {
   persona_age: process.env.PERSONA_AGE || '27',
   conversation_mode: process.env.CONVERSATION_MODE || 'general',
   media_behavior: process.env.MEDIA_BEHAVIOR || 'describe_media',
+  auto_reply_enabled: process.env.AUTO_REPLY_ENABLED !== 'false',
+  memory_enabled: process.env.MEMORY_ENABLED !== 'false',
+  memory_recent_limit: Number(process.env.MEMORY_RECENT_LIMIT || MEMORY_RECENT_LIMIT),
+  batch_debounce_ms: Number(process.env.BATCH_DEBOUNCE_MS || BATCH_DEBOUNCE_MS),
+  reply_mode: process.env.REPLY_MODE || 'smart',
+  human_typing_mode: process.env.HUMAN_TYPING_MODE || 'natural',
+  manager_takeover_enabled: process.env.MANAGER_TAKEOVER_ENABLED !== 'false',
+  manager_return_delay_ms: Number(process.env.MANAGER_RETURN_DELAY_MS || MANAGER_RETURN_DELAY_MS),
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -245,6 +264,7 @@ function createEmptyMemoryStore() {
     messages: [],
     facts: {},
     states: {},
+    businessConnections: {},
   };
 }
 
@@ -258,6 +278,7 @@ function readMemoryStore() {
       messages: Array.isArray(parsed.messages) ? parsed.messages : [],
       facts: parsed.facts && typeof parsed.facts === 'object' ? parsed.facts : {},
       states: parsed.states && typeof parsed.states === 'object' ? parsed.states : {},
+      businessConnections: parsed.businessConnections && typeof parsed.businessConnections === 'object' ? parsed.businessConnections : {},
     };
   } catch (error) {
     logEvent('ERROR', {
@@ -270,6 +291,15 @@ function readMemoryStore() {
 }
 
 let memoryStore = readMemoryStore();
+let customerStore = null;
+
+try {
+  customerStore = createCustomerStore({ dbPath: CUSTOMER_DB_PATH });
+  customerStore.importLegacyMemory(memoryStore);
+} catch (error) {
+  customerStore = null;
+  console.error('[CUSTOMER_DB_ERROR]', error.message);
+}
 
 function saveMemoryStore() {
   const tempPath = `${MEMORY_FILE_PATH}.tmp`;
@@ -341,12 +371,28 @@ function getMemoryMessageText(input) {
   return '';
 }
 
+function safeCustomerStoreCall(scope, action, fallback = null) {
+  if (!customerStore) return fallback;
+  try {
+    return action(customerStore);
+  } catch (error) {
+    logEvent('ERROR', {
+      scope,
+      status: 'error',
+      error: error.message,
+    });
+    return fallback;
+  }
+}
+
 function appendMemoryMessage(input, role, text) {
   const chatId = getMemoryChatId(input);
   const cleanText = normalizeMemoryText(text);
   if (!chatId || !cleanText) return;
 
-  const telegramMessageId = role === 'user' ? String(input.messageId || '') : '';
+  safeCustomerStoreCall('customer.message.append', (store) => store.appendMessage(input, role, cleanText));
+
+  const telegramMessageId = role !== 'assistant' ? String(input.messageId || '') : '';
   const duplicate = memoryStore.messages.some((message) => (
     message.chatId === chatId
     && message.role === role
@@ -374,6 +420,8 @@ function upsertMemoryFact(chatId, key, value, source) {
   const cleanValue = normalizeMemoryText(value);
   if (!cleanChatId || !key || !cleanValue) return;
 
+  safeCustomerStoreCall('customer.fact.upsert', (store) => store.upsertFact(cleanChatId, key, cleanValue, source));
+
   if (!memoryStore.facts[cleanChatId]) memoryStore.facts[cleanChatId] = {};
   memoryStore.facts[cleanChatId][key] = {
     value: cleanValue,
@@ -386,11 +434,90 @@ function upsertMemoryFact(chatId, key, value, source) {
 function setConversationStage(chatId, stage, source) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId || !stage) return;
+  safeCustomerStoreCall('customer.state.stage', (store) => store.setDialogState(cleanChatId, { stage, source }));
   memoryStore.states[cleanChatId] = {
+    ...(memoryStore.states[cleanChatId] || {}),
     stage,
     source: normalizeMemoryText(source).slice(0, 240),
     updatedAt: new Date().toISOString(),
   };
+}
+
+function upsertBusinessConnection(connection = {}) {
+  const id = String(connection.id || '').trim();
+  if (!id) return null;
+
+  const normalized = {
+    id,
+    userId: String(connection.user?.id || connection.userId || '').trim(),
+    userChatId: String(connection.user_chat_id || connection.userChatId || '').trim(),
+    isEnabled: connection.is_enabled !== false,
+    rights: connection.rights || null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  memoryStore.businessConnections[id] = {
+    ...(memoryStore.businessConnections[id] || {}),
+    ...normalized,
+  };
+  safeCustomerStoreCall('customer.business_connection.upsert', (store) => store.upsertBusinessConnection(normalized));
+  persistMemoryStore();
+  return memoryStore.businessConnections[id];
+}
+
+function getBusinessConnectionById(id) {
+  const cleanId = String(id || '').trim();
+  const dbConnection = safeCustomerStoreCall('customer.business_connection.get', (store) => store.getBusinessConnection(cleanId));
+  if (dbConnection) return dbConnection;
+  return cleanId ? memoryStore.businessConnections[cleanId] || null : null;
+}
+
+function setDialogAiMode(chatId, mode, source = '') {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId || !mode) return null;
+  const previous = memoryStore.states[cleanChatId] || {};
+  const next = {
+    ...previous,
+    aiMode: mode,
+    modeSource: normalizeMemoryText(source).slice(0, 240),
+    updatedAt: new Date().toISOString(),
+  };
+  if (mode === 'active') {
+    delete next.autoTakeoverAt;
+    delete next.pendingSince;
+  }
+  memoryStore.states[cleanChatId] = next;
+  safeCustomerStoreCall('customer.state.mode', (store) => store.setDialogState(cleanChatId, next));
+  persistMemoryStore();
+  return next;
+}
+
+function setManagerActive(chatId, input, source = '') {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return null;
+  cancelManagerReturnTimer(cleanChatId);
+  const now = new Date().toISOString();
+  memoryStore.states[cleanChatId] = {
+    ...(memoryStore.states[cleanChatId] || {}),
+    aiMode: 'passive_manager',
+    managerActiveAt: now,
+    managerLastMessageAt: now,
+    autoTakeoverAt: '',
+    pendingSince: '',
+    modeSource: normalizeMemoryText(source).slice(0, 240),
+    lastManagerTraceId: input?.traceId || '',
+    updatedAt: now,
+  };
+  safeCustomerStoreCall('customer.state.manager_active', (store) => store.setDialogState(cleanChatId, memoryStore.states[cleanChatId]));
+  persistMemoryStore();
+  return memoryStore.states[cleanChatId];
+}
+
+function getDialogState(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  const dbState = safeCustomerStoreCall('customer.state.get', (store) => store.getDialogState(cleanChatId));
+  if (dbState) return dbState;
+  return cleanChatId ? memoryStore.states[cleanChatId] || null : null;
 }
 
 function extractPhone(text) {
@@ -414,6 +541,32 @@ function extractShoeSize(text) {
 function extractCity(text) {
   const match = String(text || '').match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
   return match ? match[1].trim() : '';
+}
+
+function extractFullName(text) {
+  const source = String(text || '').trim();
+  const explicit = source.match(/(?:фио|имя)\s*[:\-]?\s*([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+(?:\s+[А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+){1,2})/i);
+  if (explicit) return explicit[1].trim();
+  if (!/(телефон|адрес|достав|оформ|получател|\+?\d[\s().-]*\d)/i.test(source)) return '';
+  const lines = source.split(/\n|,/).map((line) => line.trim()).filter(Boolean);
+  const candidate = lines.find((line) => /^[А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+(?:\s+[А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+){1,2}$/.test(line));
+  return candidate || '';
+}
+
+function extractDeliveryAddress(text) {
+  const source = String(text || '').trim();
+  const explicit = source.match(/(?:адрес|доставка|доставить|отправить)\s*[:\-]?\s*([^\n]{8,220})/i);
+  if (explicit) return explicit[1].trim();
+  const lines = source.split(/\n/).map((line) => line.trim()).filter(Boolean);
+  const candidate = lines.find((line) => /(ул\.?|улица|проспект|пр-т|дом|д\.|кв\.?|квартира|корпус|подъезд|москва|санкт|спб|область|район)/i.test(line) && line.length >= 8);
+  return candidate || '';
+}
+
+function extractLastProduct(text) {
+  const source = normalizeMemoryText(text);
+  const explicit = source.match(/(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*([^.,\n]{3,120})/i);
+  if (explicit) return explicit[1].trim();
+  return '';
 }
 
 function inferConversationStage(input) {
@@ -440,12 +593,33 @@ function updateCustomerMemoryFromInput(input) {
   const city = extractCity(input.text);
   if (city) upsertMemoryFact(chatId, 'city', city, source);
 
+  const fullName = extractFullName(input.text);
+  if (fullName) upsertMemoryFact(chatId, 'fullName', fullName, source);
+
+  const deliveryAddress = extractDeliveryAddress(input.text);
+  if (deliveryAddress) upsertMemoryFact(chatId, 'deliveryAddress', deliveryAddress, source);
+
+  const lastProduct = extractLastProduct(input.text);
+  if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
+
   if (input.hasMedia || input.hasLinkInput) {
     upsertMemoryFact(chatId, 'interest', getMemoryMessageText(input), source);
+    upsertMemoryFact(chatId, 'lastProduct', getMemoryMessageText(input), source);
   }
 
   const stage = inferConversationStage(input);
   if (stage) setConversationStage(chatId, stage, source);
+
+  if (stage === 'ready_to_buy' || stage === 'collecting_order_info') {
+    safeCustomerStoreCall('customer.order.draft', (store) => store.upsertOrder(chatId, {
+      product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
+      size: shoeSize || memoryStore.facts[chatId]?.shoeSize?.value || '',
+      fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
+      phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
+      deliveryAddress: deliveryAddress || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      status: stage === 'ready_to_buy' ? 'draft' : 'collecting_info',
+    }));
+  }
 
   persistMemoryStore();
 }
@@ -454,6 +628,8 @@ function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTra
   const cleanChatId = getMemoryChatId(chatId);
   const excluded = new Set((excludeTraceIds || []).filter(Boolean));
   if (!cleanChatId) return [];
+  const dbMessages = safeCustomerStoreCall('customer.messages.recent', (store) => store.getRecentMessages(cleanChatId, limit, excludeTraceIds));
+  if (Array.isArray(dbMessages) && dbMessages.length) return dbMessages;
   return memoryStore.messages
     .filter((message) => message.chatId === cleanChatId)
     .filter((message) => !excluded.has(message.traceId))
@@ -464,9 +640,11 @@ function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTra
 function formatMemoryFacts(facts = {}) {
   const labels = {
     name: 'Name',
+    fullName: 'Full name',
     phone: 'Phone',
     city: 'City',
     address: 'Delivery address',
+    deliveryAddress: 'Delivery address',
     shoeSize: 'Shoe size',
     interest: 'Interest',
     lastProduct: 'Last product',
@@ -479,6 +657,12 @@ function formatMemoryFacts(facts = {}) {
 function buildMemoryContext(chatId, options = {}) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
+
+  const dbContext = safeCustomerStoreCall('customer.context.get', (store) => store.getCustomerContext(cleanChatId, {
+    limit: options.limit || MEMORY_RECENT_LIMIT,
+    excludeTraceIds: options.excludeTraceIds || [],
+  }));
+  if (dbContext) return dbContext;
 
   const facts = memoryStore.facts[cleanChatId] || {};
   const state = memoryStore.states[cleanChatId] || null;
@@ -495,13 +679,16 @@ function buildMemoryContext(chatId, options = {}) {
 
   let usedChars = 0;
   const history = [];
-  getRecentMemoryMessages(cleanChatId, MEMORY_RECENT_LIMIT, options.excludeTraceIds || []).reverse().forEach((message) => {
+  getRecentMemoryMessages(cleanChatId, options.limit || MEMORY_RECENT_LIMIT, options.excludeTraceIds || []).reverse().forEach((message) => {
     const text = normalizeMemoryText(message.text);
     if (!text || usedChars + text.length > MEMORY_HISTORY_CHAR_LIMIT) return;
     usedChars += text.length;
+    const content = message.role === 'manager'
+      ? `Manager: ${text}`
+      : text;
     history.push({
       role: message.role === 'assistant' ? 'assistant' : 'user',
-      content: text,
+      content,
       createdAt: message.createdAt,
       type: message.type,
     });
@@ -529,12 +716,16 @@ function buildBatchText(inputs) {
   ].join('\n');
 }
 
-function pickReplyTargetMessageId(inputs) {
+function pickReplyTargetMessageId(inputs, config = runtimeConfig) {
+  const mode = normalizeReplyMode(config.reply_mode);
+  if (mode === 'off') return '';
+
   const mediaInput = inputs.find((input) => (
     input.messageId
     && (input.hasMedia || ['photo', 'document', 'video', 'video_note', 'voice'].includes(input.messageType))
   ));
-  if (mediaInput) return mediaInput.messageId;
+  if ((mode === 'smart' || mode === 'media') && mediaInput) return mediaInput.messageId;
+  if (mode === 'media') return '';
 
   const lastWithMessageId = [...inputs].reverse().find((input) => input.messageId);
   return lastWithMessageId ? lastWithMessageId.messageId : '';
@@ -558,7 +749,7 @@ function buildBatchInput(inputs) {
     batchSize: inputs.length,
     batchTraceIds: inputs.map((input) => input.traceId),
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
-    replyToMessageId: pickReplyTargetMessageId(inputs),
+    replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: buildBatchText(inputs),
     images,
     hasMedia,
@@ -570,10 +761,12 @@ async function processInputBatch(inputs) {
   if (!inputs.length) return;
 
   const batchInput = buildBatchInput(inputs);
+  batchInput.batchStartedAt = new Date().toISOString();
   try {
-    batchInput.memoryContext = buildMemoryContext(batchInput.chatId, {
+    batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
       excludeTraceIds: batchInput.batchTraceIds,
-    });
+      limit: getConfigMemoryLimit(batchInput.config),
+    }) : { summary: '', history: [], facts: {}, state: null };
 
     inputs.forEach((input) => logMessageDelivered(input));
     await waitAndMarkBatchRead(batchInput.config, inputs);
@@ -596,8 +789,33 @@ async function processInputBatch(inputs) {
     try {
       const reply = await requestAi(batchInput);
       if (typeof reply === 'string') {
-        appendMemoryMessage(batchInput, 'assistant', reply);
+        const dialogState = getDialogState(batchInput.chatId);
+        const managerLastMessageAt = dialogState?.managerLastMessageAt
+          ? new Date(dialogState.managerLastMessageAt).getTime()
+          : 0;
+        const batchStartedAt = new Date(batchInput.batchStartedAt).getTime();
+        if (
+          parseConfigBoolean(batchInput.config.manager_takeover_enabled, true)
+          && dialogState?.aiMode === 'passive_manager'
+          && managerLastMessageAt >= batchStartedAt
+        ) {
+          logEvent('MESSAGE_STATUS', {
+            traceId: batchInput.traceId,
+            userId: batchInput.userId,
+            chatId: batchInput.chatId,
+            updateType: batchInput.updateType || '',
+            businessConnectionId: batchInput.businessConnectionId || '',
+            messageType: batchInput.messageType,
+            messageStatus: 'ai_reply_skipped_manager_takeover',
+            status: 'ok',
+          });
+          return;
+        }
+        if (parseConfigBoolean(batchInput.config.memory_enabled, true)) {
+          appendMemoryMessage(batchInput, 'assistant', reply);
+        }
         await sendHumanizedTelegramReply(batchInput.config, batchInput, reply);
+        setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {
       stopTyping();
@@ -628,6 +846,83 @@ function flushChatBatch(chatId) {
   processInputBatch(batch.inputs);
 }
 
+function cancelChatBatch(chatId) {
+  const key = getMemoryChatId(chatId);
+  const batch = chatBatches.get(key);
+  if (!batch) return false;
+  if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
+  if (batch.maxTimer) clearTimeout(batch.maxTimer);
+  chatBatches.delete(key);
+  return true;
+}
+
+function cancelManagerReturnTimer(chatId) {
+  const key = getMemoryChatId(chatId);
+  const timer = managerReturnTimers.get(key);
+  if (timer) clearTimeout(timer);
+  managerReturnTimers.delete(key);
+  managerPendingInputs.delete(key);
+}
+
+function scheduleManagerReturn(input) {
+  const key = getMemoryChatId(input);
+  if (!key) return;
+
+  const existing = managerPendingInputs.get(key) || [];
+  existing.push(input);
+  managerPendingInputs.set(key, existing);
+
+  const delayMs = getConfigManagerReturnDelayMs(input.config);
+  const now = new Date();
+  memoryStore.states[key] = {
+    ...(memoryStore.states[key] || {}),
+    aiMode: 'passive_manager',
+    pendingSince: now.toISOString(),
+    autoTakeoverAt: new Date(now.getTime() + delayMs).toISOString(),
+    lastClientTraceId: input.traceId || '',
+    updatedAt: now.toISOString(),
+  };
+  safeCustomerStoreCall('customer.state.manager_wait', (store) => store.setDialogState(key, memoryStore.states[key]));
+  persistMemoryStore();
+
+  const previousTimer = managerReturnTimers.get(key);
+  if (previousTimer) clearTimeout(previousTimer);
+
+  managerReturnTimers.set(key, setTimeout(() => {
+    const pending = managerPendingInputs.get(key) || [];
+    managerPendingInputs.delete(key);
+    managerReturnTimers.delete(key);
+    if (!pending.length) return;
+
+    const state = getDialogState(key);
+    if (state?.aiMode !== 'passive_manager') return;
+
+    setDialogAiMode(key, 'active', 'manager_return_timeout');
+    logEvent('MESSAGE_STATUS', {
+      traceId: pending[pending.length - 1]?.traceId || createTraceId(),
+      userId: pending[pending.length - 1]?.userId || key,
+      chatId: key,
+      messageStatus: 'ai_auto_takeover',
+      batchSize: pending.length,
+      status: 'ok',
+    });
+    processInputBatch(pending);
+  }, delayMs));
+
+  logEvent('MESSAGE_STATUS', {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
+    messageId: input.messageId || '',
+    messageType: input.messageType,
+    messageStatus: 'manager_passive_wait',
+    autoTakeoverMs: delayMs,
+    status: 'ok',
+  });
+}
+
 function enqueueInputForBatch(input) {
   const key = getMemoryChatId(input);
   if (!key) {
@@ -644,19 +939,20 @@ function enqueueInputForBatch(input) {
       maxTimer: null,
       processing: false,
     };
-    batch.maxTimer = setTimeout(() => flushChatBatch(key), BATCH_MAX_WINDOW_MS);
+    batch.maxTimer = setTimeout(() => flushChatBatch(key), Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000));
     chatBatches.set(key, batch);
   }
 
   batch.inputs.push(input);
 
   if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
-  batch.debounceTimer = setTimeout(() => flushChatBatch(key), BATCH_DEBOUNCE_MS);
+  batch.debounceTimer = setTimeout(() => flushChatBatch(key), getConfigBatchDebounceMs(input.config));
 }
 
 function clearMemoryForChat(chatId) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return false;
+  safeCustomerStoreCall('customer.clear', (store) => store.clearCustomer(cleanChatId));
   memoryStore.messages = memoryStore.messages.filter((message) => message.chatId !== cleanChatId);
   delete memoryStore.facts[cleanChatId];
   delete memoryStore.states[cleanChatId];
@@ -879,6 +1175,14 @@ function getRuntimeSnapshot() {
     persona_age: runtimeConfig.persona_age,
     conversation_mode: runtimeConfig.conversation_mode,
     media_behavior: runtimeConfig.media_behavior,
+    auto_reply_enabled: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
+    memory_enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
+    memory_recent_limit: getConfigMemoryLimit(runtimeConfig),
+    batch_debounce_ms: getConfigBatchDebounceMs(runtimeConfig),
+    reply_mode: normalizeReplyMode(runtimeConfig.reply_mode),
+    human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
+    manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
+    manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -1016,6 +1320,46 @@ function applyConfigUpdate(body) {
     process.env.MEDIA_BEHAVIOR = runtimeConfig.media_behavior;
   }
 
+  if (Object.prototype.hasOwnProperty.call(body, 'auto_reply_enabled')) {
+    runtimeConfig.auto_reply_enabled = parseConfigBoolean(body.auto_reply_enabled, true);
+    process.env.AUTO_REPLY_ENABLED = String(runtimeConfig.auto_reply_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'memory_enabled')) {
+    runtimeConfig.memory_enabled = parseConfigBoolean(body.memory_enabled, true);
+    process.env.MEMORY_ENABLED = String(runtimeConfig.memory_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'memory_recent_limit')) {
+    runtimeConfig.memory_recent_limit = getConfigMemoryLimit({ memory_recent_limit: body.memory_recent_limit });
+    process.env.MEMORY_RECENT_LIMIT = String(runtimeConfig.memory_recent_limit);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'batch_debounce_ms')) {
+    runtimeConfig.batch_debounce_ms = getConfigBatchDebounceMs({ batch_debounce_ms: body.batch_debounce_ms });
+    process.env.BATCH_DEBOUNCE_MS = String(runtimeConfig.batch_debounce_ms);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'reply_mode')) {
+    runtimeConfig.reply_mode = normalizeReplyMode(body.reply_mode || 'smart');
+    process.env.REPLY_MODE = runtimeConfig.reply_mode;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'human_typing_mode')) {
+    runtimeConfig.human_typing_mode = normalizeHumanTypingMode(body.human_typing_mode || 'natural');
+    process.env.HUMAN_TYPING_MODE = runtimeConfig.human_typing_mode;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'manager_takeover_enabled')) {
+    runtimeConfig.manager_takeover_enabled = parseConfigBoolean(body.manager_takeover_enabled, true);
+    process.env.MANAGER_TAKEOVER_ENABLED = String(runtimeConfig.manager_takeover_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'manager_return_delay_ms')) {
+    runtimeConfig.manager_return_delay_ms = getConfigManagerReturnDelayMs({ manager_return_delay_ms: body.manager_return_delay_ms });
+    process.env.MANAGER_RETURN_DELAY_MS = String(runtimeConfig.manager_return_delay_ms);
+  }
+
   if (Object.prototype.hasOwnProperty.call(body, 'webhook_url')) {
     runtimeConfig.webhook_url = normalizeWebhookUrl(body.webhook_url || '');
     process.env.WEBHOOK_URL = runtimeConfig.webhook_url;
@@ -1026,6 +1370,32 @@ function applyConfigUpdate(body) {
 
 function getTelegramApiUrl(config, method) {
   return `https://api.telegram.org/bot${config.telegram_token}/${method}`;
+}
+
+async function fetchTelegramBusinessConnection(config, businessConnectionId) {
+  const id = String(businessConnectionId || '').trim();
+  if (!config.telegram_token || !id) return null;
+
+  try {
+    const response = await httpClient.get(getTelegramApiUrl(config, 'getBusinessConnection'), {
+      params: {
+        business_connection_id: id,
+      },
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    if (response.data?.ok && response.data.result) {
+      return upsertBusinessConnection(response.data.result);
+    }
+  } catch (e) {
+    logEvent('ERROR', {
+      scope: 'telegram.getBusinessConnection',
+      businessConnectionId: id,
+      status: 'error',
+      error: e.message,
+    });
+  }
+
+  return null;
 }
 
 function detectMessageType(message) {
@@ -1119,6 +1489,49 @@ function getTelegramUpdateType(update) {
   ].find((key) => update[key]) || 'unknown';
 }
 
+async function classifyTelegramMessageSource(config, context, message) {
+  if (!context.businessConnectionId || !String(context.updateType || '').includes('business_message')) {
+    return {
+      source: 'client',
+      businessConnection: null,
+    };
+  }
+
+  if (message.sender_business_bot) {
+    return {
+      source: 'bot',
+      businessConnection: getBusinessConnectionById(context.businessConnectionId),
+    };
+  }
+
+  let businessConnection = getBusinessConnectionById(context.businessConnectionId);
+  if (!businessConnection) {
+    businessConnection = await fetchTelegramBusinessConnection(config, context.businessConnectionId);
+  }
+
+  const fromId = String(message.from?.id || '').trim();
+  const chatId = String(message.chat?.id || '').trim();
+  const businessUserId = String(businessConnection?.userId || '').trim();
+  if (fromId && businessUserId && fromId === businessUserId) {
+    return {
+      source: message.is_from_offline ? 'manager_auto' : 'manager',
+      businessConnection,
+    };
+  }
+
+  if (!businessUserId && fromId && chatId && fromId !== chatId) {
+    return {
+      source: message.is_from_offline ? 'manager_auto' : 'manager',
+      businessConnection,
+    };
+  }
+
+  return {
+    source: 'client',
+    businessConnection,
+  };
+}
+
 function truncateText(text) {
   return String(text || '').slice(0, MAX_INPUT_TEXT_LENGTH);
 }
@@ -1163,7 +1576,49 @@ function randomBetween(min, max) {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-function getHumanTypingDelayMs(text) {
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function parseConfigBoolean(value, fallback = true) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function normalizeReplyMode(value) {
+  return ['smart', 'last', 'media', 'off'].includes(value) ? value : 'smart';
+}
+
+function normalizeHumanTypingMode(value) {
+  return ['fast', 'natural', 'slow'].includes(value) ? value : 'natural';
+}
+
+function getConfigManagerReturnDelayMs(config = runtimeConfig) {
+  return clampNumber(
+    config.manager_return_delay_ms,
+    MANAGER_RETURN_DELAY_MS,
+    MIN_MANAGER_RETURN_DELAY_MS,
+    MAX_MANAGER_RETURN_DELAY_MS,
+  );
+}
+
+function getConfigMemoryLimit(config = runtimeConfig) {
+  return clampNumber(config.memory_recent_limit, MEMORY_RECENT_LIMIT, MIN_MEMORY_RECENT_LIMIT, MAX_MEMORY_RECENT_LIMIT);
+}
+
+function getConfigBatchDebounceMs(config = runtimeConfig) {
+  return clampNumber(config.batch_debounce_ms, BATCH_DEBOUNCE_MS, MIN_BATCH_DEBOUNCE_MS, MAX_BATCH_DEBOUNCE_MS);
+}
+
+function getHumanTypingDelayMs(text, config = runtimeConfig) {
   const length = String(text || '').length;
   const cps = randomBetween(HUMAN_TYPING_MIN_CPS, HUMAN_TYPING_MAX_CPS);
   const typingTime = Math.round((length / cps) * 1000);
@@ -1172,10 +1627,14 @@ function getHumanTypingDelayMs(text) {
     : length <= 300
       ? randomBetween(900, 2200)
       : randomBetween(1400, 3000);
-  return Math.min(
+  const baseDelay = Math.min(
     HUMAN_TYPING_MAX_DELAY_MS,
     Math.max(HUMAN_TYPING_MIN_DELAY_MS, typingTime + thinkingTime + randomBetween(500, 1500)),
   );
+  const mode = normalizeHumanTypingMode(config.human_typing_mode);
+  if (mode === 'fast') return Math.round(baseDelay * 0.65);
+  if (mode === 'slow') return Math.round(baseDelay * 1.25);
+  return baseDelay;
 }
 
 function splitReplyForTelegram(reply) {
@@ -1844,6 +2303,14 @@ async function requestAi(input) {
     personaAge: input.config.persona_age,
     conversationMode: input.config.conversation_mode,
     mediaBehavior: input.config.media_behavior,
+    autoReplyEnabled: parseConfigBoolean(input.config.auto_reply_enabled, true),
+    memoryEnabled: parseConfigBoolean(input.config.memory_enabled, true),
+    memoryRecentLimit: getConfigMemoryLimit(input.config),
+    batchDebounceMs: getConfigBatchDebounceMs(input.config),
+    replyMode: normalizeReplyMode(input.config.reply_mode),
+    humanTypingMode: normalizeHumanTypingMode(input.config.human_typing_mode),
+    managerTakeoverEnabled: parseConfigBoolean(input.config.manager_takeover_enabled, true),
+    managerReturnDelayMs: getConfigManagerReturnDelayMs(input.config),
     temperature: payload.temperature,
     status: 'process',
   });
@@ -2068,7 +2535,7 @@ async function sendHumanizedTelegramReply(config, context, reply) {
   const parts = splitReplyForTelegram(reply);
   for (let index = 0; index < parts.length; index += 1) {
     await sendTelegramChatAction(config, context, 'typing');
-    await wait(getHumanTypingDelayMs(parts[index]));
+    await wait(getHumanTypingDelayMs(parts[index], config));
     await sendTelegramMessage(config, {
       ...context,
       useReply: index === 0 && !!context.replyToMessageId,
@@ -2166,6 +2633,14 @@ app.get('/config/status', async (req, res) => {
     persona_age: runtimeConfig.persona_age || '27',
     conversation_mode: runtimeConfig.conversation_mode || 'general',
     media_behavior: runtimeConfig.media_behavior || 'describe_media',
+    auto_reply_enabled: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
+    memory_enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
+    memory_recent_limit: getConfigMemoryLimit(runtimeConfig),
+    batch_debounce_ms: getConfigBatchDebounceMs(runtimeConfig),
+    reply_mode: normalizeReplyMode(runtimeConfig.reply_mode),
+    human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
+    manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
+    manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -2278,6 +2753,18 @@ app.get('/logs/:traceId', (req, res) => {
 
 app.get('/memory/:chatId', (req, res) => {
   const chatId = String(req.params.chatId || '').trim();
+  const profile = safeCustomerStoreCall('customer.profile.get', (store) => store.getCustomerProfile(chatId));
+  if (profile) {
+    res.json({
+      chatId,
+      customer: profile.customer,
+      facts: profile.facts || {},
+      state: profile.state || null,
+      lastOrder: profile.lastOrder || null,
+      recentMessages: profile.recentMessages || [],
+    });
+    return;
+  }
   const context = buildMemoryContext(chatId);
   res.json({
     chatId,
@@ -2441,6 +2928,14 @@ app.delete('/config', (req, res) => {
   runtimeConfig.persona_age = '27';
   runtimeConfig.conversation_mode = 'general';
   runtimeConfig.media_behavior = 'describe_media';
+  runtimeConfig.auto_reply_enabled = true;
+  runtimeConfig.memory_enabled = true;
+  runtimeConfig.memory_recent_limit = MEMORY_RECENT_LIMIT;
+  runtimeConfig.batch_debounce_ms = BATCH_DEBOUNCE_MS;
+  runtimeConfig.reply_mode = 'smart';
+  runtimeConfig.human_typing_mode = 'natural';
+  runtimeConfig.manager_takeover_enabled = true;
+  runtimeConfig.manager_return_delay_ms = MANAGER_RETURN_DELAY_MS;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -2458,6 +2953,14 @@ app.delete('/config', (req, res) => {
   process.env.PERSONA_AGE = '27';
   process.env.CONVERSATION_MODE = 'general';
   process.env.MEDIA_BEHAVIOR = 'describe_media';
+  process.env.AUTO_REPLY_ENABLED = 'true';
+  process.env.MEMORY_ENABLED = 'true';
+  process.env.MEMORY_RECENT_LIMIT = String(MEMORY_RECENT_LIMIT);
+  process.env.BATCH_DEBOUNCE_MS = String(BATCH_DEBOUNCE_MS);
+  process.env.REPLY_MODE = 'smart';
+  process.env.HUMAN_TYPING_MODE = 'natural';
+  process.env.MANAGER_TAKEOVER_ENABLED = 'true';
+  process.env.MANAGER_RETURN_DELAY_MS = String(MANAGER_RETURN_DELAY_MS);
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
@@ -2472,14 +2975,16 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
   if (!message || !chatId) {
     if (updateContext.updateType === 'business_connection') {
+      const connection = upsertBusinessConnection(req.body.business_connection || {});
       logEvent('IN', {
         traceId: createTraceId(),
         status: 'ok',
         scope: 'telegram.business_connection',
         updateType: updateContext.updateType,
         businessConnectionId: updateContext.businessConnectionId,
-        userId: req.body.business_connection?.user?.id || '',
-        chatId: req.body.business_connection?.user_chat_id || '',
+        userId: connection?.userId || req.body.business_connection?.user?.id || '',
+        chatId: connection?.userChatId || req.body.business_connection?.user_chat_id || '',
+        isEnabled: connection?.isEnabled ?? '',
         text: 'Telegram Business connection update',
       });
     }
@@ -2499,6 +3004,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
   setImmediate(async () => {
     try {
+      const sourceInfo = await classifyTelegramMessageSource(config, updateContext, message);
       const input = await normalizeTelegramMessage(config, {
         traceId,
         userId,
@@ -2515,6 +3021,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
       input.updateType = updateContext.updateType;
       input.businessConnectionId = updateContext.businessConnectionId;
       input.messageId = updateContext.messageId;
+      input.messageSource = sourceInfo.source;
+      input.firstName = firstName;
+      input.lastName = lastName;
+      input.username = username;
+      input.phoneNumber = phoneNumber;
+      safeCustomerStoreCall('customer.upsert', (store) => store.getOrCreateByTelegram(input));
       logEvent('IN', {
         traceId,
         received: true,
@@ -2522,6 +3034,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
         chatId,
         updateType: updateContext.updateType,
         businessConnectionId: updateContext.businessConnectionId,
+        messageSource: sourceInfo.source,
+        businessUserId: sourceInfo.businessConnection?.userId || '',
         messageId: updateContext.messageId,
         firstName,
         lastName,
@@ -2537,8 +3051,71 @@ app.post('/api/telegram/webhook', async (req, res) => {
       });
 
       const memoryText = getMemoryMessageText(input);
-      updateCustomerMemoryFromInput(input);
-      appendMemoryMessage(input, 'user', memoryText);
+      const memoryEnabled = parseConfigBoolean(config.memory_enabled, true);
+      const managerTakeoverEnabled = parseConfigBoolean(config.manager_takeover_enabled, true);
+
+      if (sourceInfo.source !== 'client') {
+        if (memoryEnabled && ['manager', 'manager_auto'].includes(sourceInfo.source)) {
+          appendMemoryMessage(input, 'manager', memoryText);
+        }
+
+        if (sourceInfo.source === 'manager' && managerTakeoverEnabled) {
+          cancelChatBatch(chatId);
+          cancelManagerReturnTimer(chatId);
+          setManagerActive(chatId, input, 'manager_message');
+          logEvent('MESSAGE_STATUS', {
+            traceId,
+            userId,
+            chatId,
+            updateType: updateContext.updateType,
+            businessConnectionId: updateContext.businessConnectionId,
+            messageId: updateContext.messageId,
+            messageType: input.messageType,
+            messageStatus: 'manager_takeover',
+            status: 'ok',
+          });
+        } else {
+          logEvent('MESSAGE_STATUS', {
+            traceId,
+            userId,
+            chatId,
+            updateType: updateContext.updateType,
+            businessConnectionId: updateContext.businessConnectionId,
+            messageId: updateContext.messageId,
+            messageType: input.messageType,
+            messageStatus: `${sourceInfo.source}_ignored`,
+            status: 'ok',
+          });
+        }
+        return;
+      }
+
+      if (memoryEnabled) {
+        updateCustomerMemoryFromInput(input);
+        appendMemoryMessage(input, 'user', memoryText);
+      }
+
+      if (!parseConfigBoolean(config.auto_reply_enabled, true)) {
+        logEvent('MESSAGE_STATUS', {
+          traceId,
+          userId,
+          chatId,
+          updateType: updateContext.updateType,
+          businessConnectionId: updateContext.businessConnectionId,
+          messageId: updateContext.messageId,
+          messageType: input.messageType,
+          messageStatus: 'auto_reply_disabled',
+          status: 'ok',
+        });
+        return;
+      }
+
+      const dialogState = getDialogState(chatId);
+      if (managerTakeoverEnabled && dialogState?.aiMode === 'passive_manager') {
+        scheduleManagerReturn(input);
+        return;
+      }
+
       enqueueInputForBatch(input);
     } catch (e) {
       logEvent('ERROR', {

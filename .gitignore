@@ -22,6 +22,8 @@ logs/
 # Runtime data
 data/runtime-config.json
 data/memory.json
+data/*.sqlite
+data/*.sqlite-*
 data/*.corrupt-*
 
 # OS

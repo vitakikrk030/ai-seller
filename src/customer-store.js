@@ -1,0 +1,611 @@
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
+
+const SCHEMA_VERSION = 1;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function clean(value, limit = 1200) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function createCustomerStore(options = {}) {
+  const dbPath = options.dbPath;
+  if (!dbPath) throw new Error('dbPath is required');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  runMigrations(db);
+
+  const statements = prepareStatements(db);
+
+  function getOrCreateByTelegram(input = {}) {
+    const chatId = clean(input.chatId || input.userId, 80);
+    if (!chatId) return null;
+    const userId = clean(input.userId || chatId, 80);
+    const existing = statements.getCustomerByChatId.get(chatId);
+    const timestamp = nowIso();
+
+    if (existing) {
+      statements.updateCustomerTelegram.run({
+        id: existing.id,
+        telegram_user_id: userId,
+        username: clean(input.username, 120) || existing.username || '',
+        first_name: clean(input.firstName, 120) || existing.first_name || '',
+        last_name: clean(input.lastName, 120) || existing.last_name || '',
+        phone: clean(input.phoneNumber, 80) || existing.phone || '',
+        last_seen_at: timestamp,
+        updated_at: timestamp,
+      });
+      return statements.getCustomerById.get(existing.id);
+    }
+
+    const result = statements.insertCustomer.run({
+      telegram_user_id: userId,
+      telegram_chat_id: chatId,
+      username: clean(input.username, 120),
+      first_name: clean(input.firstName, 120),
+      last_name: clean(input.lastName, 120),
+      phone: clean(input.phoneNumber, 80),
+      created_at: timestamp,
+      updated_at: timestamp,
+      last_seen_at: timestamp,
+    });
+    return statements.getCustomerById.get(result.lastInsertRowid);
+  }
+
+  function getCustomerId(inputOrChatId) {
+    const input = typeof inputOrChatId === 'object' ? inputOrChatId : { chatId: inputOrChatId };
+    return getOrCreateByTelegram(input)?.id || null;
+  }
+
+  function appendMessage(input = {}, role, text) {
+    const customer = getOrCreateByTelegram(input);
+    const messageText = clean(text);
+    if (!customer || !messageText) return null;
+    const telegramMessageId = role !== 'assistant' ? clean(input.messageId, 80) : '';
+
+    if (telegramMessageId) {
+      const duplicate = statements.getMessageDuplicate.get({
+        customer_id: customer.id,
+        role,
+        telegram_message_id: telegramMessageId,
+      });
+      if (duplicate) return duplicate;
+    }
+
+    const timestamp = nowIso();
+    const result = statements.insertMessage.run({
+      customer_id: customer.id,
+      telegram_message_id: telegramMessageId,
+      role,
+      text: messageText,
+      message_type: clean(input.messageType || 'text', 60),
+      trace_id: clean(input.traceId, 80),
+      created_at: timestamp,
+    });
+    statements.touchCustomer.run({ id: customer.id, updated_at: timestamp, last_seen_at: timestamp });
+    return statements.getMessageById.get(result.lastInsertRowid);
+  }
+
+  function upsertFact(inputOrChatId, key, value, source, confidence = 'explicit') {
+    const customerId = getCustomerId(inputOrChatId);
+    const factKey = clean(key, 80);
+    const factValue = clean(value);
+    if (!customerId || !factKey || !factValue) return null;
+    const timestamp = nowIso();
+    statements.upsertFact.run({
+      customer_id: customerId,
+      key: factKey,
+      value: factValue,
+      confidence: clean(confidence, 40) || 'explicit',
+      source: clean(source, 240),
+      updated_at: timestamp,
+    });
+    statements.touchCustomer.run({ id: customerId, updated_at: timestamp, last_seen_at: timestamp });
+    return getFactMapByCustomerId(customerId, statements)[factKey] || null;
+  }
+
+  function setDialogState(inputOrChatId, patch = {}) {
+    const customerId = getCustomerId(inputOrChatId);
+    if (!customerId) return null;
+    const previous = statements.getDialogState.get(customerId) || {};
+    const next = {
+      customer_id: customerId,
+      stage: clean(patch.stage ?? previous.stage, 80),
+      ai_mode: clean(patch.aiMode ?? patch.ai_mode ?? previous.ai_mode, 80),
+      mode_source: clean(patch.modeSource ?? patch.mode_source ?? previous.mode_source, 240),
+      source: clean(patch.source ?? previous.source, 240),
+      manager_active_at: clean(patch.managerActiveAt ?? patch.manager_active_at ?? previous.manager_active_at, 80),
+      manager_last_message_at: clean(patch.managerLastMessageAt ?? patch.manager_last_message_at ?? previous.manager_last_message_at, 80),
+      pending_since: clean(patch.pendingSince ?? patch.pending_since ?? previous.pending_since, 80),
+      auto_takeover_at: clean(patch.autoTakeoverAt ?? patch.auto_takeover_at ?? previous.auto_takeover_at, 80),
+      last_manager_trace_id: clean(patch.lastManagerTraceId ?? patch.last_manager_trace_id ?? previous.last_manager_trace_id, 80),
+      last_client_trace_id: clean(patch.lastClientTraceId ?? patch.last_client_trace_id ?? previous.last_client_trace_id, 80),
+      updated_at: nowIso(),
+    };
+    statements.upsertDialogState.run(next);
+    return getDialogState(inputOrChatId);
+  }
+
+  function getDialogState(inputOrChatId) {
+    const customerId = getCustomerId(inputOrChatId);
+    if (!customerId) return null;
+    const row = statements.getDialogState.get(customerId);
+    return row ? mapStateRow(row) : null;
+  }
+
+  function upsertOrder(inputOrChatId, patch = {}) {
+    const customerId = getCustomerId(inputOrChatId);
+    if (!customerId) return null;
+    const timestamp = nowIso();
+    const result = statements.insertOrder.run({
+      customer_id: customerId,
+      product: clean(patch.product),
+      size: clean(patch.size, 40),
+      price: clean(patch.price, 80),
+      full_name: clean(patch.fullName || patch.full_name),
+      phone: clean(patch.phone, 80),
+      delivery_address: clean(patch.deliveryAddress || patch.delivery_address),
+      status: clean(patch.status || 'draft', 80),
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+    return statements.getOrderById.get(result.lastInsertRowid);
+  }
+
+  function upsertBusinessConnection(connection = {}) {
+    const id = clean(connection.id || connection.business_connection_id, 120);
+    if (!id) return null;
+    const timestamp = nowIso();
+    statements.upsertBusinessConnection.run({
+      business_connection_id: id,
+      business_user_id: clean(connection.user?.id || connection.userId || connection.business_user_id, 80),
+      user_chat_id: clean(connection.user_chat_id || connection.userChatId || connection.user_chat_id, 80),
+      is_enabled: connection.is_enabled === false ? 0 : 1,
+      rights_json: connection.rights ? JSON.stringify(connection.rights) : '',
+      updated_at: timestamp,
+    });
+    return getBusinessConnection(id);
+  }
+
+  function getBusinessConnection(id) {
+    const row = statements.getBusinessConnection.get(clean(id, 120));
+    if (!row) return null;
+    return {
+      id: row.business_connection_id,
+      userId: row.business_user_id || '',
+      userChatId: row.user_chat_id || '',
+      isEnabled: row.is_enabled !== 0,
+      rights: parseJson(row.rights_json),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function getRecentMessages(inputOrChatId, limit = 20, excludeTraceIds = []) {
+    const customerId = getCustomerId(inputOrChatId);
+    if (!customerId) return [];
+    const excluded = new Set((excludeTraceIds || []).filter(Boolean).map(String));
+    return statements.getRecentMessages.all({
+      customer_id: customerId,
+      limit: Math.max(1, Math.min(100, Number(limit) || 20)),
+    })
+      .filter((message) => !excluded.has(message.trace_id))
+      .reverse()
+      .map(mapMessageRow);
+  }
+
+  function getCustomerContext(inputOrChatId, options = {}) {
+    const customer = getOrCreateByTelegram(typeof inputOrChatId === 'object' ? inputOrChatId : { chatId: inputOrChatId });
+    if (!customer) return { summary: '', history: [], facts: {}, state: null, customer: null, lastOrder: null };
+
+    const facts = getFactMapByCustomerId(customer.id, statements);
+    const state = getDialogState(customer.telegram_chat_id);
+    const lastOrder = statements.getLastOrder.get(customer.id) || null;
+    const history = getRecentMessages(customer.telegram_chat_id, options.limit || 20, options.excludeTraceIds || []);
+    const summary = buildProfileSummary(customer, facts, state, lastOrder);
+
+    return {
+      summary,
+      history: history.map((message) => ({
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: message.role === 'manager' ? `Manager: ${message.text}` : message.text,
+        createdAt: message.createdAt,
+        type: message.type,
+      })),
+      facts,
+      state,
+      customer: mapCustomerRow(customer),
+      lastOrder,
+    };
+  }
+
+  function getCustomerProfile(inputOrChatId) {
+    const customer = getOrCreateByTelegram(typeof inputOrChatId === 'object' ? inputOrChatId : { chatId: inputOrChatId });
+    if (!customer) return null;
+    return {
+      customer: mapCustomerRow(customer),
+      facts: getFactMapByCustomerId(customer.id, statements),
+      state: getDialogState(customer.telegram_chat_id),
+      lastOrder: statements.getLastOrder.get(customer.id) || null,
+      recentMessages: getRecentMessages(customer.telegram_chat_id, 20),
+    };
+  }
+
+  function clearCustomer(inputOrChatId) {
+    const customerId = getCustomerId(inputOrChatId);
+    if (!customerId) return false;
+    db.transaction(() => {
+      statements.deleteMessages.run(customerId);
+      statements.deleteFacts.run(customerId);
+      statements.deleteState.run(customerId);
+      statements.deleteOrders.run(customerId);
+    })();
+    return true;
+  }
+
+  function importLegacyMemory(memoryStore = {}) {
+    db.transaction(() => {
+      Object.values(memoryStore.businessConnections || {}).forEach((connection) => {
+        upsertBusinessConnection(connection);
+      });
+
+      Object.entries(memoryStore.facts || {}).forEach(([chatId, facts]) => {
+        getOrCreateByTelegram({ chatId, userId: chatId });
+        Object.entries(facts || {}).forEach(([key, fact]) => {
+          upsertFact(chatId, key, fact?.value, fact?.source || '', fact?.confidence || 'explicit');
+        });
+      });
+
+      Object.entries(memoryStore.states || {}).forEach(([chatId, state]) => {
+        setDialogState(chatId, {
+          stage: state.stage || '',
+          aiMode: state.aiMode || '',
+          modeSource: state.modeSource || '',
+          source: state.source || '',
+          managerActiveAt: state.managerActiveAt || '',
+          managerLastMessageAt: state.managerLastMessageAt || '',
+          pendingSince: state.pendingSince || '',
+          autoTakeoverAt: state.autoTakeoverAt || '',
+          lastManagerTraceId: state.lastManagerTraceId || '',
+          lastClientTraceId: state.lastClientTraceId || '',
+        });
+      });
+
+      (memoryStore.messages || []).forEach((message) => {
+        appendMessage({
+          chatId: message.chatId,
+          userId: message.userId,
+          messageId: message.telegramMessageId,
+          messageType: message.type,
+          traceId: message.traceId,
+        }, message.role || 'client', message.text || '');
+      });
+    })();
+  }
+
+  function close() {
+    db.close();
+  }
+
+  return {
+    db,
+    getOrCreateByTelegram,
+    appendMessage,
+    upsertFact,
+    setDialogState,
+    getDialogState,
+    upsertOrder,
+    upsertBusinessConnection,
+    getBusinessConnection,
+    getRecentMessages,
+    getCustomerContext,
+    getCustomerProfile,
+    clearCustomer,
+    importLegacyMemory,
+    close,
+  };
+}
+
+function runMigrations(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  const applied = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(SCHEMA_VERSION);
+  if (applied) return;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      telegram_user_id TEXT,
+      telegram_chat_id TEXT NOT NULL UNIQUE,
+      username TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      phone TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      telegram_message_id TEXT,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      message_type TEXT,
+      trace_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_messages_customer_created ON messages(customer_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_customer_role_tg
+      ON messages(customer_id, role, telegram_message_id)
+      WHERE telegram_message_id IS NOT NULL AND telegram_message_id != '';
+
+    CREATE TABLE IF NOT EXISTS customer_facts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      confidence TEXT,
+      source TEXT,
+      updated_at TEXT NOT NULL,
+      UNIQUE(customer_id, key),
+      FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS dialog_states (
+      customer_id INTEGER PRIMARY KEY,
+      stage TEXT,
+      ai_mode TEXT,
+      mode_source TEXT,
+      source TEXT,
+      manager_active_at TEXT,
+      manager_last_message_at TEXT,
+      pending_since TEXT,
+      auto_takeover_at TEXT,
+      last_manager_trace_id TEXT,
+      last_client_trace_id TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      product TEXT,
+      size TEXT,
+      price TEXT,
+      full_name TEXT,
+      phone TEXT,
+      delivery_address TEXT,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS business_connections (
+      business_connection_id TEXT PRIMARY KEY,
+      business_user_id TEXT,
+      user_chat_id TEXT,
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      rights_json TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(SCHEMA_VERSION, nowIso());
+}
+
+function prepareStatements(db) {
+  return {
+    getCustomerByChatId: db.prepare('SELECT * FROM customers WHERE telegram_chat_id = ?'),
+    getCustomerById: db.prepare('SELECT * FROM customers WHERE id = ?'),
+    insertCustomer: db.prepare(`
+      INSERT INTO customers (telegram_user_id, telegram_chat_id, username, first_name, last_name, phone, created_at, updated_at, last_seen_at)
+      VALUES (@telegram_user_id, @telegram_chat_id, @username, @first_name, @last_name, @phone, @created_at, @updated_at, @last_seen_at)
+    `),
+    updateCustomerTelegram: db.prepare(`
+      UPDATE customers
+      SET telegram_user_id = @telegram_user_id,
+          username = @username,
+          first_name = @first_name,
+          last_name = @last_name,
+          phone = @phone,
+          last_seen_at = @last_seen_at,
+          updated_at = @updated_at
+      WHERE id = @id
+    `),
+    touchCustomer: db.prepare('UPDATE customers SET updated_at = @updated_at, last_seen_at = @last_seen_at WHERE id = @id'),
+    getMessageDuplicate: db.prepare(`
+      SELECT * FROM messages
+      WHERE customer_id = @customer_id AND role = @role AND telegram_message_id = @telegram_message_id
+      LIMIT 1
+    `),
+    insertMessage: db.prepare(`
+      INSERT INTO messages (customer_id, telegram_message_id, role, text, message_type, trace_id, created_at)
+      VALUES (@customer_id, @telegram_message_id, @role, @text, @message_type, @trace_id, @created_at)
+    `),
+    getMessageById: db.prepare('SELECT * FROM messages WHERE id = ?'),
+    getRecentMessages: db.prepare(`
+      SELECT * FROM messages
+      WHERE customer_id = @customer_id
+      ORDER BY datetime(created_at) DESC, id DESC
+      LIMIT @limit
+    `),
+    upsertFact: db.prepare(`
+      INSERT INTO customer_facts (customer_id, key, value, confidence, source, updated_at)
+      VALUES (@customer_id, @key, @value, @confidence, @source, @updated_at)
+      ON CONFLICT(customer_id, key) DO UPDATE SET
+        value = excluded.value,
+        confidence = excluded.confidence,
+        source = excluded.source,
+        updated_at = excluded.updated_at
+    `),
+    getFactsByCustomerId: db.prepare('SELECT * FROM customer_facts WHERE customer_id = ? ORDER BY key'),
+    upsertDialogState: db.prepare(`
+      INSERT INTO dialog_states (
+        customer_id, stage, ai_mode, mode_source, source, manager_active_at,
+        manager_last_message_at, pending_since, auto_takeover_at,
+        last_manager_trace_id, last_client_trace_id, updated_at
+      )
+      VALUES (
+        @customer_id, @stage, @ai_mode, @mode_source, @source, @manager_active_at,
+        @manager_last_message_at, @pending_since, @auto_takeover_at,
+        @last_manager_trace_id, @last_client_trace_id, @updated_at
+      )
+      ON CONFLICT(customer_id) DO UPDATE SET
+        stage = excluded.stage,
+        ai_mode = excluded.ai_mode,
+        mode_source = excluded.mode_source,
+        source = excluded.source,
+        manager_active_at = excluded.manager_active_at,
+        manager_last_message_at = excluded.manager_last_message_at,
+        pending_since = excluded.pending_since,
+        auto_takeover_at = excluded.auto_takeover_at,
+        last_manager_trace_id = excluded.last_manager_trace_id,
+        last_client_trace_id = excluded.last_client_trace_id,
+        updated_at = excluded.updated_at
+    `),
+    getDialogState: db.prepare('SELECT * FROM dialog_states WHERE customer_id = ?'),
+    insertOrder: db.prepare(`
+      INSERT INTO orders (customer_id, product, size, price, full_name, phone, delivery_address, status, created_at, updated_at)
+      VALUES (@customer_id, @product, @size, @price, @full_name, @phone, @delivery_address, @status, @created_at, @updated_at)
+    `),
+    getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
+    getLastOrder: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT 1'),
+    upsertBusinessConnection: db.prepare(`
+      INSERT INTO business_connections (business_connection_id, business_user_id, user_chat_id, is_enabled, rights_json, updated_at)
+      VALUES (@business_connection_id, @business_user_id, @user_chat_id, @is_enabled, @rights_json, @updated_at)
+      ON CONFLICT(business_connection_id) DO UPDATE SET
+        business_user_id = excluded.business_user_id,
+        user_chat_id = excluded.user_chat_id,
+        is_enabled = excluded.is_enabled,
+        rights_json = excluded.rights_json,
+        updated_at = excluded.updated_at
+    `),
+    getBusinessConnection: db.prepare('SELECT * FROM business_connections WHERE business_connection_id = ?'),
+    deleteMessages: db.prepare('DELETE FROM messages WHERE customer_id = ?'),
+    deleteFacts: db.prepare('DELETE FROM customer_facts WHERE customer_id = ?'),
+    deleteState: db.prepare('DELETE FROM dialog_states WHERE customer_id = ?'),
+    deleteOrders: db.prepare('DELETE FROM orders WHERE customer_id = ?'),
+  };
+}
+
+function getFactMapByCustomerId(customerId, statements = null) {
+  const rows = statements
+    ? statements.getFactsByCustomerId.all(customerId)
+    : [];
+  return rows.reduce((acc, row) => {
+    acc[row.key] = {
+      value: row.value,
+      confidence: row.confidence || '',
+      source: row.source || '',
+      updatedAt: row.updated_at || '',
+    };
+    return acc;
+  }, {});
+}
+
+function mapStateRow(row) {
+  return {
+    stage: row.stage || '',
+    aiMode: row.ai_mode || '',
+    modeSource: row.mode_source || '',
+    source: row.source || '',
+    managerActiveAt: row.manager_active_at || '',
+    managerLastMessageAt: row.manager_last_message_at || '',
+    pendingSince: row.pending_since || '',
+    autoTakeoverAt: row.auto_takeover_at || '',
+    lastManagerTraceId: row.last_manager_trace_id || '',
+    lastClientTraceId: row.last_client_trace_id || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function mapMessageRow(row) {
+  return {
+    id: row.id,
+    chatId: '',
+    userId: '',
+    role: row.role,
+    type: row.message_type || 'text',
+    text: row.text || '',
+    telegramMessageId: row.telegram_message_id || '',
+    traceId: row.trace_id || '',
+    createdAt: row.created_at || '',
+  };
+}
+
+function mapCustomerRow(row) {
+  return {
+    id: row.id,
+    userId: row.telegram_user_id || '',
+    chatId: row.telegram_chat_id || '',
+    username: row.username || '',
+    firstName: row.first_name || '',
+    lastName: row.last_name || '',
+    phone: row.phone || '',
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
+    lastSeenAt: row.last_seen_at || '',
+  };
+}
+
+function buildProfileSummary(customer, facts, state, lastOrder) {
+  const lines = [];
+  const name = facts.fullName?.value || [customer.first_name, customer.last_name].filter(Boolean).join(' ').trim();
+  const phone = facts.phone?.value || customer.phone;
+  const pairs = [
+    ['Name', name],
+    ['Phone', phone ? 'saved' : ''],
+    ['City', facts.city?.value],
+    ['Delivery address', facts.deliveryAddress?.value ? 'saved' : ''],
+    ['Shoe size', facts.shoeSize?.value],
+    ['Interest', facts.interest?.value],
+    ['Last product', facts.lastProduct?.value],
+    ['Stage', state?.stage],
+    ['AI mode', state?.aiMode],
+  ];
+
+  pairs.forEach(([label, value]) => {
+    if (value) lines.push(`- ${label}: ${value}`);
+  });
+
+  if (lastOrder?.product || lastOrder?.status) {
+    lines.push(`- Last order: ${[lastOrder.product, lastOrder.size && `size ${lastOrder.size}`, lastOrder.status].filter(Boolean).join(', ')}`);
+  }
+
+  if (!lines.length) return '';
+  return [
+    'Customer profile:',
+    ...lines,
+    'Use this naturally when relevant. Do not mention internal memory directly. Confirm saved phone or delivery address before using them for a new order. Do not invent missing facts.',
+  ].join('\n');
+}
+
+function parseJson(value) {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = {
+  createCustomerStore,
+};

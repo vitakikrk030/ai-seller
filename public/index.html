@@ -1103,6 +1103,12 @@
         margin-top: 8px;
       }
 
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
       .toggle-line input {
         width: 14px;
         height: 14px;
@@ -1448,6 +1454,23 @@
         word-break: break-word;
       }
 
+      .chat-detail.wide {
+        grid-column: 1 / -1;
+      }
+
+      .crm-message-list {
+        display: grid;
+        gap: 4px;
+        max-height: 150px;
+        overflow: auto;
+      }
+
+      .crm-message-item {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.35;
+      }
+
       .chat-thread {
         display: grid;
         gap: 7px;
@@ -1549,6 +1572,10 @@
 
       @media (max-width: 760px) {
         .log-summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .settings-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -1805,6 +1832,81 @@
                     </div>
                     <div class="actions">
                       <button id="savePersona" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Автоматизация диалога</div>
+                    <div class="list-subtitle">Память, быстрые сообщения, reply и естественная задержка ответа.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="autoReplyEnabled" type="checkbox" />
+                      AI отвечает автоматически
+                    </label>
+                    <label class="toggle-line">
+                      <input id="memoryEnabled" type="checkbox" />
+                      Память клиента включена
+                    </label>
+                    <label class="toggle-line">
+                      <input id="managerTakeoverEnabled" type="checkbox" />
+                      Менеджер может перехватить диалог
+                    </label>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <label class="field-label" for="memoryRecentLimitSelect">Глубина памяти</label>
+                        <select id="memoryRecentLimitSelect">
+                          <option value="5">5 сообщений</option>
+                          <option value="10">10 сообщений</option>
+                          <option value="15">15 сообщений</option>
+                          <option value="20">20 сообщений</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="batchDebounceSelect">Сбор быстрых сообщений</label>
+                        <select id="batchDebounceSelect">
+                          <option value="0">Не собирать</option>
+                          <option value="1500">1.5 секунды</option>
+                          <option value="3000">3 секунды</option>
+                          <option value="5000">5 секунд</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="replyModeSelect">Reply на сообщение</label>
+                        <select id="replyModeSelect">
+                          <option value="smart">Умно</option>
+                          <option value="last">На последнее</option>
+                          <option value="media">Только на медиа</option>
+                          <option value="off">Выключено</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="humanTypingModeSelect">Имитация набора</label>
+                        <select id="humanTypingModeSelect">
+                          <option value="fast">Быстрее</option>
+                          <option value="natural">Естественно</option>
+                          <option value="slow">Медленнее</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="managerReturnDelaySelect">Возврат AI после менеджера</label>
+                        <select id="managerReturnDelaySelect">
+                          <option value="60000">1 минута</option>
+                          <option value="180000">3 минуты</option>
+                          <option value="300000">5 минут</option>
+                          <option value="600000">10 минут</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="actions">
+                      <button id="saveDialogueAutomation" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
@@ -2104,6 +2206,14 @@
       const personaAgeSelect = document.getElementById('personaAgeSelect');
       const conversationModeSelect = document.getElementById('conversationModeSelect');
       const mediaBehaviorSelect = document.getElementById('mediaBehaviorSelect');
+      const autoReplyEnabled = document.getElementById('autoReplyEnabled');
+      const memoryEnabled = document.getElementById('memoryEnabled');
+      const managerTakeoverEnabled = document.getElementById('managerTakeoverEnabled');
+      const memoryRecentLimitSelect = document.getElementById('memoryRecentLimitSelect');
+      const batchDebounceSelect = document.getElementById('batchDebounceSelect');
+      const replyModeSelect = document.getElementById('replyModeSelect');
+      const humanTypingModeSelect = document.getElementById('humanTypingModeSelect');
+      const managerReturnDelaySelect = document.getElementById('managerReturnDelaySelect');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
       const testMessage = document.getElementById('testMessage');
       const testOutput = document.getElementById('testOutput');
@@ -2143,6 +2253,7 @@
       const saveBehaviorButton = document.getElementById('saveBehavior');
       const saveInputHandlingButton = document.getElementById('saveInputHandling');
       const savePersonaButton = document.getElementById('savePersona');
+      const saveDialogueAutomationButton = document.getElementById('saveDialogueAutomation');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
       const saveSttProviderButton = document.getElementById('saveSttProvider');
@@ -2298,6 +2409,7 @@
               userId: item.userId || chatId,
               time: item.time,
               type: item.event === 'IN' ? 'in' : 'out',
+              source: item.messageSource || '',
               text: item.event === 'IN' ? (item.text || '') : (item.replyText || ''),
               messageType: item.messageType || '',
             });
@@ -2328,7 +2440,15 @@
 
       function renderMemoryDetails(chat) {
         const memory = chat.memory || {};
+        const customer = memory.customer || {};
+        const lastOrder = memory.lastOrder || {};
+        const recentMessages = Array.isArray(memory.recentMessages) ? memory.recentMessages.slice(-20) : [];
         const stage = memory.state?.stage || '—';
+        const aiMode = memory.state?.aiMode === 'passive_manager'
+          ? 'Менеджер ведёт'
+          : memory.state?.aiMode === 'active'
+            ? 'AI активен'
+            : '—';
         const updatedAt = memory.state?.updatedAt || Object.values(memory.facts || {})
           .map((fact) => fact.updatedAt)
           .filter(Boolean)
@@ -2338,28 +2458,56 @@
         return `
           <div class="chat-details${currentInboxMemoryOpen ? ' visible' : ''}">
             <div class="chat-detail">
-              <div class="chat-detail-label">Размер</div>
-              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'shoeSize'))}</div>
-            </div>
-            <div class="chat-detail">
-              <div class="chat-detail-label">Интерес</div>
-              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'interest'))}</div>
-            </div>
-            <div class="chat-detail">
-              <div class="chat-detail-label">Stage</div>
-              <div class="chat-detail-value">${escapeHtml(stage)}</div>
+              <div class="chat-detail-label">ФИО</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'fullName'))}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Телефон</div>
-              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'phone'))}</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'phone') !== '—' ? getMemoryValue(memory, 'phone') : (customer.phone || '—'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Размер</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'shoeSize'))}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Город</div>
               <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'city'))}</div>
             </div>
             <div class="chat-detail">
+              <div class="chat-detail-label">Адрес</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'deliveryAddress'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Интерес</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'interest'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Последний товар</div>
+              <div class="chat-detail-value">${escapeHtml(getMemoryValue(memory, 'lastProduct'))}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Последний заказ</div>
+              <div class="chat-detail-value">${escapeHtml(lastOrder.product ? [lastOrder.product, lastOrder.size, lastOrder.status].filter(Boolean).join(' · ') : '—')}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Stage</div>
+              <div class="chat-detail-value">${escapeHtml(stage)}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Режим</div>
+              <div class="chat-detail-value">${escapeHtml(aiMode)}</div>
+            </div>
+            <div class="chat-detail">
               <div class="chat-detail-label">Обновлено</div>
               <div class="chat-detail-value">${escapeHtml(updatedAt ? formatDateTimeLabel(updatedAt) : '—')}</div>
+            </div>
+            <div class="chat-detail wide">
+              <div class="chat-detail-label">Последние 20 сообщений</div>
+              <div class="crm-message-list">
+                ${recentMessages.length ? recentMessages.map((message) => `
+                  <div class="crm-message-item">${escapeHtml(message.role || 'message')}: ${escapeHtml(message.text || '')}</div>
+                `).join('') : '<div class="crm-message-item">—</div>'}
+              </div>
             </div>
           </div>
         `;
@@ -2414,7 +2562,7 @@
               <div class="chat-identity">
                 <div class="chat-name">Память клиента</div>
                 <div class="chat-submeta">
-                  <span>Short context + явные факты</span>
+                  <span>Профиль, заказ и последние сообщения</span>
                 </div>
               </div>
               <div class="chat-actions">
@@ -2427,7 +2575,7 @@
           <div class="chat-thread">
             ${chat.messages.map((message) => `
               <div class="chat-bubble ${message.type}">
-                <div class="chat-bubble-role">${message.type === 'in' ? 'Пользователь' : 'AI'}</div>
+                <div class="chat-bubble-role">${message.type === 'out' ? 'AI' : message.source === 'manager' ? 'Менеджер' : 'Пользователь'}</div>
                 <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
                 <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
               </div>
@@ -2725,6 +2873,14 @@
         personaAgeSelect.value = String(data.persona_age || '27');
         conversationModeSelect.value = data.conversation_mode || 'general';
         mediaBehaviorSelect.value = data.media_behavior || 'describe_media';
+        autoReplyEnabled.checked = data.auto_reply_enabled !== false;
+        memoryEnabled.checked = data.memory_enabled !== false;
+        managerTakeoverEnabled.checked = data.manager_takeover_enabled !== false;
+        memoryRecentLimitSelect.value = String(data.memory_recent_limit || 10);
+        batchDebounceSelect.value = String(data.batch_debounce_ms ?? 3000);
+        replyModeSelect.value = data.reply_mode || 'smart';
+        humanTypingModeSelect.value = data.human_typing_mode || 'natural';
+        managerReturnDelaySelect.value = String(data.manager_return_delay_ms || 180000);
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -2850,6 +3006,26 @@
             body: JSON.stringify({
               persona_style: personaStyleSelect.value,
               persona_age: personaAgeSelect.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveDialogueAutomation() {
+        await performSave(saveDialogueAutomationButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              auto_reply_enabled: autoReplyEnabled.checked,
+              memory_enabled: memoryEnabled.checked,
+              manager_takeover_enabled: managerTakeoverEnabled.checked,
+              memory_recent_limit: memoryRecentLimitSelect.value,
+              batch_debounce_ms: batchDebounceSelect.value,
+              reply_mode: replyModeSelect.value,
+              human_typing_mode: humanTypingModeSelect.value,
+              manager_return_delay_ms: managerReturnDelaySelect.value,
             }),
           });
           await loadStatus();
@@ -3208,6 +3384,16 @@
       bindDirtyState(saveBehaviorButton, [toneSelect, responseLengthSelect, creativitySelect]);
       bindDirtyState(saveInputHandlingButton, [conversationModeSelect, mediaBehaviorSelect]);
       bindDirtyState(savePersonaButton, [personaStyleSelect, personaAgeSelect]);
+      bindDirtyState(saveDialogueAutomationButton, [
+        autoReplyEnabled,
+        memoryEnabled,
+        managerTakeoverEnabled,
+        memoryRecentLimitSelect,
+        batchDebounceSelect,
+        replyModeSelect,
+        humanTypingModeSelect,
+        managerReturnDelaySelect,
+      ]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
       bindDirtyState(saveSttProviderButton, [sttBaseUrl, sttApiKey, sttModel]);
@@ -3217,6 +3403,7 @@
       document.getElementById('saveBehavior').addEventListener('click', saveBehavior);
       document.getElementById('saveInputHandling').addEventListener('click', saveInputHandling);
       document.getElementById('savePersona').addEventListener('click', savePersona);
+      document.getElementById('saveDialogueAutomation').addEventListener('click', saveDialogueAutomation);
       document.getElementById('runTest').addEventListener('click', runTest);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
       document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);
