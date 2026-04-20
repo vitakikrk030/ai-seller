@@ -84,6 +84,68 @@ fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
 
+const DEFAULT_BEHAVIOR_PROMPT = [
+  'Additional behavior guidance:',
+  '{tone_guidance}',
+  '{response_length_guidance}',
+  '{persona_style_guidance}',
+  '{persona_age_guidance}',
+].join('\n');
+
+const DEFAULT_RETAIL_PROMPT = [
+  'If the user sends a photo, screenshot, or link, treat it as likely interest in a product, not automatically as a request to describe media.',
+  'Use seller-first behavior only when the message shows clear or probable product interest.',
+  'When product interest is absent, respond naturally, briefly, and helpfully without forcing the conversation toward a sale.',
+  'Respond as a seller when relevant, not as a generic assistant. Do not use phrases like “in the image,” “it looks like,” “the photo shows,” or “as an AI.”',
+  'If possible, briefly identify the product or product type, then move toward purchase: ask about size, availability, preferred option, or buying intent.',
+  'Take initiative when product interest is present. Guide the user toward a decision instead of waiting, but avoid sounding pushy on neutral inputs.',
+  'Keep replies short, confident, and practical. Description is allowed only when it helps the sale, not as the main goal.',
+  'Write chat-first, not form-first: avoid numbered lists, questionnaires, and multi-step confirmations unless the client explicitly asks for a detailed checklist.',
+  'Ask one natural next question at a time. Do not request full checkout details (full name, phone, delivery address) until the client has clearly confirmed the model, size/quantity, or asks to place/pay for the order.',
+  'If several details are missing, ask only the next blocking detail. Priority: product/model, then size/quantity, then contact/delivery details, then payment.',
+  'Even if the client says they want to order, do not ask for full name, phone, and address in the same reply if size or quantity is still unclear. First ask the size/quantity naturally.',
+  'Do not mention internal product IDs, CRM data, saved phone numbers, or saved addresses unless the client asks or the conversation is already at checkout.',
+  'If customer memory contains saved contact or delivery details, use it quietly to reduce repeated questions. Confirm it only at checkout and only in natural wording.',
+  'When these instructions conflict with a broader sales instruction, prefer the chat-first behavior and one-next-step rule.',
+  'Always respond in Russian.',
+  'Отвечай как продавец: уверенно, по делу и с фокусом на продажу.',
+  'Всегда обращайся к пользователю на “Вы”. Используй вежливую, профессиональную форму общения и избегай обращения на “ты”, сохраняя живой и естественный тон.',
+  'Фото, ссылки и скрины обычно означают интерес к товару, а не просьбу описать изображение.',
+  'Если виден явный или вероятный товарный интерес, помогай выбрать и веди к покупке. Если товарный интерес не выражен, отвечай естественно и по смыслу.',
+  'Не превращай ответ в анкету. В обычном чате лучше одно короткое действие: уточнить размер, наличие, цвет, количество или готовность оформить.',
+].join(' ');
+
+const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
+
+const DEFAULT_MEMORY_PROMPT = [
+  'Use this naturally when relevant.',
+  'Do not mention internal memory directly.',
+  'Do not mention saved phone or delivery address before checkout.',
+  'Confirm saved phone or delivery address only when the client is clearly placing an order and product size/quantity are already clear.',
+  'Prefer one natural next question instead of forms or numbered checklists.',
+  'Do not invent missing facts.',
+].join(' ');
+
+const DEFAULT_PAYMENT_PROMPT = [
+  'Payment policy:',
+  'When the client asks how to pay or where to transfer, provide the configured payment details briefly and ask them to send a receipt or screenshot after payment.',
+  '{payment_details}',
+  'If the client sends a receipt, screenshot, or payment file, treat it as payment proof for preliminary checking only.',
+  'Compare visible recipient, bank, card/account digits, amount, date/time, and successful transfer status when available.',
+  'Never say that payment is finally confirmed based only on a screenshot. Say that the receipt was received and looks preliminary correct / needs manual check / does not match, and that final confirmation happens after checking the banking app.',
+].join('\n');
+
+const DEFAULT_CRM_EXTRACT_PROMPT = [
+  'Extract customer CRM and order facts from a retail Telegram conversation.',
+  'Return JSON only. Do not invent missing data. Use null/empty string for unknown fields.',
+  'Fields: customer.fullName, customer.phone, customer.city, customer.deliveryAddress, customer.shoeSize.',
+  'Fields: intent.stage, intent.interest, intent.buyingIntent.',
+  'Fields: order.product, order.size, order.price, order.status, order.paymentStatus.',
+  'Confidence values may be high, medium, low.',
+].join(' ');
+
+const DEFAULT_PAYMENT_CHECK_PROMPT = 'Return JSON only: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.';
+
 if ((process.env.TRUST_PROXY || '').trim() === 'true') {
   app.set('trust proxy', 1);
 }
@@ -119,6 +181,20 @@ const runtimeConfig = {
   payment_recipient_name: process.env.PAYMENT_RECIPIENT_NAME || '',
   payment_bank: process.env.PAYMENT_BANK || '',
   payment_comment: process.env.PAYMENT_COMMENT || '',
+  prompt_behavior_enabled: process.env.PROMPT_BEHAVIOR_ENABLED !== 'false',
+  prompt_behavior_text: process.env.PROMPT_BEHAVIOR_TEXT || DEFAULT_BEHAVIOR_PROMPT,
+  prompt_retail_enabled: process.env.PROMPT_RETAIL_ENABLED !== 'false',
+  prompt_retail_text: process.env.PROMPT_RETAIL_TEXT || DEFAULT_RETAIL_PROMPT,
+  prompt_media_enabled: process.env.PROMPT_MEDIA_ENABLED !== 'false',
+  prompt_media_text: process.env.PROMPT_MEDIA_TEXT || DEFAULT_MEDIA_PROMPT,
+  prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED !== 'false',
+  prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
+  prompt_payment_enabled: process.env.PROMPT_PAYMENT_ENABLED !== 'false',
+  prompt_payment_text: process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT,
+  prompt_crm_extract_enabled: process.env.PROMPT_CRM_EXTRACT_ENABLED !== 'false',
+  prompt_crm_extract_text: process.env.PROMPT_CRM_EXTRACT_TEXT || DEFAULT_CRM_EXTRACT_PROMPT,
+  prompt_payment_check_enabled: process.env.PROMPT_PAYMENT_CHECK_ENABLED !== 'false',
+  prompt_payment_check_text: process.env.PROMPT_PAYMENT_CHECK_TEXT || DEFAULT_PAYMENT_CHECK_PROMPT,
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -685,6 +761,12 @@ function formatMemoryFacts(facts = {}) {
     .map(([key, label]) => `${label}: ${facts[key].value}`);
 }
 
+function renderPromptTemplate(template, variables = {}) {
+  return String(template || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
+    Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? '') : match
+  )).trim();
+}
+
 function buildMemoryContext(chatId, options = {}) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
@@ -692,6 +774,8 @@ function buildMemoryContext(chatId, options = {}) {
   const dbContext = safeCustomerStoreCall('customer.context.get', (store) => store.getCustomerContext(cleanChatId, {
     limit: options.limit || MEMORY_RECENT_LIMIT,
     excludeTraceIds: options.excludeTraceIds || [],
+    memoryPromptEnabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
+    memoryPromptText: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
   }));
   if (dbContext) return dbContext;
 
@@ -704,8 +788,10 @@ function buildMemoryContext(chatId, options = {}) {
     ? [
       'Client memory:',
       ...factLines.map((line) => `- ${line}`),
-      'Use this only when relevant. Do not mention internal memory directly. Do not invent missing facts.',
-    ].join('\n')
+      parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true)
+        ? renderPromptTemplate(runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT)
+        : '',
+    ].filter(Boolean).join('\n')
     : '';
 
   let usedChars = 0;
@@ -900,17 +986,11 @@ function applyExtractedCustomerData(input, extracted) {
 
 async function runAiCrmExtractor(input) {
   if (!shouldRunAiCrmExtractor(input)) return;
+  if (!parseConfigBoolean(input.config.prompt_crm_extract_enabled, true)) return;
   const json = await requestAiJson(input.config, [
     {
       role: 'system',
-      content: [
-        'Extract customer CRM and order facts from a retail Telegram conversation.',
-        'Return JSON only. Do not invent missing data. Use null/empty string for unknown fields.',
-        'Fields: customer.fullName, customer.phone, customer.city, customer.deliveryAddress, customer.shoeSize.',
-        'Fields: intent.stage, intent.interest, intent.buyingIntent.',
-        'Fields: order.product, order.size, order.price, order.status, order.paymentStatus.',
-        'Confidence values may be high, medium, low.',
-      ].join(' '),
+      content: renderPromptTemplate(input.config.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT),
     },
     {
       role: 'user',
@@ -936,6 +1016,7 @@ function getCardLast4(cardNumber) {
 
 async function runPaymentProofPrecheck(input) {
   if (!parseConfigBoolean(input.config.payment_enabled, false)) return;
+  if (!parseConfigBoolean(input.config.prompt_payment_check_enabled, true)) return;
   if (!isPaymentProofInput(input)) return;
   if (!input.images.length) return;
 
@@ -959,7 +1040,7 @@ async function runPaymentProofPrecheck(input) {
   const json = await requestAiJson(input.config, [
     {
       role: 'system',
-      content: 'Return JSON only: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.',
+      content: renderPromptTemplate(input.config.prompt_payment_check_text || DEFAULT_PAYMENT_CHECK_PROMPT),
     },
     {
       role: 'user',
@@ -1435,6 +1516,20 @@ function getRuntimeSnapshot() {
     payment_recipient_name: runtimeConfig.payment_recipient_name,
     payment_bank: runtimeConfig.payment_bank,
     payment_comment: runtimeConfig.payment_comment,
+    prompt_behavior_enabled: parseConfigBoolean(runtimeConfig.prompt_behavior_enabled, true),
+    prompt_behavior_text: runtimeConfig.prompt_behavior_text,
+    prompt_retail_enabled: parseConfigBoolean(runtimeConfig.prompt_retail_enabled, true),
+    prompt_retail_text: runtimeConfig.prompt_retail_text,
+    prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
+    prompt_media_text: runtimeConfig.prompt_media_text,
+    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
+    prompt_memory_text: runtimeConfig.prompt_memory_text,
+    prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
+    prompt_payment_text: runtimeConfig.prompt_payment_text,
+    prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
+    prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text,
+    prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
+    prompt_payment_check_text: runtimeConfig.prompt_payment_check_text,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -1646,6 +1741,36 @@ function applyConfigUpdate(body) {
     runtimeConfig.payment_comment = body.payment_comment || '';
     process.env.PAYMENT_COMMENT = runtimeConfig.payment_comment;
   }
+
+  [
+    ['prompt_behavior_enabled', 'PROMPT_BEHAVIOR_ENABLED', true],
+    ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
+    ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
+    ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
+    ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
+    ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
+    ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
+  ].forEach(([key, envKey, defaultValue]) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      runtimeConfig[key] = parseConfigBoolean(body[key], defaultValue);
+      process.env[envKey] = String(runtimeConfig[key]);
+    }
+  });
+
+  [
+    ['prompt_behavior_text', 'PROMPT_BEHAVIOR_TEXT', DEFAULT_BEHAVIOR_PROMPT],
+    ['prompt_retail_text', 'PROMPT_RETAIL_TEXT', DEFAULT_RETAIL_PROMPT],
+    ['prompt_media_text', 'PROMPT_MEDIA_TEXT', DEFAULT_MEDIA_PROMPT],
+    ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
+    ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
+    ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
+    ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
+  ].forEach(([key, envKey, defaultValue]) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      runtimeConfig[key] = String(body[key] || defaultValue);
+      process.env[envKey] = runtimeConfig[key];
+    }
+  });
 
   if (Object.prototype.hasOwnProperty.call(body, 'webhook_url')) {
     runtimeConfig.webhook_url = normalizeWebhookUrl(body.webhook_url || '');
@@ -2423,31 +2548,12 @@ function getMediaBehaviorGuidance(mediaBehavior) {
   return map[mediaBehavior] || map.describe_media;
 }
 
-function getConversationModeGuidance(conversationMode) {
+function getConversationModeGuidance(conversationMode, config = runtimeConfig) {
   const map = {
     general: 'Treat incoming text and media as general-purpose user messages.',
-    retail: [
-      'If the user sends a photo, screenshot, or link, treat it as likely interest in a product, not automatically as a request to describe media.',
-      'Use seller-first behavior only when the message shows clear or probable product interest.',
-      'When product interest is absent, respond naturally, briefly, and helpfully without forcing the conversation toward a sale.',
-      'Respond as a seller when relevant, not as a generic assistant. Do not use phrases like “in the image,” “it looks like,” “the photo shows,” or “as an AI.”',
-      'If possible, briefly identify the product or product type, then move toward purchase: ask about size, availability, preferred option, or buying intent.',
-      'Take initiative when product interest is present. Guide the user toward a decision instead of waiting, but avoid sounding pushy on neutral inputs.',
-      'Keep replies short, confident, and practical. Description is allowed only when it helps the sale, not as the main goal.',
-      'Write chat-first, not form-first: avoid numbered lists, questionnaires, and multi-step confirmations unless the client explicitly asks for a detailed checklist.',
-      'Ask one natural next question at a time. Do not request full checkout details (full name, phone, delivery address) until the client has clearly confirmed the model, size/quantity, or asks to place/pay for the order.',
-      'If several details are missing, ask only the next blocking detail. Priority: product/model, then size/quantity, then contact/delivery details, then payment.',
-      'Even if the client says they want to order, do not ask for full name, phone, and address in the same reply if size or quantity is still unclear. First ask the size/quantity naturally.',
-      'Do not mention internal product IDs, CRM data, saved phone numbers, or saved addresses unless the client asks or the conversation is already at checkout.',
-      'If customer memory contains saved contact or delivery details, use it quietly to reduce repeated questions. Confirm it only at checkout and only in natural wording.',
-      'When these instructions conflict with a broader sales instruction, prefer the chat-first behavior and one-next-step rule.',
-      'Always respond in Russian.',
-      'Отвечай как продавец: уверенно, по делу и с фокусом на продажу.',
-      'Всегда обращайся к пользователю на “Вы”. Используй вежливую, профессиональную форму общения и избегай обращения на “ты”, сохраняя живой и естественный тон.',
-      'Фото, ссылки и скрины обычно означают интерес к товару, а не просьбу описать изображение.',
-      'Если виден явный или вероятный товарный интерес, помогай выбрать и веди к покупке. Если товарный интерес не выражен, отвечай естественно и по смыслу.',
-      'Не превращай ответ в анкету. В обычном чате лучше одно короткое действие: уточнить размер, наличие, цвет, количество или готовность оформить.',
-    ].join(' '),
+    retail: parseConfigBoolean(config.prompt_retail_enabled, true)
+      ? renderPromptTemplate(config.prompt_retail_text || DEFAULT_RETAIL_PROMPT)
+      : '',
   };
   return map[conversationMode] || map.general;
 }
@@ -2477,6 +2583,7 @@ function getPersonaAgeGuidance(personaAge) {
 
 function getPaymentGuidance(config) {
   if (!parseConfigBoolean(config.payment_enabled, false)) return '';
+  if (!parseConfigBoolean(config.prompt_payment_enabled, true)) return '';
 
   const card = String(config.payment_card_number || '').trim();
   const recipient = String(config.payment_recipient_name || '').trim();
@@ -2489,14 +2596,9 @@ function getPaymentGuidance(config) {
     comment && `Payment note for client: ${comment}`,
   ].filter(Boolean);
 
-  return [
-    'Payment policy:',
-    'When the client asks how to pay or where to transfer, provide the configured payment details briefly and ask them to send a receipt or screenshot after payment.',
-    ...details,
-    'If the client sends a receipt, screenshot, or payment file, treat it as payment proof for preliminary checking only.',
-    'Compare visible recipient, bank, card/account digits, amount, date/time, and successful transfer status when available.',
-    'Never say that payment is finally confirmed based only on a screenshot. Say that the receipt was received and looks preliminary correct / needs manual check / does not match, and that final confirmation happens after checking the banking app.',
-  ].join('\n');
+  return renderPromptTemplate(config.prompt_payment_text || DEFAULT_PAYMENT_PROMPT, {
+    payment_details: details.join('\n'),
+  });
 }
 
 function buildSystemPrompt(config) {
@@ -2506,17 +2608,24 @@ function buildSystemPrompt(config) {
     parts.push(String(config.instruction).trim());
   }
 
-  parts.push('Additional behavior guidance:');
-  parts.push(getToneGuidance(config.tone));
-  parts.push(getResponseLengthGuidance(config.response_length));
-  parts.push(getPersonaStyleGuidance(config.persona_style));
-  parts.push(getPersonaAgeGuidance(config.persona_age));
-  parts.push(getConversationModeGuidance(config.conversation_mode));
-  parts.push(getMediaBehaviorGuidance(config.media_behavior));
+  if (parseConfigBoolean(config.prompt_behavior_enabled, true)) {
+    parts.push(renderPromptTemplate(config.prompt_behavior_text || DEFAULT_BEHAVIOR_PROMPT, {
+      tone_guidance: getToneGuidance(config.tone),
+      response_length_guidance: getResponseLengthGuidance(config.response_length),
+      persona_style_guidance: getPersonaStyleGuidance(config.persona_style),
+      persona_age_guidance: getPersonaAgeGuidance(config.persona_age),
+    }));
+  }
+  parts.push(getConversationModeGuidance(config.conversation_mode, config));
+  if (parseConfigBoolean(config.prompt_media_enabled, true)) {
+    parts.push(renderPromptTemplate(config.prompt_media_text || DEFAULT_MEDIA_PROMPT, {
+      media_behavior_guidance: getMediaBehaviorGuidance(config.media_behavior),
+    }));
+  }
   const paymentGuidance = getPaymentGuidance(config);
   if (paymentGuidance) parts.push(paymentGuidance);
 
-  return parts.join('\n\n');
+  return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
 function buildAiMessages(input) {
@@ -2972,6 +3081,20 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
+    prompt_behavior_enabled: parseConfigBoolean(runtimeConfig.prompt_behavior_enabled, true),
+    prompt_behavior_text: runtimeConfig.prompt_behavior_text || DEFAULT_BEHAVIOR_PROMPT,
+    prompt_retail_enabled: parseConfigBoolean(runtimeConfig.prompt_retail_enabled, true),
+    prompt_retail_text: runtimeConfig.prompt_retail_text || DEFAULT_RETAIL_PROMPT,
+    prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
+    prompt_media_text: runtimeConfig.prompt_media_text || DEFAULT_MEDIA_PROMPT,
+    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
+    prompt_memory_text: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
+    prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
+    prompt_payment_text: runtimeConfig.prompt_payment_text || DEFAULT_PAYMENT_PROMPT,
+    prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
+    prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
+    prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
+    prompt_payment_check_text: runtimeConfig.prompt_payment_check_text || DEFAULT_PAYMENT_CHECK_PROMPT,
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -3274,6 +3397,20 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_recipient_name = '';
   runtimeConfig.payment_bank = '';
   runtimeConfig.payment_comment = '';
+  runtimeConfig.prompt_behavior_enabled = true;
+  runtimeConfig.prompt_behavior_text = DEFAULT_BEHAVIOR_PROMPT;
+  runtimeConfig.prompt_retail_enabled = true;
+  runtimeConfig.prompt_retail_text = DEFAULT_RETAIL_PROMPT;
+  runtimeConfig.prompt_media_enabled = true;
+  runtimeConfig.prompt_media_text = DEFAULT_MEDIA_PROMPT;
+  runtimeConfig.prompt_memory_enabled = true;
+  runtimeConfig.prompt_memory_text = DEFAULT_MEMORY_PROMPT;
+  runtimeConfig.prompt_payment_enabled = true;
+  runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
+  runtimeConfig.prompt_crm_extract_enabled = true;
+  runtimeConfig.prompt_crm_extract_text = DEFAULT_CRM_EXTRACT_PROMPT;
+  runtimeConfig.prompt_payment_check_enabled = true;
+  runtimeConfig.prompt_payment_check_text = DEFAULT_PAYMENT_CHECK_PROMPT;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';

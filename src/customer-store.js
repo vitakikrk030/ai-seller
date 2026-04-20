@@ -233,7 +233,7 @@ function createCustomerStore(options = {}) {
     const state = getDialogState(customer.telegram_chat_id);
     const lastOrder = statements.getLastOrder.get(customer.id) || null;
     const history = getRecentMessages(customer.telegram_chat_id, options.limit || 20, options.excludeTraceIds || []);
-    const summary = buildProfileSummary(customer, facts, state, lastOrder);
+    const summary = buildProfileSummary(customer, facts, state, lastOrder, options);
 
     return {
       summary,
@@ -629,7 +629,7 @@ function mapCustomerRow(row) {
   };
 }
 
-function buildProfileSummary(customer, facts, state, lastOrder) {
+function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
   const lines = [];
   const name = facts.fullName?.value || [customer.first_name, customer.last_name].filter(Boolean).join(' ').trim();
   const phone = facts.phone?.value || customer.phone;
@@ -659,11 +659,21 @@ function buildProfileSummary(customer, facts, state, lastOrder) {
   }
 
   if (!lines.length) return '';
+  const memoryGuidance = options.memoryPromptEnabled === false
+    ? ''
+    : String(options.memoryPromptText || [
+      'Use this naturally when relevant.',
+      'Do not mention internal memory directly.',
+      'Do not mention saved phone or delivery address before checkout.',
+      'Confirm saved phone or delivery address only when the client is clearly placing an order and product size/quantity are already clear.',
+      'Prefer one natural next question instead of forms or numbered checklists.',
+      'Do not invent missing facts.',
+    ].join(' ')).trim();
   return [
     'Customer profile:',
     ...lines,
-    'Use this naturally when relevant. Do not mention internal memory directly. Do not mention saved phone or delivery address before checkout. Confirm saved phone or delivery address only when the client is clearly placing an order and product size/quantity are already clear. Prefer one natural next question instead of forms or numbered checklists. Do not invent missing facts.',
-  ].join('\n');
+    memoryGuidance,
+  ].filter(Boolean).join('\n');
 }
 
 function parseJson(value) {
