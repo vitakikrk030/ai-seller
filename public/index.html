@@ -2068,6 +2068,85 @@
               <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
+                    <div class="list-title">Доставка</div>
+                    <div class="list-subtitle">Короткие правила доставки, которые добавляются в system prompt и задают правильный ответ AI.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="promptDeliveryEnabled" type="checkbox" />
+                      Использовать правила доставки в system prompt
+                    </label>
+                    <div class="field">
+                      <div class="field-label">Prompt доставки</div>
+                      <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про самовывоз, офлайн-магазин, курьера, возврат и передачу в доставку.</div>
+                      <textarea id="promptDeliveryText"></textarea>
+                    </div>
+                    <div class="actions">
+                      <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Закреплённые сообщения</div>
+                    <div class="list-subtitle">Одна закреплённая карточка в диалоге, которая обновляется по этапу заказа.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="pinEnabled" type="checkbox" />
+                      Обновлять закреплённое сообщение по этапу
+                    </label>
+                    <div class="field">
+                      <label class="toggle-line">
+                        <input id="pinCollectingEnabled" type="checkbox" />
+                        Этап: оформление
+                      </label>
+                      <div class="field-hint">Показывается, когда AI собирает ФИО, телефон и адрес.</div>
+                      <textarea id="pinCollectingText"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="toggle-line">
+                        <input id="pinPaymentEnabled" type="checkbox" />
+                        Этап: реквизиты
+                      </label>
+                      <div class="field-hint">Показывается, когда клиенту уже отправлены реквизиты и ждём оплату.</div>
+                      <textarea id="pinPaymentText"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="toggle-line">
+                        <input id="pinPaidEnabled" type="checkbox" />
+                        Этап: оплата получена
+                      </label>
+                      <div class="field-hint">Показывается после получения чека или предварительного подтверждения оплаты.</div>
+                      <textarea id="pinPaidText"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="toggle-line">
+                        <input id="pinDeliveryEnabled" type="checkbox" />
+                        Этап: доставка
+                      </label>
+                      <div class="field-hint">Показывается, когда заказ уже передан в доставку и дальше статус смотрят в сервисе доставки.</div>
+                      <textarea id="pinDeliveryText"></textarea>
+                    </div>
+                    <div class="actions">
+                      <button id="savePinnedMessages" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
                     <div class="list-title">Тест AI</div>
                     <div class="list-subtitle">Быстрая проверка текущей policy-конфигурации.</div>
                   </div>
@@ -2374,6 +2453,17 @@
       const paymentRecipientName = document.getElementById('paymentRecipientName');
       const paymentBank = document.getElementById('paymentBank');
       const paymentComment = document.getElementById('paymentComment');
+      const promptDeliveryEnabled = document.getElementById('promptDeliveryEnabled');
+      const promptDeliveryText = document.getElementById('promptDeliveryText');
+      const pinEnabled = document.getElementById('pinEnabled');
+      const pinCollectingEnabled = document.getElementById('pinCollectingEnabled');
+      const pinCollectingText = document.getElementById('pinCollectingText');
+      const pinPaymentEnabled = document.getElementById('pinPaymentEnabled');
+      const pinPaymentText = document.getElementById('pinPaymentText');
+      const pinPaidEnabled = document.getElementById('pinPaidEnabled');
+      const pinPaidText = document.getElementById('pinPaidText');
+      const pinDeliveryEnabled = document.getElementById('pinDeliveryEnabled');
+      const pinDeliveryText = document.getElementById('pinDeliveryText');
       const finalSystemPromptPreview = document.getElementById('finalSystemPromptPreview');
       const capabilitiesOutput = document.getElementById('capabilitiesOutput');
       const promptWarningsOutput = document.getElementById('promptWarningsOutput');
@@ -2434,6 +2524,8 @@
       const savePersonaButton = document.getElementById('savePersona');
       const saveDialogueAutomationButton = document.getElementById('saveDialogueAutomation');
       const savePaymentButton = document.getElementById('savePayment');
+      const saveDeliveryButton = document.getElementById('saveDelivery');
+      const savePinnedMessagesButton = document.getElementById('savePinnedMessages');
       const saveSystemPromptsButton = document.getElementById('saveSystemPrompts');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
@@ -3190,6 +3282,17 @@
         paymentRecipientName.value = data.payment_recipient_name || '';
         paymentBank.value = data.payment_bank || '';
         paymentComment.value = data.payment_comment || '';
+        promptDeliveryEnabled.checked = data.prompt_delivery_enabled !== false;
+        promptDeliveryText.value = data.prompt_delivery_text || '';
+        pinEnabled.checked = data.pin_enabled !== false;
+        pinCollectingEnabled.checked = data.pin_collecting_enabled !== false;
+        pinCollectingText.value = data.pin_collecting_text || '';
+        pinPaymentEnabled.checked = data.pin_payment_enabled !== false;
+        pinPaymentText.value = data.pin_payment_text || '';
+        pinPaidEnabled.checked = data.pin_paid_enabled !== false;
+        pinPaidText.value = data.pin_paid_text || '';
+        pinDeliveryEnabled.checked = data.pin_delivery_enabled !== false;
+        pinDeliveryText.value = data.pin_delivery_text || '';
         promptBehaviorEnabled.checked = data.prompt_behavior_enabled !== false;
         promptBehaviorText.value = data.prompt_behavior_text || '';
         promptRetailEnabled.checked = data.prompt_retail_enabled !== false;
@@ -3370,6 +3473,41 @@
               payment_recipient_name: paymentRecipientName.value,
               payment_bank: paymentBank.value,
               payment_comment: paymentComment.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveDelivery() {
+        await performSave(saveDeliveryButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt_delivery_enabled: promptDeliveryEnabled.checked,
+              prompt_delivery_text: promptDeliveryText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function savePinnedMessages() {
+        await performSave(savePinnedMessagesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pin_enabled: pinEnabled.checked,
+              pin_collecting_enabled: pinCollectingEnabled.checked,
+              pin_collecting_text: pinCollectingText.value,
+              pin_payment_enabled: pinPaymentEnabled.checked,
+              pin_payment_text: pinPaymentText.value,
+              pin_paid_enabled: pinPaidEnabled.checked,
+              pin_paid_text: pinPaidText.value,
+              pin_delivery_enabled: pinDeliveryEnabled.checked,
+              pin_delivery_text: pinDeliveryText.value,
             }),
           });
           await loadStatus();
@@ -3775,6 +3913,21 @@
         paymentBank,
         paymentComment,
       ]);
+      bindDirtyState(saveDeliveryButton, [
+        promptDeliveryEnabled,
+        promptDeliveryText,
+      ]);
+      bindDirtyState(savePinnedMessagesButton, [
+        pinEnabled,
+        pinCollectingEnabled,
+        pinCollectingText,
+        pinPaymentEnabled,
+        pinPaymentText,
+        pinPaidEnabled,
+        pinPaidText,
+        pinDeliveryEnabled,
+        pinDeliveryText,
+      ]);
       bindDirtyState(saveSystemPromptsButton, [
         promptBehaviorEnabled,
         promptBehaviorText,
@@ -3804,6 +3957,8 @@
       document.getElementById('savePersona').addEventListener('click', savePersona);
       document.getElementById('saveDialogueAutomation').addEventListener('click', saveDialogueAutomation);
       document.getElementById('savePayment').addEventListener('click', savePayment);
+      document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
+      document.getElementById('savePinnedMessages').addEventListener('click', savePinnedMessages);
       document.getElementById('saveSystemPrompts').addEventListener('click', saveSystemPrompts);
       document.getElementById('runTest').addEventListener('click', runTest);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);

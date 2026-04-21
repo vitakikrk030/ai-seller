@@ -306,6 +306,48 @@ const DEFAULT_PAYMENT_PROMPT = [
   'Никогда не говорите, что оплата окончательно подтверждена только по скриншоту. Говорите, что чек получен, выглядит корректно / требует ручной проверки / не совпадает, а финальное подтверждение делается после сверки в банковском приложении.',
 ].join('\n');
 
+const DEFAULT_DELIVERY_PROMPT = [
+  'Правила доставки:',
+  'Самовывоза нет.',
+  'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет, но по Москве можем передать курьером.',
+  'Если клиент спрашивает про офлайн-магазин, отвечайте коротко: офлайн-магазина нет, чтобы не делать лишнюю наценку на товар из-за аренды и персонала.',
+  'При этом, если что-то не подойдёт, есть возврат.',
+  'Когда клиенту важна доставка, отвечайте спокойно и коротко: по Москве возможен курьер, по другим направлениям отправка оформляется через сервис доставки.',
+  'После передачи заказа в доставку не расписывайте лишнюю логистику. Коротко сообщайте, что статус дальше удобно отслеживать уже в самом сервисе доставки.',
+].join('\n');
+
+const DEFAULT_PIN_COLLECTING_TEXT = [
+  'Оформление заказа.',
+  '',
+  'Пришлите, пожалуйста:',
+  'ФИО',
+  'номер телефона',
+  'адрес доставки',
+].join('\n');
+
+const DEFAULT_PIN_PAYMENT_TEXT = [
+  'Реквизиты для оплаты:',
+  '{payment_card}',
+  '{payment_recipient_line}',
+  '{payment_bank_line}',
+  '',
+  'После оплаты пришлите, пожалуйста, чек или скриншот.',
+].join('\n');
+
+const DEFAULT_PIN_PAID_TEXT = [
+  'Оплата получена.',
+  '',
+  'Чек получили, спасибо.',
+  'Сейчас подтвердим перевод и передадим заказ дальше.',
+].join('\n');
+
+const DEFAULT_PIN_DELIVERY_TEXT = [
+  'Доставка.',
+  '',
+  'Заказ передан в доставку.',
+  'Статус дальше удобно отслеживать уже в сервисе доставки.',
+].join('\n');
+
 const DEFAULT_CRM_EXTRACT_PROMPT = [
   'Извлеките CRM-данные клиента и данные заказа из диалога розничной продажи.',
   'Верните только JSON. Не выдумывайте отсутствующие данные. Для неизвестных значений используйте null или пустую строку.',
@@ -365,10 +407,21 @@ const runtimeConfig = {
   prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
   prompt_payment_enabled: process.env.PROMPT_PAYMENT_ENABLED !== 'false',
   prompt_payment_text: process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT,
+  prompt_delivery_enabled: process.env.PROMPT_DELIVERY_ENABLED !== 'false',
+  prompt_delivery_text: process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT,
   prompt_crm_extract_enabled: process.env.PROMPT_CRM_EXTRACT_ENABLED !== 'false',
   prompt_crm_extract_text: process.env.PROMPT_CRM_EXTRACT_TEXT || DEFAULT_CRM_EXTRACT_PROMPT,
   prompt_payment_check_enabled: process.env.PROMPT_PAYMENT_CHECK_ENABLED !== 'false',
   prompt_payment_check_text: process.env.PROMPT_PAYMENT_CHECK_TEXT || DEFAULT_PAYMENT_CHECK_PROMPT,
+  pin_enabled: process.env.PIN_ENABLED !== 'false',
+  pin_collecting_enabled: process.env.PIN_COLLECTING_ENABLED !== 'false',
+  pin_collecting_text: process.env.PIN_COLLECTING_TEXT || DEFAULT_PIN_COLLECTING_TEXT,
+  pin_payment_enabled: process.env.PIN_PAYMENT_ENABLED !== 'false',
+  pin_payment_text: process.env.PIN_PAYMENT_TEXT || DEFAULT_PIN_PAYMENT_TEXT,
+  pin_paid_enabled: process.env.PIN_PAID_ENABLED !== 'false',
+  pin_paid_text: process.env.PIN_PAID_TEXT || DEFAULT_PIN_PAID_TEXT,
+  pin_delivery_enabled: process.env.PIN_DELIVERY_ENABLED !== 'false',
+  pin_delivery_text: process.env.PIN_DELIVERY_TEXT || DEFAULT_PIN_DELIVERY_TEXT,
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -781,6 +834,43 @@ function getDialogState(chatId) {
   return cleanChatId ? memoryStore.states[cleanChatId] || null : null;
 }
 
+function setPinnedState(chatId, patch = {}) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return null;
+  const previous = getDialogState(cleanChatId) || {};
+  const next = {
+    ...previous,
+    ...(memoryStore.states[cleanChatId] || {}),
+    pinnedStage: String(patch.pinnedStage ?? previous.pinnedStage ?? '').trim(),
+    pinnedMessageId: String(patch.pinnedMessageId ?? previous.pinnedMessageId ?? '').trim(),
+    pinnedUpdatedAt: String(patch.pinnedUpdatedAt ?? previous.pinnedUpdatedAt ?? new Date().toISOString()).trim(),
+    updatedAt: new Date().toISOString(),
+  };
+  memoryStore.states[cleanChatId] = {
+    ...(memoryStore.states[cleanChatId] || {}),
+    pinnedStage: next.pinnedStage,
+    pinnedMessageId: next.pinnedMessageId,
+    pinnedUpdatedAt: next.pinnedUpdatedAt,
+    updatedAt: next.updatedAt,
+  };
+  safeCustomerStoreCall('customer.state.pin', (store) => store.setDialogState(cleanChatId, next));
+  persistMemoryStore();
+  return next;
+}
+
+function getCustomerProfileSnapshot(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  const profile = safeCustomerStoreCall('customer.profile.get', (store) => store.getCustomerProfile(cleanChatId));
+  if (profile) return profile;
+  return {
+    customer: null,
+    facts: memoryStore.facts[cleanChatId] || {},
+    state: getDialogState(cleanChatId),
+    lastOrder: null,
+    recentMessages: getRecentMemoryMessages(cleanChatId, 20),
+  };
+}
+
 function extractPhone(text) {
   const match = String(text || '').match(/(?:\+?\d[\s().-]*){10,16}/);
   return match ? match[0].replace(/[^\d+]/g, '') : '';
@@ -907,6 +997,19 @@ function updateCustomerMemoryFromInput(input) {
   }
 
   persistMemoryStore();
+}
+
+function applyManagerStageHints(input) {
+  const text = String(input?.text || '');
+  const chatId = getMemoryChatId(input?.chatId || input);
+  if (!chatId || !text) return;
+
+  if (/(передал[аи]?\s+в\s+доставк|передан[ао]?\s+в\s+доставк|отправил[аи]?\b|отправлен[ао]?\b|трек|накладн|сд[эе]к|яндекс.*достав|ozon|wildberries|wb\b)/i.test(text)) {
+    setConversationStage(chatId, 'delivery', text);
+    safeCustomerStoreCall('customer.order.delivery', (store) => store.upsertOrder(chatId, {
+      status: 'delivery',
+    }));
+  }
 }
 
 function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTraceIds = []) {
@@ -1319,6 +1422,7 @@ async function processInputBatch(inputs) {
           appendMemoryMessage(batchInput, 'assistant', reply);
         }
         await sendHumanizedTelegramReply(batchInput.config, batchInput, reply);
+        await syncPinnedOrderMessage(batchInput.config, batchInput);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {
@@ -1706,10 +1810,21 @@ function getRuntimeSnapshot() {
     prompt_memory_text: runtimeConfig.prompt_memory_text,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
     prompt_payment_text: runtimeConfig.prompt_payment_text,
+    prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
+    prompt_delivery_text: runtimeConfig.prompt_delivery_text,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text,
+    pin_enabled: parseConfigBoolean(runtimeConfig.pin_enabled, true),
+    pin_collecting_enabled: parseConfigBoolean(runtimeConfig.pin_collecting_enabled, true),
+    pin_collecting_text: runtimeConfig.pin_collecting_text,
+    pin_payment_enabled: parseConfigBoolean(runtimeConfig.pin_payment_enabled, true),
+    pin_payment_text: runtimeConfig.pin_payment_text,
+    pin_paid_enabled: parseConfigBoolean(runtimeConfig.pin_paid_enabled, true),
+    pin_paid_text: runtimeConfig.pin_paid_text,
+    pin_delivery_enabled: parseConfigBoolean(runtimeConfig.pin_delivery_enabled, true),
+    pin_delivery_text: runtimeConfig.pin_delivery_text,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -1754,12 +1869,13 @@ function loadPersistedConfig() {
       ['prompt_layout_text', LEGACY_DEFAULT_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
       ['prompt_memory_text', LEGACY_DEFAULT_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
       ['prompt_payment_text', LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
+      ['prompt_delivery_text', '', DEFAULT_DELIVERY_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
       ['prompt_payment_check_text', LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT, DEFAULT_PAYMENT_CHECK_PROMPT],
     ];
 
     promptMigrations.forEach(([key, legacyValue, nextValue]) => {
-      if (isLegacyPromptValue(runtimeConfig[key], legacyValue)) {
+      if (!String(runtimeConfig[key] || '').trim() || (legacyValue && isLegacyPromptValue(runtimeConfig[key], legacyValue))) {
         runtimeConfig[key] = nextValue;
         shouldRewrite = true;
       }
@@ -1952,8 +2068,14 @@ function applyConfigUpdate(body) {
     ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', true],
     ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
+    ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
+    ['pin_enabled', 'PIN_ENABLED', true],
+    ['pin_collecting_enabled', 'PIN_COLLECTING_ENABLED', true],
+    ['pin_payment_enabled', 'PIN_PAYMENT_ENABLED', true],
+    ['pin_paid_enabled', 'PIN_PAID_ENABLED', true],
+    ['pin_delivery_enabled', 'PIN_DELIVERY_ENABLED', true],
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       runtimeConfig[key] = parseConfigBoolean(body[key], defaultValue);
@@ -1968,8 +2090,13 @@ function applyConfigUpdate(body) {
     ['prompt_layout_text', 'PROMPT_LAYOUT_TEXT', DEFAULT_LAYOUT_PROMPT],
     ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
     ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
+    ['prompt_delivery_text', 'PROMPT_DELIVERY_TEXT', DEFAULT_DELIVERY_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
+    ['pin_collecting_text', 'PIN_COLLECTING_TEXT', DEFAULT_PIN_COLLECTING_TEXT],
+    ['pin_payment_text', 'PIN_PAYMENT_TEXT', DEFAULT_PIN_PAYMENT_TEXT],
+    ['pin_paid_text', 'PIN_PAID_TEXT', DEFAULT_PIN_PAID_TEXT],
+    ['pin_delivery_text', 'PIN_DELIVERY_TEXT', DEFAULT_PIN_DELIVERY_TEXT],
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       runtimeConfig[key] = String(body[key] || defaultValue);
@@ -2806,6 +2933,11 @@ function getPaymentGuidance(config) {
   });
 }
 
+function getDeliveryGuidance(config) {
+  if (!parseConfigBoolean(config.prompt_delivery_enabled, true)) return '';
+  return renderPromptTemplate(config.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT);
+}
+
 function getPromptLayerState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
@@ -2818,6 +2950,7 @@ function getPromptLayerState(config, memoryContext = null) {
       && !!memoryContext?.summary,
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
+    delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -2900,6 +3033,8 @@ function buildSystemPrompt(config) {
   }
   const paymentGuidance = getPaymentGuidance(config);
   if (paymentGuidance) parts.push(paymentGuidance);
+  const deliveryGuidance = getDeliveryGuidance(config);
+  if (deliveryGuidance) parts.push(deliveryGuidance);
 
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
@@ -3142,9 +3277,10 @@ async function sendTelegramMessage(config, context, text) {
       payload.reply_to_message_id = replyToMessageId;
     }
 
-    await httpClient.post(getTelegramApiUrl(config, 'sendMessage'), payload, {
+    const response = await httpClient.post(getTelegramApiUrl(config, 'sendMessage'), payload, {
       timeout: REQUEST_TIMEOUT_MS,
     });
+    const result = response.data?.result || null;
     logEvent('TG_SEND', {
       traceId: context.traceId,
       userId: context.userId,
@@ -3153,9 +3289,11 @@ async function sendTelegramMessage(config, context, text) {
       businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
       replyToMessageId,
+      telegramMessageId: result?.message_id || '',
       duration: Date.now() - startedAt,
       status: 'ok',
     });
+    return result;
   } catch (e) {
     if (replyToMessageId) {
       logEvent('ERROR', {
@@ -3172,8 +3310,7 @@ async function sendTelegramMessage(config, context, text) {
         error: e.message,
       });
 
-      await sendTelegramMessage(config, { ...context, useReply: false }, text);
-      return;
+      return sendTelegramMessage(config, { ...context, useReply: false }, text);
     }
 
     logEvent('ERROR', {
@@ -3188,6 +3325,109 @@ async function sendTelegramMessage(config, context, text) {
       status: 'error',
       error: e.message,
     });
+  return null;
+  }
+}
+
+async function editTelegramMessageText(config, context, messageId, text) {
+  if (logMissingConfig('telegram.editMessageText', config, ['telegram_token'], {
+    traceId: context.traceId,
+    userId: context.userId,
+    chatId: context.chatId,
+    businessConnectionId: context.businessConnectionId || '',
+  })) {
+    return null;
+  }
+
+  const cleanMessageId = String(messageId || '').trim();
+  if (!cleanMessageId) return null;
+
+  try {
+    const payload = {
+      chat_id: context.chatId,
+      message_id: Number(cleanMessageId),
+      text,
+    };
+    if (context.businessConnectionId) {
+      payload.business_connection_id = context.businessConnectionId;
+    }
+
+    const response = await httpClient.post(getTelegramApiUrl(config, 'editMessageText'), payload, {
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    logEvent('TG_PIN', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      businessConnectionId: context.businessConnectionId || '',
+      pinAction: 'edit',
+      pinnedMessageId: cleanMessageId,
+      status: 'ok',
+    });
+    return response.data?.result || null;
+  } catch (e) {
+    logEvent('ERROR', {
+      traceId: context.traceId,
+      userId: context.userId,
+      scope: 'telegram.editMessageText',
+      chatId: context.chatId,
+      businessConnectionId: context.businessConnectionId || '',
+      pinnedMessageId: cleanMessageId,
+      status: 'error',
+      error: e.message,
+    });
+    return null;
+  }
+}
+
+async function pinTelegramMessage(config, context, messageId) {
+  if (logMissingConfig('telegram.pinChatMessage', config, ['telegram_token'], {
+    traceId: context.traceId,
+    userId: context.userId,
+    chatId: context.chatId,
+    businessConnectionId: context.businessConnectionId || '',
+  })) {
+    return false;
+  }
+
+  const cleanMessageId = String(messageId || '').trim();
+  if (!cleanMessageId) return false;
+
+  try {
+    const payload = {
+      chat_id: context.chatId,
+      message_id: Number(cleanMessageId),
+      disable_notification: true,
+    };
+    if (context.businessConnectionId) {
+      payload.business_connection_id = context.businessConnectionId;
+    }
+
+    await httpClient.post(getTelegramApiUrl(config, 'pinChatMessage'), payload, {
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    logEvent('TG_PIN', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      businessConnectionId: context.businessConnectionId || '',
+      pinAction: 'pin',
+      pinnedMessageId: cleanMessageId,
+      status: 'ok',
+    });
+    return true;
+  } catch (e) {
+    logEvent('ERROR', {
+      traceId: context.traceId,
+      userId: context.userId,
+      scope: 'telegram.pinChatMessage',
+      chatId: context.chatId,
+      businessConnectionId: context.businessConnectionId || '',
+      pinnedMessageId: cleanMessageId,
+      status: 'error',
+      error: e.message,
+    });
+    return false;
   }
 }
 
@@ -3264,6 +3504,139 @@ async function sendHumanizedTelegramReply(config, context, reply) {
       await wait(randomBetween(700, 1500));
     }
   }
+}
+
+function isTruthyStatus(value, patterns) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return !!normalized && patterns.some((pattern) => pattern.test(normalized));
+}
+
+function isPinnedStageEnabled(config, stage) {
+  const map = {
+    collecting: parseConfigBoolean(config.pin_collecting_enabled, true),
+    payment: parseConfigBoolean(config.pin_payment_enabled, true),
+    paid: parseConfigBoolean(config.pin_paid_enabled, true),
+    delivery: parseConfigBoolean(config.pin_delivery_enabled, true),
+  };
+  return !!map[stage];
+}
+
+function resolvePinnedStage(config, chatId) {
+  if (!parseConfigBoolean(config.pin_enabled, true)) return '';
+  const profile = getCustomerProfileSnapshot(chatId);
+  const state = profile?.state || {};
+  const order = profile?.lastOrder || {};
+
+  if (
+    isTruthyStatus(order.status, [/deliver/i, /ship/i, /track/i, /достав/i, /отправ/i])
+    || isTruthyStatus(state.stage, [/deliver/i, /ship/i, /достав/i, /отправ/i])
+  ) {
+    return isPinnedStageEnabled(config, 'delivery') ? 'delivery' : '';
+  }
+
+  if (
+    isTruthyStatus(order.payment_status, [/proof_received/i, /^paid$/i, /payment_received/i])
+    || isTruthyStatus(order.payment_check_status, [/likely_paid/i, /confirmed/i])
+  ) {
+    return isPinnedStageEnabled(config, 'paid') ? 'paid' : '';
+  }
+
+  if (
+    isTruthyStatus(order.payment_status, [/payment_details_sent/i, /waiting_payment/i])
+    || isTruthyStatus(order.status, [/waiting_payment/i])
+    || isTruthyStatus(state.stage, [/waiting_payment/i])
+  ) {
+    return isPinnedStageEnabled(config, 'payment') ? 'payment' : '';
+  }
+
+  if (
+    isTruthyStatus(state.stage, [/ready_to_buy/i, /collecting_order_info/i])
+    || isTruthyStatus(order.status, [/draft/i, /collecting/i])
+  ) {
+    return isPinnedStageEnabled(config, 'collecting') ? 'collecting' : '';
+  }
+
+  return '';
+}
+
+function buildPinTemplateVars(config, chatId) {
+  const profile = getCustomerProfileSnapshot(chatId);
+  const customer = profile?.customer || {};
+  const facts = profile?.facts || {};
+  const order = profile?.lastOrder || {};
+  const recipient = String(config.payment_recipient_name || '').trim();
+  const bank = String(config.payment_bank || '').trim();
+
+  return {
+    product: order.product || facts.lastProduct?.value || facts.interest?.value || '',
+    size: order.size || facts.shoeSize?.value || '',
+    full_name: order.full_name || facts.fullName?.value || customer.name || '',
+    phone: order.phone || facts.phone?.value || customer.phone || '',
+    delivery_address: order.delivery_address || facts.deliveryAddress?.value || '',
+    payment_card: String(config.payment_card_number || '').trim(),
+    payment_recipient: recipient,
+    payment_recipient_line: recipient ? `Получатель: ${recipient}` : '',
+    payment_bank: bank,
+    payment_bank_line: bank ? `Банк: ${bank}` : '',
+    payment_comment: String(config.payment_comment || '').trim(),
+  };
+}
+
+function getPinTemplate(config, stage) {
+  const templates = {
+    collecting: config.pin_collecting_text || DEFAULT_PIN_COLLECTING_TEXT,
+    payment: config.pin_payment_text || DEFAULT_PIN_PAYMENT_TEXT,
+    paid: config.pin_paid_text || DEFAULT_PIN_PAID_TEXT,
+    delivery: config.pin_delivery_text || DEFAULT_PIN_DELIVERY_TEXT,
+  };
+  return templates[stage] || '';
+}
+
+function buildPinnedStageText(config, chatId, stage) {
+  const template = getPinTemplate(config, stage);
+  if (!template) return '';
+  return renderPromptTemplate(template, buildPinTemplateVars(config, chatId))
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function syncPinnedOrderMessage(config, context) {
+  const stage = resolvePinnedStage(config, context.chatId);
+  if (!stage) return;
+
+  const text = buildPinnedStageText(config, context.chatId, stage);
+  if (!text) return;
+
+  const state = getDialogState(context.chatId) || {};
+  if (state.pinnedStage === stage && state.pinnedMessageId) return;
+
+  let pinnedMessageId = String(state.pinnedMessageId || '').trim();
+
+  if (pinnedMessageId) {
+    const edited = await editTelegramMessageText(config, context, pinnedMessageId, text);
+    if (edited) {
+      await pinTelegramMessage(config, context, pinnedMessageId);
+      setPinnedState(context.chatId, {
+        pinnedStage: stage,
+        pinnedMessageId,
+        pinnedUpdatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+  }
+
+  const sent = await sendTelegramMessage(config, { ...context, useReply: false }, text);
+  pinnedMessageId = String(sent?.message_id || '').trim();
+  if (!pinnedMessageId) return;
+  await pinTelegramMessage(config, context, pinnedMessageId);
+  setPinnedState(context.chatId, {
+    pinnedStage: stage,
+    pinnedMessageId,
+    pinnedUpdatedAt: new Date().toISOString(),
+  });
 }
 
 async function setTelegramWebhook(config) {
@@ -3383,10 +3756,21 @@ app.get('/config/status', async (req, res) => {
     prompt_memory_text: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
     prompt_payment_text: runtimeConfig.prompt_payment_text || DEFAULT_PAYMENT_PROMPT,
+    prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
+    prompt_delivery_text: runtimeConfig.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text || DEFAULT_PAYMENT_CHECK_PROMPT,
+    pin_enabled: parseConfigBoolean(runtimeConfig.pin_enabled, true),
+    pin_collecting_enabled: parseConfigBoolean(runtimeConfig.pin_collecting_enabled, true),
+    pin_collecting_text: runtimeConfig.pin_collecting_text || DEFAULT_PIN_COLLECTING_TEXT,
+    pin_payment_enabled: parseConfigBoolean(runtimeConfig.pin_payment_enabled, true),
+    pin_payment_text: runtimeConfig.pin_payment_text || DEFAULT_PIN_PAYMENT_TEXT,
+    pin_paid_enabled: parseConfigBoolean(runtimeConfig.pin_paid_enabled, true),
+    pin_paid_text: runtimeConfig.pin_paid_text || DEFAULT_PIN_PAID_TEXT,
+    pin_delivery_enabled: parseConfigBoolean(runtimeConfig.pin_delivery_enabled, true),
+    pin_delivery_text: runtimeConfig.pin_delivery_text || DEFAULT_PIN_DELIVERY_TEXT,
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -3510,6 +3894,11 @@ app.get('/memory/:chatId', (req, res) => {
       customer: profile.customer,
       facts: profile.facts || {},
       state: profile.state || null,
+      pinned: profile.state ? {
+        stage: profile.state.pinnedStage || '',
+        messageId: profile.state.pinnedMessageId || '',
+        updatedAt: profile.state.pinnedUpdatedAt || '',
+      } : null,
       lastOrder: profile.lastOrder || null,
       recentMessages: profile.recentMessages || [],
     });
@@ -3520,6 +3909,11 @@ app.get('/memory/:chatId', (req, res) => {
     chatId,
     facts: context.facts || {},
     state: context.state || null,
+    pinned: context.state ? {
+      stage: context.state.pinnedStage || '',
+      messageId: context.state.pinnedMessageId || '',
+      updatedAt: context.state.pinnedUpdatedAt || '',
+    } : null,
     recentMessages: getRecentMemoryMessages(chatId),
   });
 });
@@ -3705,10 +4099,21 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_memory_text = DEFAULT_MEMORY_PROMPT;
   runtimeConfig.prompt_payment_enabled = true;
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
+  runtimeConfig.prompt_delivery_enabled = true;
+  runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
   runtimeConfig.prompt_crm_extract_enabled = true;
   runtimeConfig.prompt_crm_extract_text = DEFAULT_CRM_EXTRACT_PROMPT;
   runtimeConfig.prompt_payment_check_enabled = true;
   runtimeConfig.prompt_payment_check_text = DEFAULT_PAYMENT_CHECK_PROMPT;
+  runtimeConfig.pin_enabled = true;
+  runtimeConfig.pin_collecting_enabled = true;
+  runtimeConfig.pin_collecting_text = DEFAULT_PIN_COLLECTING_TEXT;
+  runtimeConfig.pin_payment_enabled = true;
+  runtimeConfig.pin_payment_text = DEFAULT_PIN_PAYMENT_TEXT;
+  runtimeConfig.pin_paid_enabled = true;
+  runtimeConfig.pin_paid_text = DEFAULT_PIN_PAID_TEXT;
+  runtimeConfig.pin_delivery_enabled = true;
+  runtimeConfig.pin_delivery_text = DEFAULT_PIN_DELIVERY_TEXT;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -3741,6 +4146,17 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_RECIPIENT_NAME = '';
   process.env.PAYMENT_BANK = '';
   process.env.PAYMENT_COMMENT = '';
+  process.env.PROMPT_DELIVERY_ENABLED = 'true';
+  process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
+  process.env.PIN_ENABLED = 'true';
+  process.env.PIN_COLLECTING_ENABLED = 'true';
+  process.env.PIN_COLLECTING_TEXT = DEFAULT_PIN_COLLECTING_TEXT;
+  process.env.PIN_PAYMENT_ENABLED = 'true';
+  process.env.PIN_PAYMENT_TEXT = DEFAULT_PIN_PAYMENT_TEXT;
+  process.env.PIN_PAID_ENABLED = 'true';
+  process.env.PIN_PAID_TEXT = DEFAULT_PIN_PAID_TEXT;
+  process.env.PIN_DELIVERY_ENABLED = 'true';
+  process.env.PIN_DELIVERY_TEXT = DEFAULT_PIN_DELIVERY_TEXT;
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
@@ -3839,6 +4255,10 @@ app.post('/api/telegram/webhook', async (req, res) => {
           appendMemoryMessage(input, 'manager', memoryText);
         }
 
+        if (sourceInfo.source === 'manager') {
+          applyManagerStageHints(input);
+        }
+
         if (sourceInfo.source === 'manager' && managerTakeoverEnabled) {
           cancelChatBatch(chatId);
           cancelManagerReturnTimer(chatId);
@@ -3854,6 +4274,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
             messageStatus: 'manager_takeover',
             status: 'ok',
           });
+          await syncPinnedOrderMessage(config, input);
         } else {
           logEvent('MESSAGE_STATUS', {
             traceId,
@@ -3866,6 +4287,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
             messageStatus: `${sourceInfo.source}_ignored`,
             status: 'ok',
           });
+          if (sourceInfo.source === 'manager') {
+            await syncPinnedOrderMessage(config, input);
+          }
         }
         return;
       }
