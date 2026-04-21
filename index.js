@@ -306,7 +306,7 @@ const DEFAULT_PAYMENT_PROMPT = [
   'Никогда не говорите, что оплата окончательно подтверждена только по скриншоту. Говорите, что чек получен, выглядит корректно / требует ручной проверки / не совпадает, а финальное подтверждение делается после сверки в банковском приложении.',
 ].join('\n');
 
-const DEFAULT_DELIVERY_PROMPT = [
+const LEGACY_DEFAULT_DELIVERY_PROMPT = [
   'Правила доставки:',
   'Самовывоза нет.',
   'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет, но по Москве можем передать курьером.',
@@ -316,7 +316,19 @@ const DEFAULT_DELIVERY_PROMPT = [
   'После передачи заказа в доставку не расписывайте лишнюю логистику. Коротко сообщайте, что статус дальше удобно отслеживать уже в самом сервисе доставки.',
 ].join('\n');
 
-const DEFAULT_PIN_COLLECTING_TEXT = [
+const DEFAULT_DELIVERY_PROMPT = [
+  'Правила доставки:',
+  'Самовывоза нет. Не предлагайте и не упоминайте самовывоз как доступный вариант.',
+  'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет, но по Москве можем передать курьером.',
+  'Офлайн-магазина нет. Не пишите, что есть шоурум, точка выдачи или самовывоз.',
+  'Если клиент спрашивает почему нет офлайн-магазина, отвечайте коротко: так не делаем лишнюю наценку из-за аренды и персонала.',
+  'Если что-то не подойдёт, можно оформить возврат.',
+  'Про доставку отвечайте коротко и по делу: по Москве можем передать курьером, по другим направлениям отправка идёт через сервис доставки.',
+  'Не перечисляйте лишние варианты и не расписывайте длинные схемы доставки без прямого вопроса клиента.',
+  'После передачи заказа в доставку коротко сообщайте, что дальше статус удобно отслеживать уже в сервисе доставки.',
+].join('\n');
+
+const LEGACY_DEFAULT_PIN_COLLECTING_TEXT = [
   'Оформление заказа.',
   '',
   'Пришлите, пожалуйста:',
@@ -325,7 +337,12 @@ const DEFAULT_PIN_COLLECTING_TEXT = [
   'адрес доставки',
 ].join('\n');
 
-const DEFAULT_PIN_PAYMENT_TEXT = [
+const DEFAULT_PIN_COLLECTING_TEXT = [
+  'Оформление заказа.',
+  'Жду ФИО, телефон и адрес доставки.',
+].join('\n');
+
+const LEGACY_DEFAULT_PIN_PAYMENT_TEXT = [
   'Реквизиты для оплаты:',
   '{payment_card}',
   '{payment_recipient_line}',
@@ -334,18 +351,33 @@ const DEFAULT_PIN_PAYMENT_TEXT = [
   'После оплаты пришлите, пожалуйста, чек или скриншот.',
 ].join('\n');
 
-const DEFAULT_PIN_PAID_TEXT = [
+const DEFAULT_PIN_PAYMENT_TEXT = [
+  'Реквизиты отправлены.',
+  'После оплаты пришлите чек или скриншот.',
+].join('\n');
+
+const LEGACY_DEFAULT_PIN_PAID_TEXT = [
   'Оплата получена.',
   '',
   'Чек получили, спасибо.',
   'Сейчас подтвердим перевод и передадим заказ дальше.',
 ].join('\n');
 
-const DEFAULT_PIN_DELIVERY_TEXT = [
+const DEFAULT_PIN_PAID_TEXT = [
+  'Чек получили.',
+  'Проверяем перевод.',
+].join('\n');
+
+const LEGACY_DEFAULT_PIN_DELIVERY_TEXT = [
   'Доставка.',
   '',
   'Заказ передан в доставку.',
   'Статус дальше удобно отслеживать уже в сервисе доставки.',
+].join('\n');
+
+const DEFAULT_PIN_DELIVERY_TEXT = [
+  'Заказ в доставке.',
+  'Статус смотрите в сервисе доставки.',
 ].join('\n');
 
 const DEFAULT_CRM_EXTRACT_PROMPT = [
@@ -1869,9 +1901,13 @@ function loadPersistedConfig() {
       ['prompt_layout_text', LEGACY_DEFAULT_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
       ['prompt_memory_text', LEGACY_DEFAULT_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
       ['prompt_payment_text', LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
-      ['prompt_delivery_text', '', DEFAULT_DELIVERY_PROMPT],
+      ['prompt_delivery_text', LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
       ['prompt_payment_check_text', LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT, DEFAULT_PAYMENT_CHECK_PROMPT],
+      ['pin_collecting_text', LEGACY_DEFAULT_PIN_COLLECTING_TEXT, DEFAULT_PIN_COLLECTING_TEXT],
+      ['pin_payment_text', LEGACY_DEFAULT_PIN_PAYMENT_TEXT, DEFAULT_PIN_PAYMENT_TEXT],
+      ['pin_paid_text', LEGACY_DEFAULT_PIN_PAID_TEXT, DEFAULT_PIN_PAID_TEXT],
+      ['pin_delivery_text', LEGACY_DEFAULT_PIN_DELIVERY_TEXT, DEFAULT_PIN_DELIVERY_TEXT],
     ];
 
     promptMigrations.forEach(([key, legacyValue, nextValue]) => {
@@ -2367,13 +2403,13 @@ function getHumanTypingDelayMs(text, config = runtimeConfig) {
   const cps = randomBetween(HUMAN_TYPING_MIN_CPS, HUMAN_TYPING_MAX_CPS);
   const typingTime = Math.round((length / cps) * 1000);
   const thinkingTime = length <= 100
-    ? randomBetween(500, 1200)
+    ? randomBetween(250, 800)
     : length <= 300
-      ? randomBetween(900, 2200)
-      : randomBetween(1400, 3000);
+      ? randomBetween(500, 1400)
+      : randomBetween(900, 2200);
   const baseDelay = Math.min(
-    HUMAN_TYPING_MAX_DELAY_MS,
-    Math.max(HUMAN_TYPING_MIN_DELAY_MS, typingTime + thinkingTime + randomBetween(500, 1500)),
+    7000,
+    Math.max(900, typingTime + thinkingTime + randomBetween(250, 900)),
   );
   const mode = normalizeHumanTypingMode(config.human_typing_mode);
   if (mode === 'fast') return Math.round(baseDelay * 0.65);
@@ -3048,6 +3084,40 @@ function buildFinalPromptPreview(config = runtimeConfig) {
   };
 }
 
+function getCheckoutStageGuidance(input) {
+  const stage = String(input?.memoryContext?.state?.stage || '').trim();
+  if (!stage) return '';
+
+  if (stage === 'collecting_order_info' || stage === 'ready_to_buy') {
+    return [
+      'Контекст этапа: клиент уже на оформлении.',
+      'Отвечайте максимально коротко и по-человечески.',
+      'Не пересказывайте весь заказ, адрес, телефон или ФИО большим блоком.',
+      'Если клиент только что прислал данные для оформления, не дублируйте их полностью в ответе.',
+      'Подтверждение должно быть коротким: 1–2 фразы, затем следующий шаг.',
+      'Если данных уже достаточно, сразу переходите к оплате без длинного резюме заказа.',
+    ].join(' ');
+  }
+
+  if (stage === 'waiting_payment') {
+    return [
+      'Контекст этапа: реквизиты уже отправлены или клиент на этапе оплаты.',
+      'Не повторяйте длинное описание заказа.',
+      'Отвечайте коротко: реквизиты, просьба прислать чек, либо краткое подтверждение получения чека.',
+    ].join(' ');
+  }
+
+  if (stage === 'delivery') {
+    return [
+      'Контекст этапа: заказ уже передан в доставку.',
+      'Отвечайте коротко и спокойно.',
+      'Не расписывайте логистику длинно: скажите, что статус удобно отслеживать в сервисе доставки.',
+    ].join(' ');
+  }
+
+  return '';
+}
+
 function buildAiMessages(input) {
   const content = [{ type: 'text', text: input.text }];
 
@@ -3071,6 +3141,14 @@ function buildAiMessages(input) {
     messages.push({
       role: 'system',
       content: input.memoryContext.summary,
+    });
+  }
+
+  const stageGuidance = getCheckoutStageGuidance(input);
+  if (stageGuidance) {
+    messages.push({
+      role: 'system',
+      content: stageGuidance,
     });
   }
 

@@ -653,12 +653,9 @@ function mapCustomerRow(row) {
 function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
   const lines = [];
   const name = facts.fullName?.value || [customer.first_name, customer.last_name].filter(Boolean).join(' ').trim();
-  const phone = facts.phone?.value || customer.phone;
   const pairs = [
     ['Name', name],
-    ['Phone', phone ? 'saved' : ''],
     ['City', facts.city?.value],
-    ['Delivery address', facts.deliveryAddress?.value ? 'saved' : ''],
     ['Shoe size', facts.shoeSize?.value],
     ['Interest', facts.interest?.value],
     ['Last product', facts.lastProduct?.value],
