@@ -1699,7 +1699,7 @@
         <header class="header">
           <div>
             <div id="headerTitle" class="header-title">AI Control</div>
-            <div id="headerSubtitle" class="header-subtitle">Управление поведением AI через instruction без изменения магистрали.</div>
+            <div id="headerSubtitle" class="header-subtitle">Настройка живого менеджера IWAK без лишних prompt-слоёв и без изменения магистрали.</div>
           </div>
           <div class="header-meta">
             <div class="header-actions">
@@ -1731,129 +1731,6 @@
                     <button id="saveInstruction" class="button-primary" type="button">Сохранить</button>
                     <div class="instruction-resize-bar">
                       <div id="instructionResizeHandle" class="instruction-resize-handle" title="Потянуть вниз" aria-label="Изменить высоту инструкции"></div>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              <details class="list-item">
-                <summary class="list-summary">
-                  <div class="list-summary-main">
-                    <div class="list-title">System prompts</div>
-                    <div class="list-subtitle">Все системные prompt-слои: можно включать, отключать и редактировать без кода.</div>
-                  </div>
-                  <div class="list-caret">⌄</div>
-                </summary>
-                <div class="list-panel">
-                  <div class="stack">
-                    <div class="field">
-                      <div class="field-label">Финальный system prompt</div>
-                      <div class="field-hint">Read-only preview того, что реально собирается перед отправкой в AI. Память конкретного клиента добавляется отдельно в запросе.</div>
-                      <pre id="finalSystemPromptPreview" class="status-output muted">Загрузка...</pre>
-                    </div>
-                    <div class="settings-grid">
-                      <div class="field">
-                        <div class="field-label">Capabilities</div>
-                        <div id="capabilitiesOutput" class="status-output muted">Загрузка...</div>
-                      </div>
-                      <div class="field">
-                        <div class="field-label">Prompt warnings</div>
-                        <div id="promptWarningsOutput" class="status-output muted">Конфликтов не найдено.</div>
-                      </div>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptBehaviorEnabled" type="checkbox" />
-                        Prompt поведения и персоны
-                      </label>
-                      <div class="field-hint">Добавляет мягкие модификаторы: тон, длина ответа, стиль персоны и возраст. Можно использовать переменные: {tone_guidance}, {response_length_guidance}, {persona_style_guidance}, {persona_age_guidance}.</div>
-                      <textarea id="promptBehaviorText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptRetailEnabled" type="checkbox" />
-                        Prompt retail-режима
-                      </label>
-                      <div class="field-hint">Главный seller-first слой для фото, ссылок, товара, живого продавца и ограничения “не превращать ответ в анкету”.</div>
-                      <textarea id="promptRetailText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptMediaEnabled" type="checkbox" />
-                        Prompt работы с медиа
-                      </label>
-                      <div class="field-hint">Как трактовать фото, скрины, ссылки и другие медиа. Можно использовать переменную: {media_behavior_guidance}.</div>
-                      <textarea id="promptMediaText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptLayoutEnabled" type="checkbox" />
-                        Prompt формы сообщения
-                      </label>
-                      <div class="field-hint">Отвечает за визуальную форму сообщения в чате: плотность текста, переносы строк, один вопрос за раз и удобство чтения с телефона.</div>
-                      <textarea id="promptLayoutText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptMemoryEnabled" type="checkbox" />
-                        Prompt памяти клиента
-                      </label>
-                      <div class="field-hint">Правила использования памяти клиента: когда можно вспоминать номер, адрес, размер и прошлый интерес.</div>
-                      <textarea id="promptMemoryText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptPaymentEnabled" type="checkbox" />
-                        Prompt оплаты
-                      </label>
-                      <div class="field-hint">Текст, который добавляется в ответный system prompt при включённой оплате. Можно использовать переменную: {payment_details}.</div>
-                      <textarea id="promptPaymentText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptStageEnabled" type="checkbox" />
-                        Prompt этапов диалога
-                      </label>
-                      <div class="field-hint">Скрытый stage-слой для человечности в ключевых точках: оформление, ожидание оплаты, чек получен, доставка. Теперь его тоже можно редактировать без кода.</div>
-                    </div>
-                    <div class="field">
-                      <div class="field-label">Prompt этапа оформления</div>
-                      <div class="field-hint">Срабатывает, когда клиент уже на шаге оформления и присылает данные.</div>
-                      <textarea id="promptStageCheckoutText"></textarea>
-                    </div>
-                    <div class="field">
-                      <div class="field-label">Prompt этапа оплаты</div>
-                      <div class="field-hint">Срабатывает после отправки реквизитов или когда клиент уже на шаге оплаты.</div>
-                      <textarea id="promptStagePaymentText"></textarea>
-                    </div>
-                    <div class="field">
-                      <div class="field-label">Prompt этапа “чек получен”</div>
-                      <div class="field-hint">Срабатывает, когда чек уже есть в контексте и AI не должен просить его повторно.</div>
-                      <textarea id="promptStagePaidText"></textarea>
-                    </div>
-                    <div class="field">
-                      <div class="field-label">Prompt этапа доставки</div>
-                      <div class="field-hint">Срабатывает, когда заказ уже передан в доставку.</div>
-                      <textarea id="promptStageDeliveryText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptCrmExtractEnabled" type="checkbox" />
-                        Prompt CRM-извлечения
-                      </label>
-                      <div class="field-hint">Служебный prompt для AI-извлечения имени, телефона, размера, интереса и заказа. Не виден клиенту.</div>
-                      <textarea id="promptCrmExtractText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="promptPaymentCheckEnabled" type="checkbox" />
-                        Prompt проверки оплаты
-                      </label>
-                      <div class="field-hint">Служебный prompt для предварительной проверки чека/скриншота оплаты. Не подтверждает оплату финально.</div>
-                      <textarea id="promptPaymentCheckText"></textarea>
-                    </div>
-                    <div class="actions">
-                      <button id="saveSystemPrompts" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
@@ -1905,22 +1782,15 @@
                 <summary class="list-summary">
                   <div class="list-summary-main">
                     <div class="list-title">Обработка входа</div>
-                    <div class="list-subtitle">Как AI трактует входящие медиа, ссылки и товарные примеры.</div>
-                  </div>
-                  <div class="list-caret">⌄</div>
-                </summary>
-                <div class="list-panel">
-                  <div class="stack">
-                    <div class="field">
-                      <label class="field-label" for="conversationModeSelect">Режим интерпретации</label>
-                      <select id="conversationModeSelect">
-                        <option value="general">Общий</option>
-                        <option value="retail">Розница / товарный запрос</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="mediaBehaviorSelect">Работа с медиа</label>
-                      <select id="mediaBehaviorSelect">
+                    <div class="list-subtitle">Как AI трактует фото, ссылки и скрины в товарном диалоге IWAK.</div>
+                </div>
+                <div class="list-caret">⌄</div>
+              </summary>
+              <div class="list-panel">
+                <div class="stack">
+                  <div class="field">
+                    <label class="field-label" for="mediaBehaviorSelect">Работа с медиа</label>
+                    <select id="mediaBehaviorSelect">
                         <option value="describe_media">Описывать медиа</option>
                         <option value="answer_from_media">Отвечать по медиа</option>
                         <option value="text_first">Сначала текст</option>
@@ -2113,59 +1983,6 @@
                     </div>
                     <div class="actions">
                       <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              <details class="list-item">
-                <summary class="list-summary">
-                  <div class="list-summary-main">
-                    <div class="list-title">Закреплённые сообщения</div>
-                    <div class="list-subtitle">Одна закреплённая карточка в диалоге, которая обновляется по этапу заказа.</div>
-                  </div>
-                  <div class="list-caret">⌄</div>
-                </summary>
-                <div class="list-panel">
-                  <div class="stack">
-                    <label class="toggle-line">
-                      <input id="pinEnabled" type="checkbox" />
-                      Обновлять закреплённое сообщение по этапу
-                    </label>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="pinCollectingEnabled" type="checkbox" />
-                        Этап: оформление
-                      </label>
-                      <div class="field-hint">Показывается, когда AI собирает ФИО, телефон и адрес.</div>
-                      <textarea id="pinCollectingText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="pinPaymentEnabled" type="checkbox" />
-                        Этап: реквизиты
-                      </label>
-                      <div class="field-hint">Показывается, когда клиенту уже отправлены реквизиты и ждём оплату.</div>
-                      <textarea id="pinPaymentText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="pinPaidEnabled" type="checkbox" />
-                        Этап: оплата получена
-                      </label>
-                      <div class="field-hint">Показывается после получения чека или предварительного подтверждения оплаты.</div>
-                      <textarea id="pinPaidText"></textarea>
-                    </div>
-                    <div class="field">
-                      <label class="toggle-line">
-                        <input id="pinDeliveryEnabled" type="checkbox" />
-                        Этап: доставка
-                      </label>
-                      <div class="field-hint">Показывается, когда заказ уже передан в доставку и дальше статус смотрят в сервисе доставки.</div>
-                      <textarea id="pinDeliveryText"></textarea>
-                    </div>
-                    <div class="actions">
-                      <button id="savePinnedMessages" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
@@ -2463,7 +2280,6 @@
       const creativitySelect = document.getElementById('creativitySelect');
       const personaStyleSelect = document.getElementById('personaStyleSelect');
       const personaAgeSelect = document.getElementById('personaAgeSelect');
-      const conversationModeSelect = document.getElementById('conversationModeSelect');
       const mediaBehaviorSelect = document.getElementById('mediaBehaviorSelect');
       const autoReplyEnabled = document.getElementById('autoReplyEnabled');
       const memoryEnabled = document.getElementById('memoryEnabled');
@@ -2482,39 +2298,6 @@
       const paymentComment = document.getElementById('paymentComment');
       const promptDeliveryEnabled = document.getElementById('promptDeliveryEnabled');
       const promptDeliveryText = document.getElementById('promptDeliveryText');
-      const pinEnabled = document.getElementById('pinEnabled');
-      const pinCollectingEnabled = document.getElementById('pinCollectingEnabled');
-      const pinCollectingText = document.getElementById('pinCollectingText');
-      const pinPaymentEnabled = document.getElementById('pinPaymentEnabled');
-      const pinPaymentText = document.getElementById('pinPaymentText');
-      const pinPaidEnabled = document.getElementById('pinPaidEnabled');
-      const pinPaidText = document.getElementById('pinPaidText');
-      const pinDeliveryEnabled = document.getElementById('pinDeliveryEnabled');
-      const pinDeliveryText = document.getElementById('pinDeliveryText');
-      const finalSystemPromptPreview = document.getElementById('finalSystemPromptPreview');
-      const capabilitiesOutput = document.getElementById('capabilitiesOutput');
-      const promptWarningsOutput = document.getElementById('promptWarningsOutput');
-      const promptBehaviorEnabled = document.getElementById('promptBehaviorEnabled');
-      const promptBehaviorText = document.getElementById('promptBehaviorText');
-      const promptRetailEnabled = document.getElementById('promptRetailEnabled');
-      const promptRetailText = document.getElementById('promptRetailText');
-      const promptMediaEnabled = document.getElementById('promptMediaEnabled');
-      const promptMediaText = document.getElementById('promptMediaText');
-      const promptLayoutEnabled = document.getElementById('promptLayoutEnabled');
-      const promptLayoutText = document.getElementById('promptLayoutText');
-      const promptMemoryEnabled = document.getElementById('promptMemoryEnabled');
-      const promptMemoryText = document.getElementById('promptMemoryText');
-      const promptPaymentEnabled = document.getElementById('promptPaymentEnabled');
-      const promptPaymentText = document.getElementById('promptPaymentText');
-      const promptStageEnabled = document.getElementById('promptStageEnabled');
-      const promptStageCheckoutText = document.getElementById('promptStageCheckoutText');
-      const promptStagePaymentText = document.getElementById('promptStagePaymentText');
-      const promptStagePaidText = document.getElementById('promptStagePaidText');
-      const promptStageDeliveryText = document.getElementById('promptStageDeliveryText');
-      const promptCrmExtractEnabled = document.getElementById('promptCrmExtractEnabled');
-      const promptCrmExtractText = document.getElementById('promptCrmExtractText');
-      const promptPaymentCheckEnabled = document.getElementById('promptPaymentCheckEnabled');
-      const promptPaymentCheckText = document.getElementById('promptPaymentCheckText');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
       const testMessage = document.getElementById('testMessage');
       const testOutput = document.getElementById('testOutput');
@@ -2557,8 +2340,6 @@
       const saveDialogueAutomationButton = document.getElementById('saveDialogueAutomation');
       const savePaymentButton = document.getElementById('savePayment');
       const saveDeliveryButton = document.getElementById('saveDelivery');
-      const savePinnedMessagesButton = document.getElementById('savePinnedMessages');
-      const saveSystemPromptsButton = document.getElementById('saveSystemPrompts');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
       const saveSttProviderButton = document.getElementById('saveSttProvider');
@@ -3269,28 +3050,6 @@
       }
 
       function renderSystemVisibility(data) {
-        if (finalSystemPromptPreview) {
-          finalSystemPromptPreview.className = 'status-output';
-          finalSystemPromptPreview.textContent = data.final_system_prompt || 'System prompt пустой.';
-        }
-
-        if (capabilitiesOutput) {
-          const capabilities = data.capabilities || {};
-          capabilitiesOutput.className = 'status-output';
-          capabilitiesOutput.textContent = [
-            `Text AI: ${capabilities.textAi || '—'}`,
-            `Vision: ${capabilities.vision || '—'}`,
-            `STT: ${capabilities.stt || '—'}`,
-            `Telegram Business: ${capabilities.telegramBusiness || '—'}`,
-            `AI timeout: ${capabilities.aiTimeoutMs || '—'} ms`,
-          ].join('\n');
-        }
-
-        if (promptWarningsOutput) {
-          const warnings = Array.isArray(data.prompt_conflict_warnings) ? data.prompt_conflict_warnings : [];
-          promptWarningsOutput.className = 'status-output' + (warnings.length ? '' : ' muted');
-          promptWarningsOutput.textContent = warnings.length ? warnings.map((item) => `• ${item}`).join('\n') : 'Конфликтов не найдено.';
-        }
       }
 
       function renderStatus(data) {
@@ -3310,8 +3069,7 @@
         creativitySelect.value = data.creativity || 'balanced';
         personaStyleSelect.value = data.persona_style || 'calm';
         personaAgeSelect.value = String(data.persona_age || '27');
-        conversationModeSelect.value = data.conversation_mode || 'general';
-        mediaBehaviorSelect.value = data.media_behavior || 'describe_media';
+        mediaBehaviorSelect.value = data.media_behavior || 'answer_from_media';
         autoReplyEnabled.checked = data.auto_reply_enabled !== false;
         memoryEnabled.checked = data.memory_enabled !== false;
         managerTakeoverEnabled.checked = data.manager_takeover_enabled !== false;
@@ -3329,36 +3087,6 @@
         paymentComment.value = data.payment_comment || '';
         promptDeliveryEnabled.checked = data.prompt_delivery_enabled !== false;
         promptDeliveryText.value = data.prompt_delivery_text || '';
-        pinEnabled.checked = data.pin_enabled !== false;
-        pinCollectingEnabled.checked = data.pin_collecting_enabled !== false;
-        pinCollectingText.value = data.pin_collecting_text || '';
-        pinPaymentEnabled.checked = data.pin_payment_enabled !== false;
-        pinPaymentText.value = data.pin_payment_text || '';
-        pinPaidEnabled.checked = data.pin_paid_enabled !== false;
-        pinPaidText.value = data.pin_paid_text || '';
-        pinDeliveryEnabled.checked = data.pin_delivery_enabled !== false;
-        pinDeliveryText.value = data.pin_delivery_text || '';
-        promptBehaviorEnabled.checked = data.prompt_behavior_enabled !== false;
-        promptBehaviorText.value = data.prompt_behavior_text || '';
-        promptRetailEnabled.checked = data.prompt_retail_enabled !== false;
-        promptRetailText.value = data.prompt_retail_text || '';
-        promptMediaEnabled.checked = data.prompt_media_enabled !== false;
-        promptMediaText.value = data.prompt_media_text || '';
-        promptLayoutEnabled.checked = data.prompt_layout_enabled !== false;
-        promptLayoutText.value = data.prompt_layout_text || '';
-        promptMemoryEnabled.checked = data.prompt_memory_enabled !== false;
-        promptMemoryText.value = data.prompt_memory_text || '';
-        promptPaymentEnabled.checked = data.prompt_payment_enabled !== false;
-        promptPaymentText.value = data.prompt_payment_text || '';
-        promptStageEnabled.checked = data.prompt_stage_enabled !== false;
-        promptStageCheckoutText.value = data.prompt_stage_checkout_text || '';
-        promptStagePaymentText.value = data.prompt_stage_payment_text || '';
-        promptStagePaidText.value = data.prompt_stage_paid_text || '';
-        promptStageDeliveryText.value = data.prompt_stage_delivery_text || '';
-        promptCrmExtractEnabled.checked = data.prompt_crm_extract_enabled !== false;
-        promptCrmExtractText.value = data.prompt_crm_extract_text || '';
-        promptPaymentCheckEnabled.checked = data.prompt_payment_check_enabled !== false;
-        promptPaymentCheckText.value = data.prompt_payment_check_text || '';
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -3468,7 +3196,6 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              conversation_mode: conversationModeSelect.value,
               media_behavior: mediaBehaviorSelect.value,
             }),
           });
@@ -3537,60 +3264,6 @@
             body: JSON.stringify({
               prompt_delivery_enabled: promptDeliveryEnabled.checked,
               prompt_delivery_text: promptDeliveryText.value,
-            }),
-          });
-          await loadStatus();
-        });
-      }
-
-      async function savePinnedMessages() {
-        await performSave(savePinnedMessagesButton, async () => {
-          await fetchJSON('/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pin_enabled: pinEnabled.checked,
-              pin_collecting_enabled: pinCollectingEnabled.checked,
-              pin_collecting_text: pinCollectingText.value,
-              pin_payment_enabled: pinPaymentEnabled.checked,
-              pin_payment_text: pinPaymentText.value,
-              pin_paid_enabled: pinPaidEnabled.checked,
-              pin_paid_text: pinPaidText.value,
-              pin_delivery_enabled: pinDeliveryEnabled.checked,
-              pin_delivery_text: pinDeliveryText.value,
-            }),
-          });
-          await loadStatus();
-        });
-      }
-
-      async function saveSystemPrompts() {
-        await performSave(saveSystemPromptsButton, async () => {
-          await fetchJSON('/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt_behavior_enabled: promptBehaviorEnabled.checked,
-              prompt_behavior_text: promptBehaviorText.value,
-              prompt_retail_enabled: promptRetailEnabled.checked,
-              prompt_retail_text: promptRetailText.value,
-              prompt_media_enabled: promptMediaEnabled.checked,
-              prompt_media_text: promptMediaText.value,
-              prompt_layout_enabled: promptLayoutEnabled.checked,
-              prompt_layout_text: promptLayoutText.value,
-              prompt_memory_enabled: promptMemoryEnabled.checked,
-              prompt_memory_text: promptMemoryText.value,
-              prompt_payment_enabled: promptPaymentEnabled.checked,
-              prompt_payment_text: promptPaymentText.value,
-              prompt_stage_enabled: promptStageEnabled.checked,
-              prompt_stage_checkout_text: promptStageCheckoutText.value,
-              prompt_stage_payment_text: promptStagePaymentText.value,
-              prompt_stage_paid_text: promptStagePaidText.value,
-              prompt_stage_delivery_text: promptStageDeliveryText.value,
-              prompt_crm_extract_enabled: promptCrmExtractEnabled.checked,
-              prompt_crm_extract_text: promptCrmExtractText.value,
-              prompt_payment_check_enabled: promptPaymentCheckEnabled.checked,
-              prompt_payment_check_text: promptPaymentCheckText.value,
             }),
           });
           await loadStatus();
@@ -3923,7 +3596,7 @@
         } else {
           stopLogsAutoRefresh();
           headerTitle.textContent = 'AI Control';
-          headerSubtitle.textContent = 'Управление поведением AI через instruction без изменения магистрали.';
+          headerSubtitle.textContent = 'Настройка живого менеджера IWAK без лишних prompt-слоёв и без изменения магистрали.';
         }
       }
 
@@ -3947,7 +3620,7 @@
 
       bindDirtyState(saveInstructionButton, [instruction]);
       bindDirtyState(saveBehaviorButton, [toneSelect, responseLengthSelect, creativitySelect]);
-      bindDirtyState(saveInputHandlingButton, [conversationModeSelect, mediaBehaviorSelect]);
+      bindDirtyState(saveInputHandlingButton, [mediaBehaviorSelect]);
       bindDirtyState(savePersonaButton, [personaStyleSelect, personaAgeSelect]);
       bindDirtyState(saveDialogueAutomationButton, [
         autoReplyEnabled,
@@ -3972,40 +3645,6 @@
         promptDeliveryEnabled,
         promptDeliveryText,
       ]);
-      bindDirtyState(savePinnedMessagesButton, [
-        pinEnabled,
-        pinCollectingEnabled,
-        pinCollectingText,
-        pinPaymentEnabled,
-        pinPaymentText,
-        pinPaidEnabled,
-        pinPaidText,
-        pinDeliveryEnabled,
-        pinDeliveryText,
-      ]);
-      bindDirtyState(saveSystemPromptsButton, [
-        promptBehaviorEnabled,
-        promptBehaviorText,
-        promptRetailEnabled,
-        promptRetailText,
-        promptMediaEnabled,
-        promptMediaText,
-        promptLayoutEnabled,
-        promptLayoutText,
-        promptMemoryEnabled,
-        promptMemoryText,
-        promptPaymentEnabled,
-        promptPaymentText,
-        promptStageEnabled,
-        promptStageCheckoutText,
-        promptStagePaymentText,
-        promptStagePaidText,
-        promptStageDeliveryText,
-        promptCrmExtractEnabled,
-        promptCrmExtractText,
-        promptPaymentCheckEnabled,
-        promptPaymentCheckText,
-      ]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
       bindDirtyState(saveSttProviderButton, [sttBaseUrl, sttApiKey, sttModel]);
@@ -4018,8 +3657,6 @@
       document.getElementById('saveDialogueAutomation').addEventListener('click', saveDialogueAutomation);
       document.getElementById('savePayment').addEventListener('click', savePayment);
       document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
-      document.getElementById('savePinnedMessages').addEventListener('click', savePinnedMessages);
-      document.getElementById('saveSystemPrompts').addEventListener('click', saveSystemPrompts);
       document.getElementById('runTest').addEventListener('click', runTest);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
       document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);

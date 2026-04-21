@@ -128,9 +128,6 @@ function createCustomerStore(options = {}) {
       auto_takeover_at: clean(patch.autoTakeoverAt ?? patch.auto_takeover_at ?? previous.auto_takeover_at, 80),
       last_manager_trace_id: clean(patch.lastManagerTraceId ?? patch.last_manager_trace_id ?? previous.last_manager_trace_id, 80),
       last_client_trace_id: clean(patch.lastClientTraceId ?? patch.last_client_trace_id ?? previous.last_client_trace_id, 80),
-      pinned_stage: clean(patch.pinnedStage ?? patch.pinned_stage ?? previous.pinned_stage, 80),
-      pinned_message_id: clean(patch.pinnedMessageId ?? patch.pinned_message_id ?? previous.pinned_message_id, 80),
-      pinned_updated_at: clean(patch.pinnedUpdatedAt ?? patch.pinned_updated_at ?? previous.pinned_updated_at, 80),
       updated_at: nowIso(),
     };
     statements.upsertDialogState.run(next);
@@ -446,13 +443,6 @@ function runMigrations(db) {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(2, nowIso());
   }
 
-  const hasV3 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(3);
-  if (!hasV3) {
-    addColumnIfMissing(db, 'dialog_states', 'pinned_stage', 'TEXT');
-    addColumnIfMissing(db, 'dialog_states', 'pinned_message_id', 'TEXT');
-    addColumnIfMissing(db, 'dialog_states', 'pinned_updated_at', 'TEXT');
-    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(3, nowIso());
-  }
 }
 
 function addColumnIfMissing(db, table, column, definition) {
@@ -511,16 +501,12 @@ function prepareStatements(db) {
       INSERT INTO dialog_states (
         customer_id, stage, ai_mode, mode_source, source, manager_active_at,
         manager_last_message_at, pending_since, auto_takeover_at,
-        last_manager_trace_id, last_client_trace_id,
-        pinned_stage, pinned_message_id, pinned_updated_at,
-        updated_at
+        last_manager_trace_id, last_client_trace_id, updated_at
       )
       VALUES (
         @customer_id, @stage, @ai_mode, @mode_source, @source, @manager_active_at,
         @manager_last_message_at, @pending_since, @auto_takeover_at,
-        @last_manager_trace_id, @last_client_trace_id,
-        @pinned_stage, @pinned_message_id, @pinned_updated_at,
-        @updated_at
+        @last_manager_trace_id, @last_client_trace_id, @updated_at
       )
       ON CONFLICT(customer_id) DO UPDATE SET
         stage = excluded.stage,
@@ -533,9 +519,6 @@ function prepareStatements(db) {
         auto_takeover_at = excluded.auto_takeover_at,
         last_manager_trace_id = excluded.last_manager_trace_id,
         last_client_trace_id = excluded.last_client_trace_id,
-        pinned_stage = excluded.pinned_stage,
-        pinned_message_id = excluded.pinned_message_id,
-        pinned_updated_at = excluded.pinned_updated_at,
         updated_at = excluded.updated_at
     `),
     getDialogState: db.prepare('SELECT * FROM dialog_states WHERE customer_id = ?'),
@@ -614,9 +597,6 @@ function mapStateRow(row) {
     autoTakeoverAt: row.auto_takeover_at || '',
     lastManagerTraceId: row.last_manager_trace_id || '',
     lastClientTraceId: row.last_client_trace_id || '',
-    pinnedStage: row.pinned_stage || '',
-    pinnedMessageId: row.pinned_message_id || '',
-    pinnedUpdatedAt: row.pinned_updated_at || '',
     updatedAt: row.updated_at || '',
   };
 }

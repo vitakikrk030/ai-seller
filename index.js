@@ -139,29 +139,34 @@ const LEGACY_DEFAULT_INSTRUCTION = `Ты работаешь как живой м
 
 const DEFAULT_CORE_INSTRUCTION = `Вы — менеджер магазина IWAK и общаетесь с клиентом как живой человек в Telegram.
 
-Пишите коротко, просто и по делу. На “Вы”. Без канцелярита, без бот-стиля, без длинных объяснений.
+Пишите коротко, просто и по делу. На “Вы”. Без канцелярита, без бот-стиля, без длинных объяснений и без шаблонных операторских формулировок.
 
-Ваша задача — спокойно вести клиента к покупке, но без давления.
+Клиент обычно приходит уже тёплым: он увидел товар в контенте, в Telegram-посте, в Max или на сайте-витрине и пишет уже ближе к покупке, а не для долгого выбора.
 
-Если клиент прислал фото, ссылку, скрин, карточку товара, название, размер, корзину или описание, считайте, что это товар из нашего ассортимента, который уже есть в наличии.
+Если клиент прислал фото, ссылку, скрин, карточку товара, название, размер, корзину или описание, считайте, что это товар из нашего ассортимента, который уже доступен к заказу.
 
-Не говорите, что нужно проверить каталог, склад, наличие или систему.
+Не говорите, что нужно проверить каталог, склад, наличие, систему или базу.
 Не отправляйте клиента на сайт.
 Не возвращайте клиента обратно в выбор, если он уже показал или назвал товар.
 
-Если клиент уже выбрал товар, ведите разговор дальше от этого шага: размер, количество, оформление, доставка, оплата.
-Если клиент уже указал размер, не спрашивайте его повторно.
+Ведите разговор только к ближайшему следующему шагу.
+Если размер ещё не указан, спросите только размер.
+Если размер уже указан, не спрашивайте его повторно.
+Если не хватает одной детали, спрашивайте только её.
+Не просите всё сразу и не превращайте ответ в анкету.
 
-Если клиент пока просто смотрит или спрашивает, отвечайте по делу и помогайте.
+Если клиент уже близок к покупке, спокойно ведите к оформлению.
+Если клиент спрашивает про оплату, кратко давайте реквизиты.
+Если клиент прислал чек или скрин оплаты, отвечайте, что чек получен и будет проверен вручную. Не говорите, что оплата финально подтверждена только по скрину.
+
+Если клиент пока просто уточняет, отвечайте по делу и помогайте без давления.
 Если клиент сомневается, дайте уверенность и задайте один простой вопрос.
-Если клиент близок к покупке, мягко подталкивайте.
-Если клиент готов, оформляйте сразу.
 
 Если клиент спрашивает не по теме, коротко ответьте и мягко верните разговор к товару.
 
-Если спрашивают “ты бот?”, отвечайте коротко и по-человечески, без объяснений и без слов “бот”, “AI” или “робот”, после чего возвращайте разговор к покупке.
+Если спрашивают “ты бот?”, отвечайте коротко и по-человечески, без объяснений и без слов “бот”, “AI” или “робот”, после чего возвращайте разговор к заказу.
 
-Главный принцип: отвечайте как спокойный, уверенный и живой продавец в чате, а не как ассистент или оператор системы.`;
+Главный принцип: отвечайте как спокойный, уверенный и живой продавец в чате, который быстро доводит тёплого клиента до оформления, оплаты и передачи заказа дальше.`;
 
 const LEGACY_DEFAULT_BEHAVIOR_PROMPT = [
   'Additional behavior guidance:',
@@ -451,58 +456,6 @@ const DEFAULT_STAGE_DELIVERY_PROMPT = [
   'Отвечайте коротко и спокойно: заказ в доставке, дальше статус удобно смотреть в сервисе доставки.',
 ].join(' ');
 
-const LEGACY_DEFAULT_PIN_COLLECTING_TEXT = [
-  'Оформление заказа.',
-  '',
-  'Пришлите, пожалуйста:',
-  'ФИО',
-  'номер телефона',
-  'адрес доставки',
-].join('\n');
-
-const DEFAULT_PIN_COLLECTING_TEXT = [
-  'Оформление заказа.',
-  'Жду ФИО, телефон и адрес доставки.',
-].join('\n');
-
-const LEGACY_DEFAULT_PIN_PAYMENT_TEXT = [
-  'Реквизиты для оплаты:',
-  '{payment_card}',
-  '{payment_recipient_line}',
-  '{payment_bank_line}',
-  '',
-  'После оплаты пришлите, пожалуйста, чек или скриншот.',
-].join('\n');
-
-const DEFAULT_PIN_PAYMENT_TEXT = [
-  'Реквизиты отправлены.',
-  'После оплаты пришлите чек или скриншот.',
-].join('\n');
-
-const LEGACY_DEFAULT_PIN_PAID_TEXT = [
-  'Оплата получена.',
-  '',
-  'Чек получили, спасибо.',
-  'Сейчас подтвердим перевод и передадим заказ дальше.',
-].join('\n');
-
-const DEFAULT_PIN_PAID_TEXT = [
-  'Чек получили.',
-  'Проверяем перевод.',
-].join('\n');
-
-const LEGACY_DEFAULT_PIN_DELIVERY_TEXT = [
-  'Доставка.',
-  '',
-  'Заказ передан в доставку.',
-  'Статус дальше удобно отслеживать уже в сервисе доставки.',
-].join('\n');
-
-const DEFAULT_PIN_DELIVERY_TEXT = [
-  'Заказ в доставке.',
-  'Статус смотрите в сервисе доставки.',
-].join('\n');
-
 const DEFAULT_CRM_EXTRACT_PROMPT = [
   'Извлеките CRM-данные клиента и данные заказа из диалога розничной продажи.',
   'Верните только JSON. Не выдумывайте отсутствующие данные. Для неизвестных значений используйте null или пустую строку.',
@@ -533,8 +486,8 @@ const runtimeConfig = {
   creativity: process.env.CREATIVITY || 'balanced',
   persona_style: process.env.PERSONA_STYLE || 'calm',
   persona_age: process.env.PERSONA_AGE || '27',
-  conversation_mode: process.env.CONVERSATION_MODE || 'general',
-  media_behavior: process.env.MEDIA_BEHAVIOR || 'describe_media',
+  conversation_mode: process.env.CONVERSATION_MODE || 'retail',
+  media_behavior: process.env.MEDIA_BEHAVIOR || 'answer_from_media',
   auto_reply_enabled: process.env.AUTO_REPLY_ENABLED !== 'false',
   memory_enabled: process.env.MEMORY_ENABLED !== 'false',
   memory_recent_limit: Number(process.env.MEMORY_RECENT_LIMIT || MEMORY_RECENT_LIMIT),
@@ -573,15 +526,6 @@ const runtimeConfig = {
   prompt_crm_extract_text: process.env.PROMPT_CRM_EXTRACT_TEXT || DEFAULT_CRM_EXTRACT_PROMPT,
   prompt_payment_check_enabled: process.env.PROMPT_PAYMENT_CHECK_ENABLED !== 'false',
   prompt_payment_check_text: process.env.PROMPT_PAYMENT_CHECK_TEXT || DEFAULT_PAYMENT_CHECK_PROMPT,
-  pin_enabled: process.env.PIN_ENABLED !== 'false',
-  pin_collecting_enabled: process.env.PIN_COLLECTING_ENABLED !== 'false',
-  pin_collecting_text: process.env.PIN_COLLECTING_TEXT || DEFAULT_PIN_COLLECTING_TEXT,
-  pin_payment_enabled: process.env.PIN_PAYMENT_ENABLED !== 'false',
-  pin_payment_text: process.env.PIN_PAYMENT_TEXT || DEFAULT_PIN_PAYMENT_TEXT,
-  pin_paid_enabled: process.env.PIN_PAID_ENABLED !== 'false',
-  pin_paid_text: process.env.PIN_PAID_TEXT || DEFAULT_PIN_PAID_TEXT,
-  pin_delivery_enabled: process.env.PIN_DELIVERY_ENABLED !== 'false',
-  pin_delivery_text: process.env.PIN_DELIVERY_TEXT || DEFAULT_PIN_DELIVERY_TEXT,
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -994,30 +938,6 @@ function getDialogState(chatId) {
   return cleanChatId ? memoryStore.states[cleanChatId] || null : null;
 }
 
-function setPinnedState(chatId, patch = {}) {
-  const cleanChatId = getMemoryChatId(chatId);
-  if (!cleanChatId) return null;
-  const previous = getDialogState(cleanChatId) || {};
-  const next = {
-    ...previous,
-    ...(memoryStore.states[cleanChatId] || {}),
-    pinnedStage: String(patch.pinnedStage ?? previous.pinnedStage ?? '').trim(),
-    pinnedMessageId: String(patch.pinnedMessageId ?? previous.pinnedMessageId ?? '').trim(),
-    pinnedUpdatedAt: String(patch.pinnedUpdatedAt ?? previous.pinnedUpdatedAt ?? new Date().toISOString()).trim(),
-    updatedAt: new Date().toISOString(),
-  };
-  memoryStore.states[cleanChatId] = {
-    ...(memoryStore.states[cleanChatId] || {}),
-    pinnedStage: next.pinnedStage,
-    pinnedMessageId: next.pinnedMessageId,
-    pinnedUpdatedAt: next.pinnedUpdatedAt,
-    updatedAt: next.updatedAt,
-  };
-  safeCustomerStoreCall('customer.state.pin', (store) => store.setDialogState(cleanChatId, next));
-  persistMemoryStore();
-  return next;
-}
-
 function getCustomerProfileSnapshot(chatId) {
   const cleanChatId = getMemoryChatId(chatId);
   const profile = safeCustomerStoreCall('customer.profile.get', (store) => store.getCustomerProfile(cleanChatId));
@@ -1215,8 +1135,8 @@ function buildMemoryContext(chatId, options = {}) {
   const dbContext = safeCustomerStoreCall('customer.context.get', (store) => store.getCustomerContext(cleanChatId, {
     limit: options.limit || MEMORY_RECENT_LIMIT,
     excludeTraceIds: options.excludeTraceIds || [],
-    memoryPromptEnabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
-    memoryPromptText: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
+    memoryPromptEnabled: false,
+    memoryPromptText: '',
   }));
   if (dbContext) return dbContext;
 
@@ -1229,9 +1149,6 @@ function buildMemoryContext(chatId, options = {}) {
     ? [
       'Client memory:',
       ...factLines.map((line) => `- ${line}`),
-      parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true)
-        ? renderPromptTemplate(runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT)
-        : '',
     ].filter(Boolean).join('\n')
     : '';
 
@@ -1582,7 +1499,6 @@ async function processInputBatch(inputs) {
           appendMemoryMessage(batchInput, 'assistant', reply);
         }
         await sendHumanizedTelegramReply(batchInput.config, batchInput, reply);
-        await syncPinnedOrderMessage(batchInput.config, batchInput);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {
@@ -1981,15 +1897,6 @@ function getRuntimeSnapshot() {
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text,
-    pin_enabled: parseConfigBoolean(runtimeConfig.pin_enabled, true),
-    pin_collecting_enabled: parseConfigBoolean(runtimeConfig.pin_collecting_enabled, true),
-    pin_collecting_text: runtimeConfig.pin_collecting_text,
-    pin_payment_enabled: parseConfigBoolean(runtimeConfig.pin_payment_enabled, true),
-    pin_payment_text: runtimeConfig.pin_payment_text,
-    pin_paid_enabled: parseConfigBoolean(runtimeConfig.pin_paid_enabled, true),
-    pin_paid_text: runtimeConfig.pin_paid_text,
-    pin_delivery_enabled: parseConfigBoolean(runtimeConfig.pin_delivery_enabled, true),
-    pin_delivery_text: runtimeConfig.pin_delivery_text,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -2045,10 +1952,6 @@ function loadPersistedConfig() {
       ['prompt_delivery_text', PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
       ['prompt_payment_check_text', LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT, DEFAULT_PAYMENT_CHECK_PROMPT],
-      ['pin_collecting_text', LEGACY_DEFAULT_PIN_COLLECTING_TEXT, DEFAULT_PIN_COLLECTING_TEXT],
-      ['pin_payment_text', LEGACY_DEFAULT_PIN_PAYMENT_TEXT, DEFAULT_PIN_PAYMENT_TEXT],
-      ['pin_paid_text', LEGACY_DEFAULT_PIN_PAID_TEXT, DEFAULT_PIN_PAID_TEXT],
-      ['pin_delivery_text', LEGACY_DEFAULT_PIN_DELIVERY_TEXT, DEFAULT_PIN_DELIVERY_TEXT],
     ];
 
     promptMigrations.forEach(([key, legacyValue, nextValue]) => {
@@ -2058,17 +1961,18 @@ function loadPersistedConfig() {
       }
     });
 
-    const pinDefaultsAreStandard = [
-      isLegacyPromptValue(runtimeConfig.pin_collecting_text, LEGACY_DEFAULT_PIN_COLLECTING_TEXT) || isLegacyPromptValue(runtimeConfig.pin_collecting_text, DEFAULT_PIN_COLLECTING_TEXT),
-      isLegacyPromptValue(runtimeConfig.pin_payment_text, LEGACY_DEFAULT_PIN_PAYMENT_TEXT) || isLegacyPromptValue(runtimeConfig.pin_payment_text, DEFAULT_PIN_PAYMENT_TEXT),
-      isLegacyPromptValue(runtimeConfig.pin_paid_text, LEGACY_DEFAULT_PIN_PAID_TEXT) || isLegacyPromptValue(runtimeConfig.pin_paid_text, DEFAULT_PIN_PAID_TEXT),
-      isLegacyPromptValue(runtimeConfig.pin_delivery_text, LEGACY_DEFAULT_PIN_DELIVERY_TEXT) || isLegacyPromptValue(runtimeConfig.pin_delivery_text, DEFAULT_PIN_DELIVERY_TEXT),
-    ].every(Boolean);
-
-    if (pinDefaultsAreStandard && parseConfigBoolean(runtimeConfig.pin_enabled, true)) {
-      runtimeConfig.pin_enabled = false;
-      shouldRewrite = true;
-    }
+    [
+      ['conversation_mode', 'retail'],
+      ['prompt_retail_enabled', false],
+      ['prompt_layout_enabled', false],
+      ['prompt_memory_enabled', false],
+      ['prompt_stage_enabled', false],
+    ].forEach(([key, nextValue]) => {
+      if (runtimeConfig[key] !== nextValue) {
+        runtimeConfig[key] = nextValue;
+        shouldRewrite = true;
+      }
+    });
 
     if (shouldRewrite) {
       savePersistedConfig();
@@ -2166,12 +2070,12 @@ function applyConfigUpdate(body) {
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'conversation_mode')) {
-    runtimeConfig.conversation_mode = body.conversation_mode || 'general';
+    runtimeConfig.conversation_mode = body.conversation_mode || 'retail';
     process.env.CONVERSATION_MODE = runtimeConfig.conversation_mode;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'media_behavior')) {
-    runtimeConfig.media_behavior = body.media_behavior || 'describe_media';
+    runtimeConfig.media_behavior = body.media_behavior || 'answer_from_media';
     process.env.MEDIA_BEHAVIOR = runtimeConfig.media_behavior;
   }
 
@@ -2261,11 +2165,6 @@ function applyConfigUpdate(body) {
     ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
-    ['pin_enabled', 'PIN_ENABLED', true],
-    ['pin_collecting_enabled', 'PIN_COLLECTING_ENABLED', true],
-    ['pin_payment_enabled', 'PIN_PAYMENT_ENABLED', true],
-    ['pin_paid_enabled', 'PIN_PAID_ENABLED', true],
-    ['pin_delivery_enabled', 'PIN_DELIVERY_ENABLED', true],
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       runtimeConfig[key] = parseConfigBoolean(body[key], defaultValue);
@@ -2287,10 +2186,6 @@ function applyConfigUpdate(body) {
     ['prompt_stage_delivery_text', 'PROMPT_STAGE_DELIVERY_TEXT', DEFAULT_STAGE_DELIVERY_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
-    ['pin_collecting_text', 'PIN_COLLECTING_TEXT', DEFAULT_PIN_COLLECTING_TEXT],
-    ['pin_payment_text', 'PIN_PAYMENT_TEXT', DEFAULT_PIN_PAYMENT_TEXT],
-    ['pin_paid_text', 'PIN_PAID_TEXT', DEFAULT_PIN_PAID_TEXT],
-    ['pin_delivery_text', 'PIN_DELIVERY_TEXT', DEFAULT_PIN_DELIVERY_TEXT],
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       runtimeConfig[key] = String(body[key] || defaultValue);
@@ -3074,16 +2969,6 @@ function getMediaBehaviorGuidance(mediaBehavior) {
   return map[mediaBehavior] || map.describe_media;
 }
 
-function getConversationModeGuidance(conversationMode, config = runtimeConfig) {
-  const map = {
-    general: 'Воспринимайте входящий текст и медиа как обычные пользовательские сообщения общего назначения.',
-    retail: parseConfigBoolean(config.prompt_retail_enabled, true)
-      ? renderPromptTemplate(config.prompt_retail_text || DEFAULT_RETAIL_PROMPT)
-      : '',
-  };
-  return map[conversationMode] || map.general;
-}
-
 function getCreativityTemperature(creativity) {
   const map = {
     precise: 0.2,
@@ -3136,16 +3021,12 @@ function getPromptLayerState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
     behavior: parseConfigBoolean(config.prompt_behavior_enabled, true),
-    retail: config.conversation_mode === 'retail' && parseConfigBoolean(config.prompt_retail_enabled, true),
     media: parseConfigBoolean(config.prompt_media_enabled, true),
-    layout: parseConfigBoolean(config.prompt_layout_enabled, true),
     memory: parseConfigBoolean(config.memory_enabled, true)
-      && parseConfigBoolean(config.prompt_memory_enabled, true)
       && !!memoryContext?.summary,
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
-    stage: parseConfigBoolean(config.prompt_stage_enabled, true),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -3156,32 +3037,9 @@ function getPromptLayerState(config, memoryContext = null) {
 function getPromptConflictWarnings(config) {
   const warnings = [];
   const instruction = String(config.instruction || '').toLowerCase();
-  const retail = String(config.prompt_retail_text || '').toLowerCase();
-  const layout = String(config.prompt_layout_text || '').toLowerCase();
 
-  if (instruction.includes('не выдум') && /(identify|определ|модель|product type)/i.test(config.prompt_retail_text || '')) {
-    warnings.push('Instruction просит не выдумывать модель, а retail prompt может просить определить товар. Лучше уточнить: определять только при уверенности.');
-  }
-
-  if (instruction.includes('не тороп') && /(immediately|сразу|toward purchase|вести к покупке)/i.test(config.prompt_retail_text || '')) {
-    warnings.push('Instruction просит не торопить клиента, а retail prompt может слишком активно вести к покупке. Нужен приоритет “один следующий шаг”.');
-  }
-
-  if (instruction.includes('всегда есть') && /(availability|налич|провер)/i.test(config.prompt_retail_text || '')) {
-    warnings.push('Instruction говорит, что товары всегда в наличии, а prompt может просить проверять наличие.');
-  }
-
-  if (retail.includes('numbered') && instruction.includes('спис')) {
-    warnings.push('Проверьте правила списков/нумерации: лучше запретить анкеты по умолчанию и разрешать списки только по запросу клиента.');
-  }
-
-  if (/(1–3 short lines|1-3 short lines|1–3 короткие строки|1-3 короткие строки)/i.test(config.prompt_layout_text || '')
-    && /(подробно|развернут|развёрнут)/i.test(instruction)) {
-    warnings.push('Layout prompt просит очень короткие сообщения, а Instruction может просить более развёрнутые ответы. Проверьте баланс длины.');
-  }
-
-  if (layout.includes('one next question') && /(несколько вопросов|1–2 коротких вопрос|1-2 коротких вопрос)/i.test(instruction)) {
-    warnings.push('Layout prompt просит один вопрос за раз, а Instruction местами допускает 1–2 вопроса. Лучше зафиксировать один следующий шаг.');
+  if (instruction.includes('в наличии') && instruction.includes('провер')) {
+    warnings.push('Проверьте Instruction: внутри одной инструкции не должно быть одновременно правила “товар уже доступен к заказу” и требования дополнительно проверять наличие.');
   }
 
   return warnings;
@@ -3217,15 +3075,13 @@ function buildSystemPrompt(config) {
       persona_age_guidance: getPersonaAgeGuidance(config.persona_age),
     }));
   }
-  parts.push(getConversationModeGuidance(config.conversation_mode, config));
+
   if (parseConfigBoolean(config.prompt_media_enabled, true)) {
     parts.push(renderPromptTemplate(config.prompt_media_text || DEFAULT_MEDIA_PROMPT, {
       media_behavior_guidance: getMediaBehaviorGuidance(config.media_behavior),
     }));
   }
-  if (parseConfigBoolean(config.prompt_layout_enabled, true)) {
-    parts.push(renderPromptTemplate(config.prompt_layout_text || DEFAULT_LAYOUT_PROMPT));
-  }
+
   const paymentGuidance = getPaymentGuidance(config);
   if (paymentGuidance) parts.push(paymentGuidance);
   const deliveryGuidance = getDeliveryGuidance(config);
@@ -3241,34 +3097,6 @@ function buildFinalPromptPreview(config = runtimeConfig) {
     conflictWarnings: getPromptConflictWarnings(config),
     capabilities: getCapabilitySnapshot(config),
   };
-}
-
-function getCheckoutStageGuidance(input) {
-  const config = input?.config || runtimeConfig;
-  if (!parseConfigBoolean(config.prompt_stage_enabled, true)) return '';
-
-  const stage = String(input?.memoryContext?.state?.stage || '').trim();
-  const order = input?.memoryContext?.lastOrder || {};
-  const paymentCaptured = isTruthyStatus(order.payment_status, [/proof_received/i, /^paid$/i, /payment_received/i])
-    || isTruthyStatus(order.payment_check_status, [/likely_paid/i, /confirmed/i, /manual_review/i]);
-
-  if (stage === 'delivery') {
-    return renderPromptTemplate(config.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT);
-  }
-
-  if (paymentCaptured) {
-    return renderPromptTemplate(config.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT);
-  }
-
-  if (stage === 'waiting_payment' || stage === 'waiting_payment_check') {
-    return renderPromptTemplate(config.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT);
-  }
-
-  if (stage === 'collecting_order_info' || stage === 'ready_to_buy') {
-    return renderPromptTemplate(config.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT);
-  }
-
-  return '';
 }
 
 function buildAiMessages(input) {
@@ -3294,14 +3122,6 @@ function buildAiMessages(input) {
     messages.push({
       role: 'system',
       content: input.memoryContext.summary,
-    });
-  }
-
-  const stageGuidance = getCheckoutStageGuidance(input);
-  if (stageGuidance) {
-    messages.push({
-      role: 'system',
-      content: stageGuidance,
     });
   }
 
@@ -3560,108 +3380,6 @@ async function sendTelegramMessage(config, context, text) {
   }
 }
 
-async function editTelegramMessageText(config, context, messageId, text) {
-  if (logMissingConfig('telegram.editMessageText', config, ['telegram_token'], {
-    traceId: context.traceId,
-    userId: context.userId,
-    chatId: context.chatId,
-    businessConnectionId: context.businessConnectionId || '',
-  })) {
-    return null;
-  }
-
-  const cleanMessageId = String(messageId || '').trim();
-  if (!cleanMessageId) return null;
-
-  try {
-    const payload = {
-      chat_id: context.chatId,
-      message_id: Number(cleanMessageId),
-      text,
-    };
-    if (context.businessConnectionId) {
-      payload.business_connection_id = context.businessConnectionId;
-    }
-
-    const response = await httpClient.post(getTelegramApiUrl(config, 'editMessageText'), payload, {
-      timeout: REQUEST_TIMEOUT_MS,
-    });
-    logEvent('TG_PIN', {
-      traceId: context.traceId,
-      userId: context.userId,
-      chatId: context.chatId,
-      businessConnectionId: context.businessConnectionId || '',
-      pinAction: 'edit',
-      pinnedMessageId: cleanMessageId,
-      status: 'ok',
-    });
-    return response.data?.result || null;
-  } catch (e) {
-    logEvent('ERROR', {
-      traceId: context.traceId,
-      userId: context.userId,
-      scope: 'telegram.editMessageText',
-      chatId: context.chatId,
-      businessConnectionId: context.businessConnectionId || '',
-      pinnedMessageId: cleanMessageId,
-      status: 'error',
-      error: e.message,
-    });
-    return null;
-  }
-}
-
-async function pinTelegramMessage(config, context, messageId) {
-  if (logMissingConfig('telegram.pinChatMessage', config, ['telegram_token'], {
-    traceId: context.traceId,
-    userId: context.userId,
-    chatId: context.chatId,
-    businessConnectionId: context.businessConnectionId || '',
-  })) {
-    return false;
-  }
-
-  const cleanMessageId = String(messageId || '').trim();
-  if (!cleanMessageId) return false;
-
-  try {
-    const payload = {
-      chat_id: context.chatId,
-      message_id: Number(cleanMessageId),
-      disable_notification: true,
-    };
-    if (context.businessConnectionId) {
-      payload.business_connection_id = context.businessConnectionId;
-    }
-
-    await httpClient.post(getTelegramApiUrl(config, 'pinChatMessage'), payload, {
-      timeout: REQUEST_TIMEOUT_MS,
-    });
-    logEvent('TG_PIN', {
-      traceId: context.traceId,
-      userId: context.userId,
-      chatId: context.chatId,
-      businessConnectionId: context.businessConnectionId || '',
-      pinAction: 'pin',
-      pinnedMessageId: cleanMessageId,
-      status: 'ok',
-    });
-    return true;
-  } catch (e) {
-    logEvent('ERROR', {
-      traceId: context.traceId,
-      userId: context.userId,
-      scope: 'telegram.pinChatMessage',
-      chatId: context.chatId,
-      businessConnectionId: context.businessConnectionId || '',
-      pinnedMessageId: cleanMessageId,
-      status: 'error',
-      error: e.message,
-    });
-    return false;
-  }
-}
-
 async function sendTelegramChatAction(config, context, action = 'typing') {
   if (!config.telegram_token) return;
 
@@ -3740,151 +3458,6 @@ async function sendHumanizedTelegramReply(config, context, reply) {
 function isTruthyStatus(value, patterns) {
   const normalized = String(value || '').trim().toLowerCase();
   return !!normalized && patterns.some((pattern) => pattern.test(normalized));
-}
-
-function isPinnedStageEnabled(config, stage) {
-  const map = {
-    collecting: parseConfigBoolean(config.pin_collecting_enabled, true),
-    payment: parseConfigBoolean(config.pin_payment_enabled, true),
-    paid: parseConfigBoolean(config.pin_paid_enabled, true),
-    delivery: parseConfigBoolean(config.pin_delivery_enabled, true),
-  };
-  return !!map[stage];
-}
-
-function resolvePinnedStage(config, chatId) {
-  if (!parseConfigBoolean(config.pin_enabled, true)) return '';
-  const profile = getCustomerProfileSnapshot(chatId);
-  const state = profile?.state || {};
-  const order = profile?.lastOrder || {};
-  const facts = profile?.facts || {};
-
-  if (
-    isTruthyStatus(order.status, [/deliver/i, /ship/i, /track/i, /достав/i, /отправ/i])
-    || isTruthyStatus(state.stage, [/deliver/i, /ship/i, /достав/i, /отправ/i])
-  ) {
-    return isPinnedStageEnabled(config, 'delivery') ? 'delivery' : '';
-  }
-
-  if (
-    isTruthyStatus(order.payment_status, [/proof_received/i, /^paid$/i, /payment_received/i])
-    || isTruthyStatus(order.payment_check_status, [/likely_paid/i, /confirmed/i])
-  ) {
-    return isPinnedStageEnabled(config, 'paid') ? 'paid' : '';
-  }
-
-  if (
-    isTruthyStatus(order.payment_status, [/payment_details_sent/i, /waiting_payment/i])
-    || isTruthyStatus(order.status, [/waiting_payment/i])
-    || isTruthyStatus(state.stage, [/waiting_payment/i])
-  ) {
-    return isPinnedStageEnabled(config, 'payment') ? 'payment' : '';
-  }
-
-  if (
-    (
-      isTruthyStatus(state.stage, [/ready_to_buy/i, /collecting_order_info/i])
-      && (
-        !!facts.fullName?.value
-        || !!facts.phone?.value
-        || !!facts.deliveryAddress?.value
-        || !!facts.city?.value
-      )
-    )
-    || (
-      isTruthyStatus(order.status, [/collecting/i])
-      && (
-        !!facts.fullName?.value
-        || !!facts.phone?.value
-        || !!facts.deliveryAddress?.value
-        || !!facts.city?.value
-      )
-    )
-  ) {
-    return isPinnedStageEnabled(config, 'collecting') ? 'collecting' : '';
-  }
-
-  return '';
-}
-
-function buildPinTemplateVars(config, chatId) {
-  const profile = getCustomerProfileSnapshot(chatId);
-  const customer = profile?.customer || {};
-  const facts = profile?.facts || {};
-  const order = profile?.lastOrder || {};
-  const recipient = String(config.payment_recipient_name || '').trim();
-  const bank = String(config.payment_bank || '').trim();
-
-  return {
-    product: order.product || facts.lastProduct?.value || facts.interest?.value || '',
-    size: order.size || facts.shoeSize?.value || '',
-    full_name: order.full_name || facts.fullName?.value || customer.name || '',
-    phone: order.phone || facts.phone?.value || customer.phone || '',
-    delivery_address: order.delivery_address || facts.deliveryAddress?.value || '',
-    payment_card: String(config.payment_card_number || '').trim(),
-    payment_recipient: recipient,
-    payment_recipient_line: recipient ? `Получатель: ${recipient}` : '',
-    payment_bank: bank,
-    payment_bank_line: bank ? `Банк: ${bank}` : '',
-    payment_comment: String(config.payment_comment || '').trim(),
-  };
-}
-
-function getPinTemplate(config, stage) {
-  const templates = {
-    collecting: config.pin_collecting_text || DEFAULT_PIN_COLLECTING_TEXT,
-    payment: config.pin_payment_text || DEFAULT_PIN_PAYMENT_TEXT,
-    paid: config.pin_paid_text || DEFAULT_PIN_PAID_TEXT,
-    delivery: config.pin_delivery_text || DEFAULT_PIN_DELIVERY_TEXT,
-  };
-  return templates[stage] || '';
-}
-
-function buildPinnedStageText(config, chatId, stage) {
-  const template = getPinTemplate(config, stage);
-  if (!template) return '';
-  return renderPromptTemplate(template, buildPinTemplateVars(config, chatId))
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-async function syncPinnedOrderMessage(config, context) {
-  const stage = resolvePinnedStage(config, context.chatId);
-  if (!stage) return;
-
-  const text = buildPinnedStageText(config, context.chatId, stage);
-  if (!text) return;
-
-  const state = getDialogState(context.chatId) || {};
-  if (state.pinnedStage === stage && state.pinnedMessageId) return;
-
-  let pinnedMessageId = String(state.pinnedMessageId || '').trim();
-
-  if (pinnedMessageId) {
-    const edited = await editTelegramMessageText(config, context, pinnedMessageId, text);
-    if (edited) {
-      await pinTelegramMessage(config, context, pinnedMessageId);
-      setPinnedState(context.chatId, {
-        pinnedStage: stage,
-        pinnedMessageId,
-        pinnedUpdatedAt: new Date().toISOString(),
-      });
-      return;
-    }
-  }
-
-  const sent = await sendTelegramMessage(config, { ...context, useReply: false }, text);
-  pinnedMessageId = String(sent?.message_id || '').trim();
-  if (!pinnedMessageId) return;
-  await pinTelegramMessage(config, context, pinnedMessageId);
-  setPinnedState(context.chatId, {
-    pinnedStage: stage,
-    pinnedMessageId,
-    pinnedUpdatedAt: new Date().toISOString(),
-  });
 }
 
 async function setTelegramWebhook(config) {
@@ -3972,8 +3545,8 @@ app.get('/config/status', async (req, res) => {
     creativity: runtimeConfig.creativity || 'balanced',
     persona_style: runtimeConfig.persona_style || 'calm',
     persona_age: runtimeConfig.persona_age || '27',
-    conversation_mode: runtimeConfig.conversation_mode || 'general',
-    media_behavior: runtimeConfig.media_behavior || 'describe_media',
+    conversation_mode: runtimeConfig.conversation_mode || 'retail',
+    media_behavior: runtimeConfig.media_behavior || 'answer_from_media',
     auto_reply_enabled: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
     memory_enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
     memory_recent_limit: getConfigMemoryLimit(runtimeConfig),
@@ -4015,15 +3588,6 @@ app.get('/config/status', async (req, res) => {
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text || DEFAULT_PAYMENT_CHECK_PROMPT,
-    pin_enabled: parseConfigBoolean(runtimeConfig.pin_enabled, true),
-    pin_collecting_enabled: parseConfigBoolean(runtimeConfig.pin_collecting_enabled, true),
-    pin_collecting_text: runtimeConfig.pin_collecting_text || DEFAULT_PIN_COLLECTING_TEXT,
-    pin_payment_enabled: parseConfigBoolean(runtimeConfig.pin_payment_enabled, true),
-    pin_payment_text: runtimeConfig.pin_payment_text || DEFAULT_PIN_PAYMENT_TEXT,
-    pin_paid_enabled: parseConfigBoolean(runtimeConfig.pin_paid_enabled, true),
-    pin_paid_text: runtimeConfig.pin_paid_text || DEFAULT_PIN_PAID_TEXT,
-    pin_delivery_enabled: parseConfigBoolean(runtimeConfig.pin_delivery_enabled, true),
-    pin_delivery_text: runtimeConfig.pin_delivery_text || DEFAULT_PIN_DELIVERY_TEXT,
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -4147,11 +3711,6 @@ app.get('/memory/:chatId', (req, res) => {
       customer: profile.customer,
       facts: profile.facts || {},
       state: profile.state || null,
-      pinned: profile.state ? {
-        stage: profile.state.pinnedStage || '',
-        messageId: profile.state.pinnedMessageId || '',
-        updatedAt: profile.state.pinnedUpdatedAt || '',
-      } : null,
       lastOrder: profile.lastOrder || null,
       recentMessages: profile.recentMessages || [],
     });
@@ -4162,11 +3721,6 @@ app.get('/memory/:chatId', (req, res) => {
     chatId,
     facts: context.facts || {},
     state: context.state || null,
-    pinned: context.state ? {
-      stage: context.state.pinnedStage || '',
-      messageId: context.state.pinnedMessageId || '',
-      updatedAt: context.state.pinnedUpdatedAt || '',
-    } : null,
     recentMessages: getRecentMemoryMessages(chatId),
   });
 });
@@ -4323,8 +3877,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.creativity = 'balanced';
   runtimeConfig.persona_style = 'calm';
   runtimeConfig.persona_age = '27';
-  runtimeConfig.conversation_mode = 'general';
-  runtimeConfig.media_behavior = 'describe_media';
+  runtimeConfig.conversation_mode = 'retail';
+  runtimeConfig.media_behavior = 'answer_from_media';
   runtimeConfig.auto_reply_enabled = true;
   runtimeConfig.memory_enabled = true;
   runtimeConfig.memory_recent_limit = MEMORY_RECENT_LIMIT;
@@ -4342,19 +3896,19 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_comment = '';
   runtimeConfig.prompt_behavior_enabled = true;
   runtimeConfig.prompt_behavior_text = DEFAULT_BEHAVIOR_PROMPT;
-  runtimeConfig.prompt_retail_enabled = true;
+  runtimeConfig.prompt_retail_enabled = false;
   runtimeConfig.prompt_retail_text = DEFAULT_RETAIL_PROMPT;
   runtimeConfig.prompt_media_enabled = true;
   runtimeConfig.prompt_media_text = DEFAULT_MEDIA_PROMPT;
-  runtimeConfig.prompt_layout_enabled = true;
+  runtimeConfig.prompt_layout_enabled = false;
   runtimeConfig.prompt_layout_text = DEFAULT_LAYOUT_PROMPT;
-  runtimeConfig.prompt_memory_enabled = true;
+  runtimeConfig.prompt_memory_enabled = false;
   runtimeConfig.prompt_memory_text = DEFAULT_MEMORY_PROMPT;
   runtimeConfig.prompt_payment_enabled = true;
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
   runtimeConfig.prompt_delivery_enabled = true;
   runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
-  runtimeConfig.prompt_stage_enabled = true;
+  runtimeConfig.prompt_stage_enabled = false;
   runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
   runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
   runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
@@ -4363,15 +3917,6 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_crm_extract_text = DEFAULT_CRM_EXTRACT_PROMPT;
   runtimeConfig.prompt_payment_check_enabled = true;
   runtimeConfig.prompt_payment_check_text = DEFAULT_PAYMENT_CHECK_PROMPT;
-  runtimeConfig.pin_enabled = true;
-  runtimeConfig.pin_collecting_enabled = true;
-  runtimeConfig.pin_collecting_text = DEFAULT_PIN_COLLECTING_TEXT;
-  runtimeConfig.pin_payment_enabled = true;
-  runtimeConfig.pin_payment_text = DEFAULT_PIN_PAYMENT_TEXT;
-  runtimeConfig.pin_paid_enabled = true;
-  runtimeConfig.pin_paid_text = DEFAULT_PIN_PAID_TEXT;
-  runtimeConfig.pin_delivery_enabled = true;
-  runtimeConfig.pin_delivery_text = DEFAULT_PIN_DELIVERY_TEXT;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -4387,8 +3932,8 @@ app.delete('/config', (req, res) => {
   process.env.CREATIVITY = 'balanced';
   process.env.PERSONA_STYLE = 'calm';
   process.env.PERSONA_AGE = '27';
-  process.env.CONVERSATION_MODE = 'general';
-  process.env.MEDIA_BEHAVIOR = 'describe_media';
+  process.env.CONVERSATION_MODE = 'retail';
+  process.env.MEDIA_BEHAVIOR = 'answer_from_media';
   process.env.AUTO_REPLY_ENABLED = 'true';
   process.env.MEMORY_ENABLED = 'true';
   process.env.MEMORY_RECENT_LIMIT = String(MEMORY_RECENT_LIMIT);
@@ -4406,19 +3951,19 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_COMMENT = '';
   process.env.PROMPT_BEHAVIOR_ENABLED = 'true';
   process.env.PROMPT_BEHAVIOR_TEXT = DEFAULT_BEHAVIOR_PROMPT;
-  process.env.PROMPT_RETAIL_ENABLED = 'true';
+  process.env.PROMPT_RETAIL_ENABLED = 'false';
   process.env.PROMPT_RETAIL_TEXT = DEFAULT_RETAIL_PROMPT;
   process.env.PROMPT_MEDIA_ENABLED = 'true';
   process.env.PROMPT_MEDIA_TEXT = DEFAULT_MEDIA_PROMPT;
-  process.env.PROMPT_LAYOUT_ENABLED = 'true';
+  process.env.PROMPT_LAYOUT_ENABLED = 'false';
   process.env.PROMPT_LAYOUT_TEXT = DEFAULT_LAYOUT_PROMPT;
-  process.env.PROMPT_MEMORY_ENABLED = 'true';
+  process.env.PROMPT_MEMORY_ENABLED = 'false';
   process.env.PROMPT_MEMORY_TEXT = DEFAULT_MEMORY_PROMPT;
   process.env.PROMPT_PAYMENT_ENABLED = 'true';
   process.env.PROMPT_PAYMENT_TEXT = DEFAULT_PAYMENT_PROMPT;
   process.env.PROMPT_DELIVERY_ENABLED = 'true';
   process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
-  process.env.PROMPT_STAGE_ENABLED = 'true';
+  process.env.PROMPT_STAGE_ENABLED = 'false';
   process.env.PROMPT_STAGE_CHECKOUT_TEXT = DEFAULT_STAGE_CHECKOUT_PROMPT;
   process.env.PROMPT_STAGE_PAYMENT_TEXT = DEFAULT_STAGE_PAYMENT_PROMPT;
   process.env.PROMPT_STAGE_PAID_TEXT = DEFAULT_STAGE_PAID_PROMPT;
@@ -4427,15 +3972,6 @@ app.delete('/config', (req, res) => {
   process.env.PROMPT_CRM_EXTRACT_TEXT = DEFAULT_CRM_EXTRACT_PROMPT;
   process.env.PROMPT_PAYMENT_CHECK_ENABLED = 'true';
   process.env.PROMPT_PAYMENT_CHECK_TEXT = DEFAULT_PAYMENT_CHECK_PROMPT;
-  process.env.PIN_ENABLED = 'true';
-  process.env.PIN_COLLECTING_ENABLED = 'true';
-  process.env.PIN_COLLECTING_TEXT = DEFAULT_PIN_COLLECTING_TEXT;
-  process.env.PIN_PAYMENT_ENABLED = 'true';
-  process.env.PIN_PAYMENT_TEXT = DEFAULT_PIN_PAYMENT_TEXT;
-  process.env.PIN_PAID_ENABLED = 'true';
-  process.env.PIN_PAID_TEXT = DEFAULT_PIN_PAID_TEXT;
-  process.env.PIN_DELIVERY_ENABLED = 'true';
-  process.env.PIN_DELIVERY_TEXT = DEFAULT_PIN_DELIVERY_TEXT;
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
@@ -4553,7 +4089,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
             messageStatus: 'manager_takeover',
             status: 'ok',
           });
-          await syncPinnedOrderMessage(config, input);
         } else {
           logEvent('MESSAGE_STATUS', {
             traceId,
@@ -4566,9 +4101,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
             messageStatus: `${sourceInfo.source}_ignored`,
             status: 'ok',
           });
-          if (sourceInfo.source === 'manager') {
-            await syncPinnedOrderMessage(config, input);
-          }
         }
         return;
       }
