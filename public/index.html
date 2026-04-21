@@ -1811,6 +1811,33 @@
                     </div>
                     <div class="field">
                       <label class="toggle-line">
+                        <input id="promptStageEnabled" type="checkbox" />
+                        Prompt этапов диалога
+                      </label>
+                      <div class="field-hint">Скрытый stage-слой для человечности в ключевых точках: оформление, ожидание оплаты, чек получен, доставка. Теперь его тоже можно редактировать без кода.</div>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Prompt этапа оформления</div>
+                      <div class="field-hint">Срабатывает, когда клиент уже на шаге оформления и присылает данные.</div>
+                      <textarea id="promptStageCheckoutText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Prompt этапа оплаты</div>
+                      <div class="field-hint">Срабатывает после отправки реквизитов или когда клиент уже на шаге оплаты.</div>
+                      <textarea id="promptStagePaymentText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Prompt этапа “чек получен”</div>
+                      <div class="field-hint">Срабатывает, когда чек уже есть в контексте и AI не должен просить его повторно.</div>
+                      <textarea id="promptStagePaidText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Prompt этапа доставки</div>
+                      <div class="field-hint">Срабатывает, когда заказ уже передан в доставку.</div>
+                      <textarea id="promptStageDeliveryText"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="toggle-line">
                         <input id="promptCrmExtractEnabled" type="checkbox" />
                         Prompt CRM-извлечения
                       </label>
@@ -2479,6 +2506,11 @@
       const promptMemoryText = document.getElementById('promptMemoryText');
       const promptPaymentEnabled = document.getElementById('promptPaymentEnabled');
       const promptPaymentText = document.getElementById('promptPaymentText');
+      const promptStageEnabled = document.getElementById('promptStageEnabled');
+      const promptStageCheckoutText = document.getElementById('promptStageCheckoutText');
+      const promptStagePaymentText = document.getElementById('promptStagePaymentText');
+      const promptStagePaidText = document.getElementById('promptStagePaidText');
+      const promptStageDeliveryText = document.getElementById('promptStageDeliveryText');
       const promptCrmExtractEnabled = document.getElementById('promptCrmExtractEnabled');
       const promptCrmExtractText = document.getElementById('promptCrmExtractText');
       const promptPaymentCheckEnabled = document.getElementById('promptPaymentCheckEnabled');
@@ -3318,6 +3350,11 @@
         promptMemoryText.value = data.prompt_memory_text || '';
         promptPaymentEnabled.checked = data.prompt_payment_enabled !== false;
         promptPaymentText.value = data.prompt_payment_text || '';
+        promptStageEnabled.checked = data.prompt_stage_enabled !== false;
+        promptStageCheckoutText.value = data.prompt_stage_checkout_text || '';
+        promptStagePaymentText.value = data.prompt_stage_payment_text || '';
+        promptStagePaidText.value = data.prompt_stage_paid_text || '';
+        promptStageDeliveryText.value = data.prompt_stage_delivery_text || '';
         promptCrmExtractEnabled.checked = data.prompt_crm_extract_enabled !== false;
         promptCrmExtractText.value = data.prompt_crm_extract_text || '';
         promptPaymentCheckEnabled.checked = data.prompt_payment_check_enabled !== false;
@@ -3545,6 +3582,11 @@
               prompt_memory_text: promptMemoryText.value,
               prompt_payment_enabled: promptPaymentEnabled.checked,
               prompt_payment_text: promptPaymentText.value,
+              prompt_stage_enabled: promptStageEnabled.checked,
+              prompt_stage_checkout_text: promptStageCheckoutText.value,
+              prompt_stage_payment_text: promptStagePaymentText.value,
+              prompt_stage_paid_text: promptStagePaidText.value,
+              prompt_stage_delivery_text: promptStageDeliveryText.value,
               prompt_crm_extract_enabled: promptCrmExtractEnabled.checked,
               prompt_crm_extract_text: promptCrmExtractText.value,
               prompt_payment_check_enabled: promptPaymentCheckEnabled.checked,
@@ -3954,6 +3996,11 @@
         promptMemoryText,
         promptPaymentEnabled,
         promptPaymentText,
+        promptStageEnabled,
+        promptStageCheckoutText,
+        promptStagePaymentText,
+        promptStagePaidText,
+        promptStageDeliveryText,
         promptCrmExtractEnabled,
         promptCrmExtractText,
         promptPaymentCheckEnabled,

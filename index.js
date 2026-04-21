@@ -272,7 +272,7 @@ const STAGE_ONE_LEGACY_RETAIL_PROMPT = [
   'Всегда обращайтесь к пользователю на “Вы”. Тон должен быть вежливым, естественным и живым.',
 ].join(' ');
 
-const DEFAULT_RETAIL_PROMPT = [
+const PREMIUM_LEGACY_DEFAULT_RETAIL_PROMPT = [
   'Если клиент прислал фото, ссылку, скрин, карточку товара, название или описание, считайте, что товар уже выбран.',
   'В этой модели такой товар всегда есть в наличии и доступен в любом размере.',
   'Не обсуждайте наличие, склад, каталог, остатки или проверку системы.',
@@ -285,6 +285,21 @@ const DEFAULT_RETAIL_PROMPT = [
   'Если клиент уже прислал данные, не пересказывайте их длинным блоком. Коротко подтвердите и переходите дальше.',
   'Не превращайте ответ в анкету, чек-лист или формальную сводку заказа.',
   'Отвечайте как живой продавец: коротко, уверенно, естественно, на “Вы”.',
+  'Всегда отвечайте на русском языке.',
+].join(' ');
+
+const DEFAULT_RETAIL_PROMPT = [
+  'Если клиент прислал фото, ссылку, скрин, карточку товара, название, размер или описание, считайте, что товар уже выбран и он есть у нас в наличии в любом размере.',
+  'Не говорите про проверку наличия, каталога, склада, системы или сайта.',
+  'Не описывайте изображение ради описания и не угадывайте лишние детали, если клиент о них не спрашивал.',
+  'Не начинайте диалог заново и не возвращайте клиента к выбору, если товар уже показан.',
+  'Ведите разговор только к ближайшему следующему шагу: размер, количество, оформление, оплата или доставка.',
+  'Если размер ещё не указан, спросите только размер.',
+  'Если размер уже указан, спросите только следующую недостающую деталь.',
+  'Не пересказывайте длинно название товара, цену, ID, адрес, телефон, ФИО или весь заказ, если клиент сам не просил подтверждение.',
+  'Не пишите “оформляю заказ” раньше времени, если для этого ещё не хватает данных.',
+  'Не превращайте ответ в анкету, сводку, инструкцию по шагам или шаблон оператора без прямой необходимости.',
+  'Отвечайте как живой продавец в Telegram: коротко, спокойно, уверенно, естественно, на “Вы”.',
   'Всегда отвечайте на русском языке.',
 ].join(' ');
 
@@ -304,13 +319,23 @@ const STAGE_ONE_LEGACY_LAYOUT_PROMPT = [
   'Сообщение должно выглядеть как обычная живая переписка, а не как шаблон оператора.',
 ].join(' ');
 
-const DEFAULT_LAYOUT_PROMPT = [
+const PREMIUM_LEGACY_DEFAULT_LAYOUT_PROMPT = [
   'Пишите как живой человек в Telegram.',
   'Обычно это 1–2 короткие фразы.',
   'Одна реплика — одна мысль.',
   'Один следующий вопрос максимум.',
   'Без длинных абзацев, списков, сводок и формальной структуры без необходимости.',
   'Если можно ответить короче, отвечайте короче.',
+].join(' ');
+
+const DEFAULT_LAYOUT_PROMPT = [
+  'Пишите как живой человек в Telegram, а не как оператор по шаблону.',
+  'Обычно ответ — 1–3 короткие строки или 1–2 короткие фразы.',
+  'Одна реплика — одна мысль. Один следующий вопрос максимум.',
+  'Не повторяйте слова клиента в начале ответа и не копируйте его формулировку.',
+  'Не здоровайтесь заново в середине диалога.',
+  'Не используйте списки, нумерацию, длинные инструкции и плотные абзацы, если клиент сам не попросил “по шагам” или “подробно”.',
+  'Если можно ответить короче и естественнее, отвечайте именно так.',
 ].join(' ');
 
 const STAGE_ONE_LEGACY_MEMORY_PROMPT = [
@@ -322,20 +347,40 @@ const STAGE_ONE_LEGACY_MEMORY_PROMPT = [
   'Если факта нет, не выдумывайте его.',
 ].join(' ');
 
-const DEFAULT_MEMORY_PROMPT = [
+const PREMIUM_LEGACY_DEFAULT_MEMORY_PROMPT = [
   'Используйте память только для того, чтобы не спрашивать одно и то же.',
   'Не упоминайте память, базу или профиль клиента.',
   'Не пересказывайте клиенту его сохранённые данные длинным блоком.',
   'Если факта нет, не выдумывайте его.',
 ].join(' ');
 
-const DEFAULT_PAYMENT_PROMPT = [
+const DEFAULT_MEMORY_PROMPT = [
+  'Используйте память только чтобы не переспрашивать уже известное.',
+  'Не упоминайте память, базу или профиль клиента.',
+  'Не пересказывайте клиенту его сохранённые данные длинным блоком.',
+  'Если клиент уточнил или исправил данные, считайте актуальным последнее сообщение клиента.',
+  'Память должна сокращать трение, а не превращать диалог в анкету.',
+  'Если факта нет, не выдумывайте его.',
+].join(' ');
+
+const PREMIUM_LEGACY_DEFAULT_PAYMENT_PROMPT = [
   'Правила оплаты:',
   'Когда клиент спрашивает, как оплатить или куда перевести, кратко дайте настроенные реквизиты и попросите прислать чек или скриншот после оплаты.',
   '{payment_details}',
   'Если клиент присылает чек, скриншот или файл оплаты, воспринимайте это как предварительное подтверждение оплаты для проверки.',
   'Сверяйте видимые получателя, банк, последние цифры карты или счёта, сумму, дату и время, а также статус успешного перевода, если он виден.',
   'Никогда не говорите, что оплата окончательно подтверждена только по скриншоту. Говорите, что чек получен, выглядит корректно / требует ручной проверки / не совпадает, а финальное подтверждение делается после сверки в банковском приложении.',
+].join('\n');
+
+const DEFAULT_PAYMENT_PROMPT = [
+  'Правила оплаты:',
+  'Когда клиент спрашивает, как оплатить или куда перевести, кратко дайте реквизиты без длинных объяснений.',
+  '{payment_details}',
+  'После оплаты попросите прислать только чек или скриншот.',
+  'Если клиент пишет, что уже оплатил, не отправляйте реквизиты повторно без необходимости: спросите только чек или скрин, если его ещё нет.',
+  'Если чек уже есть в контексте, не просите его повторно.',
+  'Если клиент присылает чек, скриншот или файл оплаты, воспринимайте это как предварительное подтверждение для проверки.',
+  'Никогда не говорите, что оплата окончательно подтверждена только по скриншоту. Коротко говорите: чек получен, проверяем / выглядит корректно / нужно ручное подтверждение.',
 ].join('\n');
 
 const LEGACY_DEFAULT_DELIVERY_PROMPT = [
@@ -348,7 +393,7 @@ const LEGACY_DEFAULT_DELIVERY_PROMPT = [
   'После передачи заказа в доставку не расписывайте лишнюю логистику. Коротко сообщайте, что статус дальше удобно отслеживать уже в самом сервисе доставки.',
 ].join('\n');
 
-const DEFAULT_DELIVERY_PROMPT = [
+const PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT = [
   'Правила доставки:',
   'Самовывоза нет. Не предлагайте и не упоминайте самовывоз как доступный вариант.',
   'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет, но по Москве можем передать курьером.',
@@ -359,6 +404,46 @@ const DEFAULT_DELIVERY_PROMPT = [
   'Не перечисляйте лишние варианты и не расписывайте длинные схемы доставки без прямого вопроса клиента.',
   'После передачи заказа в доставку коротко сообщайте, что дальше статус удобно отслеживать уже в сервисе доставки.',
 ].join('\n');
+
+const DEFAULT_DELIVERY_PROMPT = [
+  'Правила доставки:',
+  'Самовывоза нет.',
+  'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет, но по Москве можем передать курьером.',
+  'Офлайн-магазина нет.',
+  'Если клиент спрашивает почему нет офлайн-магазина, отвечайте коротко: так не делаем лишнюю наценку из-за аренды и персонала.',
+  'Если что-то не подойдёт, можно оформить возврат.',
+  'Про доставку отвечайте коротко: по Москве курьер, по другим направлениям сервис доставки.',
+  'Не расписывайте длинные схемы доставки без прямого запроса клиента.',
+  'После отправки коротко говорите, что дальше статус удобно смотреть уже в сервисе доставки.',
+].join('\n');
+
+const DEFAULT_STAGE_CHECKOUT_PROMPT = [
+  'Контекст этапа: клиент уже оформляет заказ.',
+  'Отвечайте очень коротко и по-человечески.',
+  'Не пересказывайте длинно весь заказ, ФИО, адрес или телефон.',
+  'Если клиент только что прислал данные, коротко подтвердите и сразу переходите к следующему шагу.',
+  'Не начинайте ответ как шаблон оператора: без “Здравствуйте”, без “Оформляю заказ:” и без формальной сводки.',
+].join(' ');
+
+const DEFAULT_STAGE_PAYMENT_PROMPT = [
+  'Контекст этапа: клиенту уже отправлены реквизиты или он на шаге оплаты.',
+  'Не повторяйте длинно описание заказа и не отправляйте реквизиты заново без необходимости.',
+  'Если клиент говорит, что уже оплатил, спросите только чек или скрин, если его ещё нет.',
+  'Ответ должен быть коротким и естественным.',
+].join(' ');
+
+const DEFAULT_STAGE_PAID_PROMPT = [
+  'Контекст этапа: чек уже получен или оплата уже отмечена в контексте.',
+  'Не просите чек повторно и не возвращайте клиента на предыдущий шаг.',
+  'Коротко подтвердите, что чек получен / перевод проверяется / дальше идёт оформление отправки.',
+  'Не дублируйте реквизиты и не пересказывайте весь заказ.',
+].join(' ');
+
+const DEFAULT_STAGE_DELIVERY_PROMPT = [
+  'Контекст этапа: заказ уже передан в доставку.',
+  'Не просите оплату, чек, адрес или телефон повторно.',
+  'Отвечайте коротко и спокойно: заказ в доставке, дальше статус удобно смотреть в сервисе доставки.',
+].join(' ');
 
 const LEGACY_DEFAULT_PIN_COLLECTING_TEXT = [
   'Оформление заказа.',
@@ -473,6 +558,11 @@ const runtimeConfig = {
   prompt_payment_text: process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT,
   prompt_delivery_enabled: process.env.PROMPT_DELIVERY_ENABLED !== 'false',
   prompt_delivery_text: process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT,
+  prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED !== 'false',
+  prompt_stage_checkout_text: process.env.PROMPT_STAGE_CHECKOUT_TEXT || DEFAULT_STAGE_CHECKOUT_PROMPT,
+  prompt_stage_payment_text: process.env.PROMPT_STAGE_PAYMENT_TEXT || DEFAULT_STAGE_PAYMENT_PROMPT,
+  prompt_stage_paid_text: process.env.PROMPT_STAGE_PAID_TEXT || DEFAULT_STAGE_PAID_PROMPT,
+  prompt_stage_delivery_text: process.env.PROMPT_STAGE_DELIVERY_TEXT || DEFAULT_STAGE_DELIVERY_PROMPT,
   prompt_crm_extract_enabled: process.env.PROMPT_CRM_EXTRACT_ENABLED !== 'false',
   prompt_crm_extract_text: process.env.PROMPT_CRM_EXTRACT_TEXT || DEFAULT_CRM_EXTRACT_PROMPT,
   prompt_payment_check_enabled: process.env.PROMPT_PAYMENT_CHECK_ENABLED !== 'false',
@@ -1876,6 +1966,11 @@ function getRuntimeSnapshot() {
     prompt_payment_text: runtimeConfig.prompt_payment_text,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text,
+    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
+    prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text,
+    prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text,
+    prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text,
+    prompt_stage_delivery_text: runtimeConfig.prompt_stage_delivery_text,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
@@ -1930,13 +2025,18 @@ function loadPersistedConfig() {
       ['prompt_behavior_text', LEGACY_DEFAULT_BEHAVIOR_PROMPT, DEFAULT_BEHAVIOR_PROMPT],
       ['prompt_retail_text', LEGACY_DEFAULT_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
       ['prompt_retail_text', STAGE_ONE_LEGACY_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
+      ['prompt_retail_text', PREMIUM_LEGACY_DEFAULT_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
       ['prompt_media_text', LEGACY_DEFAULT_MEDIA_PROMPT, DEFAULT_MEDIA_PROMPT],
       ['prompt_layout_text', LEGACY_DEFAULT_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
       ['prompt_layout_text', STAGE_ONE_LEGACY_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
+      ['prompt_layout_text', PREMIUM_LEGACY_DEFAULT_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
       ['prompt_memory_text', LEGACY_DEFAULT_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
       ['prompt_memory_text', STAGE_ONE_LEGACY_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
+      ['prompt_memory_text', PREMIUM_LEGACY_DEFAULT_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
       ['prompt_payment_text', LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
+      ['prompt_payment_text', PREMIUM_LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
       ['prompt_delivery_text', LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
+      ['prompt_delivery_text', PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
       ['prompt_payment_check_text', LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT, DEFAULT_PAYMENT_CHECK_PROMPT],
       ['pin_collecting_text', LEGACY_DEFAULT_PIN_COLLECTING_TEXT, DEFAULT_PIN_COLLECTING_TEXT],
@@ -2152,6 +2252,7 @@ function applyConfigUpdate(body) {
     ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
+    ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
     ['pin_enabled', 'PIN_ENABLED', true],
@@ -2174,6 +2275,10 @@ function applyConfigUpdate(body) {
     ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
     ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
     ['prompt_delivery_text', 'PROMPT_DELIVERY_TEXT', DEFAULT_DELIVERY_PROMPT],
+    ['prompt_stage_checkout_text', 'PROMPT_STAGE_CHECKOUT_TEXT', DEFAULT_STAGE_CHECKOUT_PROMPT],
+    ['prompt_stage_payment_text', 'PROMPT_STAGE_PAYMENT_TEXT', DEFAULT_STAGE_PAYMENT_PROMPT],
+    ['prompt_stage_paid_text', 'PROMPT_STAGE_PAID_TEXT', DEFAULT_STAGE_PAID_PROMPT],
+    ['prompt_stage_delivery_text', 'PROMPT_STAGE_DELIVERY_TEXT', DEFAULT_STAGE_DELIVERY_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
     ['pin_collecting_text', 'PIN_COLLECTING_TEXT', DEFAULT_PIN_COLLECTING_TEXT],
@@ -3034,6 +3139,7 @@ function getPromptLayerState(config, memoryContext = null) {
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
+    stage: parseConfigBoolean(config.prompt_stage_enabled, true),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -3132,34 +3238,28 @@ function buildFinalPromptPreview(config = runtimeConfig) {
 }
 
 function getCheckoutStageGuidance(input) {
+  const config = input?.config || runtimeConfig;
+  if (!parseConfigBoolean(config.prompt_stage_enabled, true)) return '';
+
   const stage = String(input?.memoryContext?.state?.stage || '').trim();
-  if (!stage) return '';
-
-  if (stage === 'collecting_order_info' || stage === 'ready_to_buy') {
-    return [
-      'Контекст этапа: клиент уже на оформлении.',
-      'Отвечайте максимально коротко и по-человечески.',
-      'Не пересказывайте весь заказ, адрес, телефон или ФИО большим блоком.',
-      'Если клиент только что прислал данные для оформления, не дублируйте их полностью в ответе.',
-      'Подтверждение должно быть коротким: 1–2 фразы, затем следующий шаг.',
-      'Если данных уже достаточно, сразу переходите к оплате без длинного резюме заказа.',
-    ].join(' ');
-  }
-
-  if (stage === 'waiting_payment') {
-    return [
-      'Контекст этапа: реквизиты уже отправлены или клиент на этапе оплаты.',
-      'Не повторяйте длинное описание заказа.',
-      'Отвечайте коротко: реквизиты, просьба прислать чек, либо краткое подтверждение получения чека.',
-    ].join(' ');
-  }
+  const order = input?.memoryContext?.lastOrder || {};
+  const paymentCaptured = isTruthyStatus(order.payment_status, [/proof_received/i, /^paid$/i, /payment_received/i])
+    || isTruthyStatus(order.payment_check_status, [/likely_paid/i, /confirmed/i, /manual_review/i]);
 
   if (stage === 'delivery') {
-    return [
-      'Контекст этапа: заказ уже передан в доставку.',
-      'Отвечайте коротко и спокойно.',
-      'Не расписывайте логистику длинно: скажите, что статус удобно отслеживать в сервисе доставки.',
-    ].join(' ');
+    return renderPromptTemplate(config.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT);
+  }
+
+  if (paymentCaptured) {
+    return renderPromptTemplate(config.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT);
+  }
+
+  if (stage === 'waiting_payment' || stage === 'waiting_payment_check') {
+    return renderPromptTemplate(config.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT);
+  }
+
+  if (stage === 'collecting_order_info' || stage === 'ready_to_buy') {
+    return renderPromptTemplate(config.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT);
   }
 
   return '';
@@ -3883,6 +3983,11 @@ app.get('/config/status', async (req, res) => {
     prompt_payment_text: runtimeConfig.prompt_payment_text || DEFAULT_PAYMENT_PROMPT,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT,
+    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
+    prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT,
+    prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT,
+    prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT,
+    prompt_stage_delivery_text: runtimeConfig.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
@@ -4226,6 +4331,11 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
   runtimeConfig.prompt_delivery_enabled = true;
   runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
+  runtimeConfig.prompt_stage_enabled = true;
+  runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
+  runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
+  runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
+  runtimeConfig.prompt_stage_delivery_text = DEFAULT_STAGE_DELIVERY_PROMPT;
   runtimeConfig.prompt_crm_extract_enabled = true;
   runtimeConfig.prompt_crm_extract_text = DEFAULT_CRM_EXTRACT_PROMPT;
   runtimeConfig.prompt_payment_check_enabled = true;
@@ -4271,8 +4381,29 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_RECIPIENT_NAME = '';
   process.env.PAYMENT_BANK = '';
   process.env.PAYMENT_COMMENT = '';
+  process.env.PROMPT_BEHAVIOR_ENABLED = 'true';
+  process.env.PROMPT_BEHAVIOR_TEXT = DEFAULT_BEHAVIOR_PROMPT;
+  process.env.PROMPT_RETAIL_ENABLED = 'true';
+  process.env.PROMPT_RETAIL_TEXT = DEFAULT_RETAIL_PROMPT;
+  process.env.PROMPT_MEDIA_ENABLED = 'true';
+  process.env.PROMPT_MEDIA_TEXT = DEFAULT_MEDIA_PROMPT;
+  process.env.PROMPT_LAYOUT_ENABLED = 'true';
+  process.env.PROMPT_LAYOUT_TEXT = DEFAULT_LAYOUT_PROMPT;
+  process.env.PROMPT_MEMORY_ENABLED = 'true';
+  process.env.PROMPT_MEMORY_TEXT = DEFAULT_MEMORY_PROMPT;
+  process.env.PROMPT_PAYMENT_ENABLED = 'true';
+  process.env.PROMPT_PAYMENT_TEXT = DEFAULT_PAYMENT_PROMPT;
   process.env.PROMPT_DELIVERY_ENABLED = 'true';
   process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
+  process.env.PROMPT_STAGE_ENABLED = 'true';
+  process.env.PROMPT_STAGE_CHECKOUT_TEXT = DEFAULT_STAGE_CHECKOUT_PROMPT;
+  process.env.PROMPT_STAGE_PAYMENT_TEXT = DEFAULT_STAGE_PAYMENT_PROMPT;
+  process.env.PROMPT_STAGE_PAID_TEXT = DEFAULT_STAGE_PAID_PROMPT;
+  process.env.PROMPT_STAGE_DELIVERY_TEXT = DEFAULT_STAGE_DELIVERY_PROMPT;
+  process.env.PROMPT_CRM_EXTRACT_ENABLED = 'true';
+  process.env.PROMPT_CRM_EXTRACT_TEXT = DEFAULT_CRM_EXTRACT_PROMPT;
+  process.env.PROMPT_PAYMENT_CHECK_ENABLED = 'true';
+  process.env.PROMPT_PAYMENT_CHECK_TEXT = DEFAULT_PAYMENT_CHECK_PROMPT;
   process.env.PIN_ENABLED = 'true';
   process.env.PIN_COLLECTING_ENABLED = 'true';
   process.env.PIN_COLLECTING_TEXT = DEFAULT_PIN_COLLECTING_TEXT;
