@@ -1787,6 +1787,14 @@
                     </div>
                     <div class="field">
                       <label class="toggle-line">
+                        <input id="promptLayoutEnabled" type="checkbox" />
+                        Message layout prompt
+                      </label>
+                      <div class="field-hint">Отвечает за визуальную форму сообщения в чате: плотность текста, переносы строк, один вопрос за раз и удобство чтения с телефона.</div>
+                      <textarea id="promptLayoutText"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="toggle-line">
                         <input id="promptMemoryEnabled" type="checkbox" />
                         Memory / Customer profile prompt
                       </label>
@@ -2375,6 +2383,8 @@
       const promptRetailText = document.getElementById('promptRetailText');
       const promptMediaEnabled = document.getElementById('promptMediaEnabled');
       const promptMediaText = document.getElementById('promptMediaText');
+      const promptLayoutEnabled = document.getElementById('promptLayoutEnabled');
+      const promptLayoutText = document.getElementById('promptLayoutText');
       const promptMemoryEnabled = document.getElementById('promptMemoryEnabled');
       const promptMemoryText = document.getElementById('promptMemoryText');
       const promptPaymentEnabled = document.getElementById('promptPaymentEnabled');
@@ -3186,6 +3196,8 @@
         promptRetailText.value = data.prompt_retail_text || '';
         promptMediaEnabled.checked = data.prompt_media_enabled !== false;
         promptMediaText.value = data.prompt_media_text || '';
+        promptLayoutEnabled.checked = data.prompt_layout_enabled !== false;
+        promptLayoutText.value = data.prompt_layout_text || '';
         promptMemoryEnabled.checked = data.prompt_memory_enabled !== false;
         promptMemoryText.value = data.prompt_memory_text || '';
         promptPaymentEnabled.checked = data.prompt_payment_enabled !== false;
@@ -3376,6 +3388,8 @@
               prompt_retail_text: promptRetailText.value,
               prompt_media_enabled: promptMediaEnabled.checked,
               prompt_media_text: promptMediaText.value,
+              prompt_layout_enabled: promptLayoutEnabled.checked,
+              prompt_layout_text: promptLayoutText.value,
               prompt_memory_enabled: promptMemoryEnabled.checked,
               prompt_memory_text: promptMemoryText.value,
               prompt_payment_enabled: promptPaymentEnabled.checked,
@@ -3768,6 +3782,8 @@
         promptRetailText,
         promptMediaEnabled,
         promptMediaText,
+        promptLayoutEnabled,
+        promptLayoutText,
         promptMemoryEnabled,
         promptMemoryText,
         promptPaymentEnabled,

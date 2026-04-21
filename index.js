@@ -117,6 +117,25 @@ const DEFAULT_RETAIL_PROMPT = [
 
 const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
 
+const DEFAULT_LAYOUT_PROMPT = [
+  'Write like a real person in Telegram chat.',
+  'Keep replies visually light and easy to read on a phone.',
+  'Usually use 1–3 short lines.',
+  'Do not pack too many thoughts into one message.',
+  'Ask only one next question at a time.',
+  'Avoid long dense paragraphs, numbered lists, and form-like formatting unless truly necessary.',
+  'Prefer short natural chat rhythm over perfect structure.',
+  'Sometimes one short sentence is enough.',
+  'Пишите как живой человек в Telegram.',
+  'Ответ должен легко читаться с телефона.',
+  'Обычно это 1–3 короткие строки.',
+  'Не объединяйте слишком много мыслей в одно сообщение.',
+  'Задавайте один следующий вопрос за раз.',
+  'Избегайте длинных плотных абзацев, нумерации и анкетной формы без необходимости.',
+  'Лучше короткий естественный ритм чата, чем слишком правильная структура.',
+  'Иногда достаточно одной короткой фразы.',
+].join(' ');
+
 const DEFAULT_MEMORY_PROMPT = [
   'Use this naturally when relevant.',
   'Do not mention internal memory directly.',
@@ -187,6 +206,8 @@ const runtimeConfig = {
   prompt_retail_text: process.env.PROMPT_RETAIL_TEXT || DEFAULT_RETAIL_PROMPT,
   prompt_media_enabled: process.env.PROMPT_MEDIA_ENABLED !== 'false',
   prompt_media_text: process.env.PROMPT_MEDIA_TEXT || DEFAULT_MEDIA_PROMPT,
+  prompt_layout_enabled: process.env.PROMPT_LAYOUT_ENABLED !== 'false',
+  prompt_layout_text: process.env.PROMPT_LAYOUT_TEXT || DEFAULT_LAYOUT_PROMPT,
   prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED !== 'false',
   prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
   prompt_payment_enabled: process.env.PROMPT_PAYMENT_ENABLED !== 'false',
@@ -1522,6 +1543,8 @@ function getRuntimeSnapshot() {
     prompt_retail_text: runtimeConfig.prompt_retail_text,
     prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
     prompt_media_text: runtimeConfig.prompt_media_text,
+    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, true),
+    prompt_layout_text: runtimeConfig.prompt_layout_text,
     prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
     prompt_memory_text: runtimeConfig.prompt_memory_text,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
@@ -1746,6 +1769,7 @@ function applyConfigUpdate(body) {
     ['prompt_behavior_enabled', 'PROMPT_BEHAVIOR_ENABLED', true],
     ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
     ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
+    ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', true],
     ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
@@ -1761,6 +1785,7 @@ function applyConfigUpdate(body) {
     ['prompt_behavior_text', 'PROMPT_BEHAVIOR_TEXT', DEFAULT_BEHAVIOR_PROMPT],
     ['prompt_retail_text', 'PROMPT_RETAIL_TEXT', DEFAULT_RETAIL_PROMPT],
     ['prompt_media_text', 'PROMPT_MEDIA_TEXT', DEFAULT_MEDIA_PROMPT],
+    ['prompt_layout_text', 'PROMPT_LAYOUT_TEXT', DEFAULT_LAYOUT_PROMPT],
     ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
     ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
@@ -2607,6 +2632,7 @@ function getPromptLayerState(config, memoryContext = null) {
     behavior: parseConfigBoolean(config.prompt_behavior_enabled, true),
     retail: config.conversation_mode === 'retail' && parseConfigBoolean(config.prompt_retail_enabled, true),
     media: parseConfigBoolean(config.prompt_media_enabled, true),
+    layout: parseConfigBoolean(config.prompt_layout_enabled, true),
     memory: parseConfigBoolean(config.memory_enabled, true)
       && parseConfigBoolean(config.prompt_memory_enabled, true)
       && !!memoryContext?.summary,
@@ -2623,6 +2649,7 @@ function getPromptConflictWarnings(config) {
   const warnings = [];
   const instruction = String(config.instruction || '').toLowerCase();
   const retail = String(config.prompt_retail_text || '').toLowerCase();
+  const layout = String(config.prompt_layout_text || '').toLowerCase();
 
   if (instruction.includes('не выдум') && /(identify|определ|модель|product type)/i.test(config.prompt_retail_text || '')) {
     warnings.push('Instruction просит не выдумывать модель, а retail prompt может просить определить товар. Лучше уточнить: определять только при уверенности.');
@@ -2638,6 +2665,15 @@ function getPromptConflictWarnings(config) {
 
   if (retail.includes('numbered') && instruction.includes('спис')) {
     warnings.push('Проверьте правила списков/нумерации: лучше запретить анкеты по умолчанию и разрешать списки только по запросу клиента.');
+  }
+
+  if (/(1–3 short lines|1-3 short lines|1–3 короткие строки|1-3 короткие строки)/i.test(config.prompt_layout_text || '')
+    && /(подробно|длинн|развернут)/i.test(instruction)) {
+    warnings.push('Layout prompt просит очень короткие сообщения, а Instruction может просить более развёрнутые ответы. Проверьте баланс длины.');
+  }
+
+  if (layout.includes('one next question') && /(несколько вопросов|1–2 коротких вопрос|1-2 коротких вопрос)/i.test(instruction)) {
+    warnings.push('Layout prompt просит один вопрос за раз, а Instruction местами допускает 1–2 вопроса. Лучше зафиксировать один следующий шаг.');
   }
 
   return warnings;
@@ -2678,6 +2714,9 @@ function buildSystemPrompt(config) {
     parts.push(renderPromptTemplate(config.prompt_media_text || DEFAULT_MEDIA_PROMPT, {
       media_behavior_guidance: getMediaBehaviorGuidance(config.media_behavior),
     }));
+  }
+  if (parseConfigBoolean(config.prompt_layout_enabled, true)) {
+    parts.push(renderPromptTemplate(config.prompt_layout_text || DEFAULT_LAYOUT_PROMPT));
   }
   const paymentGuidance = getPaymentGuidance(config);
   if (paymentGuidance) parts.push(paymentGuidance);
@@ -3158,6 +3197,8 @@ app.get('/config/status', async (req, res) => {
     prompt_retail_text: runtimeConfig.prompt_retail_text || DEFAULT_RETAIL_PROMPT,
     prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
     prompt_media_text: runtimeConfig.prompt_media_text || DEFAULT_MEDIA_PROMPT,
+    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, true),
+    prompt_layout_text: runtimeConfig.prompt_layout_text || DEFAULT_LAYOUT_PROMPT,
     prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
     prompt_memory_text: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
@@ -3478,6 +3519,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_retail_text = DEFAULT_RETAIL_PROMPT;
   runtimeConfig.prompt_media_enabled = true;
   runtimeConfig.prompt_media_text = DEFAULT_MEDIA_PROMPT;
+  runtimeConfig.prompt_layout_enabled = true;
+  runtimeConfig.prompt_layout_text = DEFAULT_LAYOUT_PROMPT;
   runtimeConfig.prompt_memory_enabled = true;
   runtimeConfig.prompt_memory_text = DEFAULT_MEMORY_PROMPT;
   runtimeConfig.prompt_payment_enabled = true;
