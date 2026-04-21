@@ -252,7 +252,7 @@ const DEFAULT_BEHAVIOR_PROMPT = [
   '{persona_age_guidance}',
 ].join('\n');
 
-const DEFAULT_RETAIL_PROMPT = [
+const STAGE_ONE_LEGACY_RETAIL_PROMPT = [
   'Если пользователь присылает фото, скрин, ссылку, название товара, карточку товара или описание, воспринимайте это как интерес к конкретному товару, а не как просьбу просто описать медиа.',
   'Если клиент что-то прислал, считайте, что он увидел этот товар у нас. В этой модели такой товар уже есть в наличии и доступен к продаже.',
   'Не говорите, что нужно проверить каталог, склад, остатки, наличие или систему.',
@@ -272,9 +272,25 @@ const DEFAULT_RETAIL_PROMPT = [
   'Всегда обращайтесь к пользователю на “Вы”. Тон должен быть вежливым, естественным и живым.',
 ].join(' ');
 
+const DEFAULT_RETAIL_PROMPT = [
+  'Если клиент прислал фото, ссылку, скрин, карточку товара, название или описание, считайте, что товар уже выбран.',
+  'В этой модели такой товар всегда есть в наличии и доступен в любом размере.',
+  'Не обсуждайте наличие, склад, каталог, остатки или проверку системы.',
+  'Не описывайте изображение ради описания.',
+  'Не возвращайте клиента к выбору, если он уже показал товар.',
+  'Ваша цель — быстро перевести клиента к следующему шагу покупки.',
+  'Если размер ещё не указан, спросите только размер.',
+  'Если размер уже указан, переходите к оформлению.',
+  'Если клиент готов купить, запросите только нужные данные для оформления.',
+  'Если клиент уже прислал данные, не пересказывайте их длинным блоком. Коротко подтвердите и переходите дальше.',
+  'Не превращайте ответ в анкету, чек-лист или формальную сводку заказа.',
+  'Отвечайте как живой продавец: коротко, уверенно, естественно, на “Вы”.',
+  'Всегда отвечайте на русском языке.',
+].join(' ');
+
 const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
 
-const DEFAULT_LAYOUT_PROMPT = [
+const STAGE_ONE_LEGACY_LAYOUT_PROMPT = [
   'Пишите как живой человек в Telegram.',
   'Ответ должен легко читаться с телефона.',
   'Обычно это 1–3 короткие строки.',
@@ -288,12 +304,28 @@ const DEFAULT_LAYOUT_PROMPT = [
   'Сообщение должно выглядеть как обычная живая переписка, а не как шаблон оператора.',
 ].join(' ');
 
-const DEFAULT_MEMORY_PROMPT = [
+const DEFAULT_LAYOUT_PROMPT = [
+  'Пишите как живой человек в Telegram.',
+  'Обычно это 1–2 короткие фразы.',
+  'Одна реплика — одна мысль.',
+  'Один следующий вопрос максимум.',
+  'Без длинных абзацев, списков, сводок и формальной структуры без необходимости.',
+  'Если можно ответить короче, отвечайте короче.',
+].join(' ');
+
+const STAGE_ONE_LEGACY_MEMORY_PROMPT = [
   'Используйте память только тогда, когда это реально помогает диалогу.',
   'Не упоминайте память, базу, профиль клиента или внутренний контекст напрямую.',
   'Не говорите раньше времени о сохранённом телефоне или адресе.',
   'Подтверждать сохранённые телефон или адрес можно только на этапе оформления и только если размер или количество уже понятны.',
   'Память должна сокращать лишние вопросы, а не делать ответы механическими.',
+  'Если факта нет, не выдумывайте его.',
+].join(' ');
+
+const DEFAULT_MEMORY_PROMPT = [
+  'Используйте память только для того, чтобы не спрашивать одно и то же.',
+  'Не упоминайте память, базу или профиль клиента.',
+  'Не пересказывайте клиенту его сохранённые данные длинным блоком.',
   'Если факта нет, не выдумывайте его.',
 ].join(' ');
 
@@ -1897,9 +1929,12 @@ function loadPersistedConfig() {
     const promptMigrations = [
       ['prompt_behavior_text', LEGACY_DEFAULT_BEHAVIOR_PROMPT, DEFAULT_BEHAVIOR_PROMPT],
       ['prompt_retail_text', LEGACY_DEFAULT_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
+      ['prompt_retail_text', STAGE_ONE_LEGACY_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
       ['prompt_media_text', LEGACY_DEFAULT_MEDIA_PROMPT, DEFAULT_MEDIA_PROMPT],
       ['prompt_layout_text', LEGACY_DEFAULT_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
+      ['prompt_layout_text', STAGE_ONE_LEGACY_LAYOUT_PROMPT, DEFAULT_LAYOUT_PROMPT],
       ['prompt_memory_text', LEGACY_DEFAULT_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
+      ['prompt_memory_text', STAGE_ONE_LEGACY_MEMORY_PROMPT, DEFAULT_MEMORY_PROMPT],
       ['prompt_payment_text', LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
       ['prompt_delivery_text', LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
@@ -1916,6 +1951,18 @@ function loadPersistedConfig() {
         shouldRewrite = true;
       }
     });
+
+    const pinDefaultsAreStandard = [
+      isLegacyPromptValue(runtimeConfig.pin_collecting_text, LEGACY_DEFAULT_PIN_COLLECTING_TEXT) || isLegacyPromptValue(runtimeConfig.pin_collecting_text, DEFAULT_PIN_COLLECTING_TEXT),
+      isLegacyPromptValue(runtimeConfig.pin_payment_text, LEGACY_DEFAULT_PIN_PAYMENT_TEXT) || isLegacyPromptValue(runtimeConfig.pin_payment_text, DEFAULT_PIN_PAYMENT_TEXT),
+      isLegacyPromptValue(runtimeConfig.pin_paid_text, LEGACY_DEFAULT_PIN_PAID_TEXT) || isLegacyPromptValue(runtimeConfig.pin_paid_text, DEFAULT_PIN_PAID_TEXT),
+      isLegacyPromptValue(runtimeConfig.pin_delivery_text, LEGACY_DEFAULT_PIN_DELIVERY_TEXT) || isLegacyPromptValue(runtimeConfig.pin_delivery_text, DEFAULT_PIN_DELIVERY_TEXT),
+    ].every(Boolean);
+
+    if (pinDefaultsAreStandard && parseConfigBoolean(runtimeConfig.pin_enabled, true)) {
+      runtimeConfig.pin_enabled = false;
+      shouldRewrite = true;
+    }
 
     if (shouldRewrite) {
       savePersistedConfig();

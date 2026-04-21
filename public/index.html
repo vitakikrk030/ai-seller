@@ -2869,7 +2869,10 @@
                   <span>${escapeHtml(formatDateTimeLabel(chat.lastTime))}</span>
                 </div>
               </div>
-              <button class="chat-details-toggle" type="button" data-chat-details-toggle>${currentInboxDetailsOpen ? 'Скрыть' : 'Подробнее'}</button>
+              <div class="chat-actions">
+                <button class="chat-details-toggle" type="button" data-chat-reset>Сбросить клиента</button>
+                <button class="chat-details-toggle" type="button" data-chat-details-toggle>${currentInboxDetailsOpen ? 'Скрыть' : 'Подробнее'}</button>
+              </div>
             </div>
             <div class="chat-details${currentInboxDetailsOpen ? ' visible' : ''}">
               <div class="chat-detail">
@@ -2909,7 +2912,7 @@
                 </div>
               </div>
               <div class="chat-actions">
-                <button class="chat-details-toggle" type="button" data-memory-clear>Очистить</button>
+                <button class="chat-details-toggle" type="button" data-memory-clear>Очистить память</button>
                 <button class="chat-details-toggle" type="button" data-memory-toggle>${currentInboxMemoryOpen ? 'Скрыть' : 'Показать'}</button>
               </div>
             </div>
@@ -2931,6 +2934,16 @@
           toggle.addEventListener('click', () => {
             currentInboxDetailsOpen = !currentInboxDetailsOpen;
             renderInboxThread(chat);
+          });
+        }
+
+        const resetChat = inboxThread.querySelector('[data-chat-reset]');
+        if (resetChat) {
+          resetChat.addEventListener('click', async () => {
+            const confirmed = window.confirm('Сбросить память, заказ и состояние этого клиента для нового теста?');
+            if (!confirmed) return;
+            await fetchJSON(`/memory/${encodeURIComponent(chat.chatId)}`, { method: 'DELETE' });
+            await loadInbox();
           });
         }
 
