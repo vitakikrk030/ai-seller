@@ -1726,7 +1726,7 @@
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
-                  <textarea id="instruction" placeholder="Ты — консультант по продаже товара. Отвечай коротко, по делу, задавай вопросы и веди клиента к покупке."></textarea>
+                  <textarea id="instruction" placeholder="Вы — менеджер магазина IWAK. Пишите коротко, по делу и как живой человек в Telegram."></textarea>
                   <div class="instruction-actions">
                     <button id="saveInstruction" class="button-primary" type="button">Сохранить</button>
                     <div class="instruction-resize-bar">
@@ -1764,7 +1764,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptBehaviorEnabled" type="checkbox" />
-                        Behavior / Persona prompt
+                        Prompt поведения и персоны
                       </label>
                       <div class="field-hint">Добавляет мягкие модификаторы: тон, длина ответа, стиль персоны и возраст. Можно использовать переменные: {tone_guidance}, {response_length_guidance}, {persona_style_guidance}, {persona_age_guidance}.</div>
                       <textarea id="promptBehaviorText"></textarea>
@@ -1772,7 +1772,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptRetailEnabled" type="checkbox" />
-                        Retail mode prompt
+                        Prompt retail-режима
                       </label>
                       <div class="field-hint">Главный seller-first слой для фото, ссылок, товара, живого продавца и ограничения “не превращать ответ в анкету”.</div>
                       <textarea id="promptRetailText"></textarea>
@@ -1780,7 +1780,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptMediaEnabled" type="checkbox" />
-                        Media behavior prompt
+                        Prompt работы с медиа
                       </label>
                       <div class="field-hint">Как трактовать фото, скрины, ссылки и другие медиа. Можно использовать переменную: {media_behavior_guidance}.</div>
                       <textarea id="promptMediaText"></textarea>
@@ -1788,7 +1788,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptLayoutEnabled" type="checkbox" />
-                        Message layout prompt
+                        Prompt формы сообщения
                       </label>
                       <div class="field-hint">Отвечает за визуальную форму сообщения в чате: плотность текста, переносы строк, один вопрос за раз и удобство чтения с телефона.</div>
                       <textarea id="promptLayoutText"></textarea>
@@ -1796,7 +1796,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptMemoryEnabled" type="checkbox" />
-                        Memory / Customer profile prompt
+                        Prompt памяти клиента
                       </label>
                       <div class="field-hint">Правила использования памяти клиента: когда можно вспоминать номер, адрес, размер и прошлый интерес.</div>
                       <textarea id="promptMemoryText"></textarea>
@@ -1804,7 +1804,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptPaymentEnabled" type="checkbox" />
-                        Payment prompt
+                        Prompt оплаты
                       </label>
                       <div class="field-hint">Текст, который добавляется в ответный system prompt при включённой оплате. Можно использовать переменную: {payment_details}.</div>
                       <textarea id="promptPaymentText"></textarea>
@@ -1812,7 +1812,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptCrmExtractEnabled" type="checkbox" />
-                        CRM extraction prompt
+                        Prompt CRM-извлечения
                       </label>
                       <div class="field-hint">Служебный prompt для AI-извлечения имени, телефона, размера, интереса и заказа. Не виден клиенту.</div>
                       <textarea id="promptCrmExtractText"></textarea>
@@ -1820,7 +1820,7 @@
                     <div class="field">
                       <label class="toggle-line">
                         <input id="promptPaymentCheckEnabled" type="checkbox" />
-                        Payment check prompt
+                        Prompt проверки оплаты
                       </label>
                       <div class="field-hint">Служебный prompt для предварительной проверки чека/скриншота оплаты. Не подтверждает оплату финально.</div>
                       <textarea id="promptPaymentCheckText"></textarea>
