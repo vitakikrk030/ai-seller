@@ -42,6 +42,8 @@ const MEMORY_MAX_MESSAGES = 5000;
 const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
 const BATCH_MAX_WINDOW_MS = 6500;
+const ORDER_PAYLOAD_BATCH_DEBOUNCE_MS = 5500;
+const SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS = 900;
 const MIN_MEMORY_RECENT_LIMIT = 3;
 const MAX_MEMORY_RECENT_LIMIT = 20;
 const MIN_BATCH_DEBOUNCE_MS = 0;
@@ -441,7 +443,7 @@ const DEFAULT_DELIVERY_PROMPT = [
   'После подтверждения оплаты оформляется накладная, дальше клиент отслеживает заказ в приложении выбранной службы.',
   'Если срочно по Москве, можно отправить курьером до двери, но это отдельная доплата.',
   'Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это с оформлением.',
-  'Если клиент говорит, что доставка бесплатная, спокойно подтверждайте это и не спорьте.',
+  'Если клиент говорит, что доставка бесплатная, спокойно подтверждайте это и не спорьте. Если клиент уточняет, платная ли доставка, отвечайте естественно: "Нет, не платная — доставка бесплатная". Не формулируйте это как "Нет — доставка бесплатная".',
   'Не просите полный домашний адрес раньше времени.',
   'На этапе оформления после подтверждённого размера сначала просите ФИО, город и телефон. ПВЗ уточняется следующим шагом, когда это действительно нужно.',
 ].join('\n');
@@ -510,7 +512,7 @@ const runtimeConfig = {
   stt_api_key: process.env.STT_API_KEY || process.env.AI_API_KEY || '',
   stt_base_url: process.env.STT_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   stt_model: process.env.STT_MODEL || 'gpt-4o-mini-transcribe',
-  instruction: process.env.INSTRUCTION || DEFAULT_CORE_INSTRUCTION,
+  instruction: normalizeInstructionConfigValue(process.env.INSTRUCTION || DEFAULT_CORE_INSTRUCTION),
   tone: process.env.TONE || 'neutral',
   response_length: process.env.RESPONSE_LENGTH || 'medium',
   creativity: process.env.CREATIVITY || 'balanced',
@@ -544,9 +546,9 @@ const runtimeConfig = {
   prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED !== 'false',
   prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
   prompt_payment_enabled: process.env.PROMPT_PAYMENT_ENABLED !== 'false',
-  prompt_payment_text: process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT,
+  prompt_payment_text: normalizePaymentPromptConfigValue(process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT),
   prompt_delivery_enabled: process.env.PROMPT_DELIVERY_ENABLED !== 'false',
-  prompt_delivery_text: process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT,
+  prompt_delivery_text: normalizeDeliveryPromptConfigValue(process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT),
   prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED === 'true',
   prompt_stage_checkout_text: process.env.PROMPT_STAGE_CHECKOUT_TEXT || DEFAULT_STAGE_CHECKOUT_PROMPT,
   prompt_stage_payment_text: process.env.PROMPT_STAGE_PAYMENT_TEXT || DEFAULT_STAGE_PAYMENT_PROMPT,
@@ -628,6 +630,77 @@ function truncateLogText(text) {
 
 function isLegacyPromptValue(value, legacyValue) {
   return String(value || '').trim() === String(legacyValue || '').trim();
+}
+
+function normalizePromptCheckText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function hasLegacyCheckoutInstructionMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return [
+    'запроси фио, адрес, телефон',
+    'запроси фио адрес телефон',
+    'сразу веди к оформлению',
+    'после этого отправь реквизиты',
+  ].some((pattern) => normalized.includes(pattern));
+}
+
+function hasLegacyDeliveryPromptMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return (
+    (normalized.includes('по москве') && normalized.includes('курьер'))
+    || normalized.includes('в регионы')
+    || normalized.includes('службой доставки')
+    || normalized.includes('сроки и стоимость зависят')
+    || normalized.includes('стоимость зависит от города')
+    || normalized.includes('доставка платная')
+    || normalized.includes('полный адрес доставки')
+  );
+}
+
+function hasLegacyPaymentPromptMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return (
+    normalized.includes('при получении')
+    || normalized.includes('налож')
+    || normalized.includes('перевод на карту или при получении')
+  );
+}
+
+function normalizeInstructionConfigValue(value) {
+  const current = String(value || '').trim();
+  if (!current) return DEFAULT_CORE_INSTRUCTION;
+  if (isLegacyPromptValue(current, LEGACY_DEFAULT_INSTRUCTION)) return DEFAULT_CORE_INSTRUCTION;
+  if (hasLegacyCheckoutInstructionMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
+  return current;
+}
+
+function normalizeDeliveryPromptConfigValue(value) {
+  const current = String(value || '').trim();
+  if (!current) return DEFAULT_DELIVERY_PROMPT;
+  if (
+    isLegacyPromptValue(current, LEGACY_DEFAULT_DELIVERY_PROMPT)
+    || isLegacyPromptValue(current, PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT)
+    || isLegacyPromptValue(current, PREVIOUS_DEFAULT_DELIVERY_PROMPT)
+  ) {
+    return DEFAULT_DELIVERY_PROMPT;
+  }
+  if (hasLegacyDeliveryPromptMarkers(current)) return DEFAULT_DELIVERY_PROMPT;
+  return current;
+}
+
+function normalizePaymentPromptConfigValue(value) {
+  const current = String(value || '').trim();
+  if (!current) return DEFAULT_PAYMENT_PROMPT;
+  if (
+    isLegacyPromptValue(current, LEGACY_DEFAULT_PAYMENT_PROMPT)
+    || isLegacyPromptValue(current, PREMIUM_LEGACY_DEFAULT_PAYMENT_PROMPT)
+  ) {
+    return DEFAULT_PAYMENT_PROMPT;
+  }
+  if (hasLegacyPaymentPromptMarkers(current)) return DEFAULT_PAYMENT_PROMPT;
+  return current;
 }
 
 function createTraceId() {
@@ -1228,6 +1301,41 @@ function buildBatchText(inputs) {
   ].join('\n');
 }
 
+function looksLikeStructuredOrderPayload(text) {
+  const source = String(text || '').trim();
+  if (!source) return false;
+  let score = 0;
+  if (/(хочу заказать|оформить заказ|заказ[:\s])/i.test(source)) score += 2;
+  if (/\n/.test(source)) score += 1;
+  if (/(товар|модель|кроссовки|пара|цена|стоимость|артикул|цвет|размер|количество)\s*[:\-]/i.test(source)) score += 1;
+  if (/цена\s*[:\-]?\s*\d{3,5}/i.test(source)) score += 1;
+  return score >= 3;
+}
+
+function isSizeOnlyFollowupMessage(text) {
+  const source = normalizeMemoryText(text);
+  const size = extractShoeSize(source);
+  if (!size || !source || source.length > 80) return false;
+  if (containsLink(source)) return false;
+  if (extractFullName(source) || extractPhone(source) || extractCity(source) || extractDeliveryAddress(source)) return false;
+  const stripped = source.replace(size, '').trim();
+  return !/(товар|модель|кроссовки|пара|цена|стоимость|артикул|фио|телефон|город|адрес|доставк|оплат|чек)/i.test(stripped);
+}
+
+function batchHasPendingStructuredOrder(inputs = []) {
+  return inputs.some((input) => looksLikeStructuredOrderPayload(input.text) && !extractShoeSize(input.text));
+}
+
+function getBatchDebounceDelayMs(batch, input) {
+  const baseDelay = getConfigBatchDebounceMs(input.config);
+  const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
+  if (!batchHasPendingStructuredOrder(inputs)) return baseDelay;
+  if (isSizeOnlyFollowupMessage(input.text)) {
+    return Math.min(baseDelay, SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS);
+  }
+  return Math.max(baseDelay, ORDER_PAYLOAD_BATCH_DEBOUNCE_MS);
+}
+
 function pickReplyTargetMessageId(inputs, config = runtimeConfig) {
   const mode = normalizeReplyMode(config.reply_mode);
   if (mode === 'off') return '';
@@ -1666,7 +1774,7 @@ function enqueueInputForBatch(input) {
   batch.inputs.push(input);
 
   if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
-  batch.debounceTimer = setTimeout(() => flushChatBatch(key), getConfigBatchDebounceMs(input.config));
+  batch.debounceTimer = setTimeout(() => flushChatBatch(key), getBatchDebounceDelayMs(batch, input));
 }
 
 function clearMemoryForChat(chatId) {
@@ -1965,8 +2073,9 @@ function loadPersistedConfig() {
       }
     });
 
-    if (!String(runtimeConfig.instruction || '').trim() || isLegacyPromptValue(runtimeConfig.instruction, LEGACY_DEFAULT_INSTRUCTION)) {
-      runtimeConfig.instruction = DEFAULT_CORE_INSTRUCTION;
+    const normalizedInstruction = normalizeInstructionConfigValue(runtimeConfig.instruction);
+    if (normalizedInstruction !== runtimeConfig.instruction) {
+      runtimeConfig.instruction = normalizedInstruction;
       shouldRewrite = true;
     }
 
@@ -1998,6 +2107,18 @@ function loadPersistedConfig() {
         shouldRewrite = true;
       }
     });
+
+    const normalizedPaymentPrompt = normalizePaymentPromptConfigValue(runtimeConfig.prompt_payment_text);
+    if (normalizedPaymentPrompt !== runtimeConfig.prompt_payment_text) {
+      runtimeConfig.prompt_payment_text = normalizedPaymentPrompt;
+      shouldRewrite = true;
+    }
+
+    const normalizedDeliveryPrompt = normalizeDeliveryPromptConfigValue(runtimeConfig.prompt_delivery_text);
+    if (normalizedDeliveryPrompt !== runtimeConfig.prompt_delivery_text) {
+      runtimeConfig.prompt_delivery_text = normalizedDeliveryPrompt;
+      shouldRewrite = true;
+    }
 
     [
       ['conversation_mode', 'retail'],
@@ -2078,7 +2199,7 @@ function applyConfigUpdate(body) {
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'instruction')) {
-    runtimeConfig.instruction = body.instruction || '';
+    runtimeConfig.instruction = normalizeInstructionConfigValue(body.instruction || '');
     process.env.INSTRUCTION = runtimeConfig.instruction;
   }
 
@@ -2215,7 +2336,14 @@ function applyConfigUpdate(body) {
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
-      runtimeConfig[key] = String(body[key] || defaultValue);
+      const rawValue = String(body[key] || defaultValue);
+      if (key === 'prompt_payment_text') {
+        runtimeConfig[key] = normalizePaymentPromptConfigValue(rawValue);
+      } else if (key === 'prompt_delivery_text') {
+        runtimeConfig[key] = normalizeDeliveryPromptConfigValue(rawValue);
+      } else {
+        runtimeConfig[key] = rawValue;
+      }
       process.env[envKey] = runtimeConfig[key];
     }
   });
