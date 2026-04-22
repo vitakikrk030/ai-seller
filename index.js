@@ -65,7 +65,6 @@ const TELEGRAM_ALLOWED_UPDATES = [
   'callback_query',
   'business_connection',
   'business_message',
-  'edited_business_message',
 ];
 let activeAiRequests = 0;
 let activeGetFileRequests = 0;
@@ -155,6 +154,11 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — менеджер магазина IWA
 Если размер уже указан, не спрашивайте его повторно.
 Если не хватает одной детали, спрашивайте только её.
 Не просите всё сразу и не превращайте ответ в анкету.
+Если клиент прислал товар без размера, спрашивайте только размер и больше ничего в этом сообщении.
+Если товар уже понятен и размер уже получен, следующим сообщением переходите только к оформлению: попросите прислать ФИО, город и номер телефона одним сообщением.
+После размера не просите сразу полный адрес, ПВЗ, реквизиты или оплату в том же сообщении.
+Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это со сбором заказа.
+Если клиент пишет, что доставка бесплатная, не спорьте с этим и подтверждайте актуальную бизнес-правду доставки IWAK.
 
 Если клиент уже близок к покупке, спокойно ведите к оформлению.
 Если клиент спрашивает про оплату, кратко давайте реквизиты.
@@ -414,7 +418,7 @@ const PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT = [
   'После передачи заказа в доставку коротко сообщайте, что дальше статус удобно отслеживать уже в сервисе доставки.',
 ].join('\n');
 
-const DEFAULT_DELIVERY_PROMPT = [
+const PREVIOUS_DEFAULT_DELIVERY_PROMPT = [
   'Правила доставки:',
   'Самовывоза нет.',
   'Если клиент спрашивает про самовывоз, отвечайте коротко: самовывоза нет.',
@@ -429,12 +433,36 @@ const DEFAULT_DELIVERY_PROMPT = [
   'После отправки коротко говорите, что дальше статус удобно смотреть уже в сервисе доставки.',
 ].join('\n');
 
-const DEFAULT_STAGE_CHECKOUT_PROMPT = [
+const DEFAULT_DELIVERY_PROMPT = [
+  'Правила доставки:',
+  'Доставка для клиента бесплатная.',
+  'Бесплатная доставка доступна через Яндекс Доставку, Ozon, WB, Почту России и CDEK.',
+  'Клиент выбирает удобный ПВЗ рядом с домом.',
+  'После подтверждения оплаты оформляется накладная, дальше клиент отслеживает заказ в приложении выбранной службы.',
+  'Если срочно по Москве, можно отправить курьером до двери, но это отдельная доплата.',
+  'Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это с оформлением.',
+  'Если клиент говорит, что доставка бесплатная, спокойно подтверждайте это и не спорьте.',
+  'Не просите полный домашний адрес раньше времени.',
+  'На этапе оформления после подтверждённого размера сначала просите ФИО, город и телефон. ПВЗ уточняется следующим шагом, когда это действительно нужно.',
+].join('\n');
+
+const PREVIOUS_DEFAULT_STAGE_CHECKOUT_PROMPT = [
   'Контекст этапа: клиент уже оформляет заказ.',
   'Отвечайте очень коротко и по-человечески.',
   'Не пересказывайте длинно весь заказ, ФИО, адрес или телефон.',
   'Если клиент только что прислал данные, коротко подтвердите и сразу переходите к следующему шагу.',
   'Если доставка бесплатная и работает через ПВЗ, сначала просите город и ближайший удобный ПВЗ, а не полный адрес.',
+  'Не начинайте ответ как шаблон оператора: без “Здравствуйте”, без “Оформляю заказ:” и без формальной сводки.',
+].join(' ');
+
+const DEFAULT_STAGE_CHECKOUT_PROMPT = [
+  'Контекст этапа: клиент уже оформляет заказ.',
+  'Отвечайте очень коротко и по-человечески.',
+  'Если клиент прислал товар без размера, спрашивайте только размер.',
+  'Если товар уже понятен и размер уже есть в текущем сообщении, памяти или недавней истории, следующим сообщением просите только ФИО, город и номер телефона одним сообщением.',
+  'На этом шаге не просите полный адрес, не просите ПВЗ и не переходите к оплате в том же сообщении.',
+  'Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это с оформлением.',
+  'Если клиент только что прислал ФИО, город и телефон, коротко подтвердите и сразу переходите дальше без длинной сводки.',
   'Не начинайте ответ как шаблон оператора: без “Здравствуйте”, без “Оформляю заказ:” и без формальной сводки.',
 ].join(' ');
 
@@ -965,10 +993,12 @@ function extractShoeSize(text) {
     /(\d{2}(?:[.,]5)?)\s*(?:размер|р-р)\s*(?:у\s+меня|мой|мои|ношу)?/i,
     /(?:есть|нужен|ищу|хочу|беру|возьму)\s+(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
     /(?:на|под)\s*(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
+    /\b(XXS|XS|S|M|L|XL|XXL|XXXL)\s*(?:размер|size)?\b/i,
+    /(?:размер|size)\s*(XXS|XS|S|M|L|XL|XXL|XXXL)\b/i,
   ];
   for (const pattern of patterns) {
     const match = source.match(pattern);
-    if (match) return match[1].replace(',', '.');
+    if (match) return match[1].replace(',', '.').toUpperCase();
   }
   return '';
 }
@@ -1956,6 +1986,8 @@ function loadPersistedConfig() {
       ['prompt_payment_text', PREMIUM_LEGACY_DEFAULT_PAYMENT_PROMPT, DEFAULT_PAYMENT_PROMPT],
       ['prompt_delivery_text', LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
       ['prompt_delivery_text', PREMIUM_LEGACY_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
+      ['prompt_delivery_text', PREVIOUS_DEFAULT_DELIVERY_PROMPT, DEFAULT_DELIVERY_PROMPT],
+      ['prompt_stage_checkout_text', PREVIOUS_DEFAULT_STAGE_CHECKOUT_PROMPT, DEFAULT_STAGE_CHECKOUT_PROMPT],
       ['prompt_crm_extract_text', LEGACY_DEFAULT_CRM_EXTRACT_PROMPT, DEFAULT_CRM_EXTRACT_PROMPT],
       ['prompt_payment_check_text', LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT, DEFAULT_PAYMENT_CHECK_PROMPT],
     ];
@@ -1972,7 +2004,7 @@ function loadPersistedConfig() {
       ['prompt_retail_enabled', false],
       ['prompt_layout_enabled', false],
       ['prompt_memory_enabled', false],
-      ['prompt_stage_enabled', false],
+      ['prompt_stage_enabled', true],
     ].forEach(([key, nextValue]) => {
       if (runtimeConfig[key] !== nextValue) {
         runtimeConfig[key] = nextValue;
@@ -2250,15 +2282,6 @@ function getTelegramMessageContext(update) {
       updateType: 'business_message',
       businessConnectionId: update.business_message.business_connection_id || '',
       messageId: update.business_message.message_id || '',
-    };
-  }
-
-  if (update.edited_business_message) {
-    return {
-      message: update.edited_business_message,
-      updateType: 'edited_business_message',
-      businessConnectionId: update.edited_business_message.business_connection_id || '',
-      messageId: update.edited_business_message.message_id || '',
     };
   }
 
@@ -3013,6 +3036,41 @@ function getDeliveryGuidance(config) {
   return renderPromptTemplate(config.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT);
 }
 
+function getStageGuidance(config, memoryContext = null) {
+  if (!parseConfigBoolean(config.prompt_stage_enabled, true)) return '';
+
+  const stage = String(memoryContext?.state?.stage || '').trim().toLowerCase();
+  const orderStatus = String(memoryContext?.lastOrder?.status || '').trim().toLowerCase();
+  const paymentStatus = String(memoryContext?.lastOrder?.payment_status || '').trim().toLowerCase();
+  const hasProductContext = !!(
+    memoryContext?.lastOrder?.product
+    || memoryContext?.facts?.lastProduct?.value
+    || memoryContext?.facts?.interest?.value
+  );
+
+  if (stage === 'delivery' || orderStatus === 'delivery') {
+    return renderPromptTemplate(config.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT);
+  }
+
+  if (['proof_received', 'paid', 'confirmed'].includes(paymentStatus) || ['paid', 'confirmed'].includes(orderStatus)) {
+    return renderPromptTemplate(config.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT);
+  }
+
+  if (
+    stage === 'waiting_payment'
+    || ['waiting_payment', 'waiting_payment_check'].includes(orderStatus)
+    || ['payment_details_sent', 'waiting_payment_check', 'proof_received'].includes(paymentStatus)
+  ) {
+    return renderPromptTemplate(config.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT);
+  }
+
+  if (hasProductContext || ['interested', 'choosing', 'ready_to_buy', 'collecting_order_info'].includes(stage)) {
+    return renderPromptTemplate(config.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT);
+  }
+
+  return '';
+}
+
 function getPromptLayerState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
@@ -3023,6 +3081,7 @@ function getPromptLayerState(config, memoryContext = null) {
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
+    stage: !!getStageGuidance(config, memoryContext),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -3069,7 +3128,7 @@ function getCapabilitySnapshot(config) {
   };
 }
 
-function buildSystemPrompt(config) {
+function buildSystemPrompt(config, memoryContext = null) {
   const parts = [];
 
   if (String(config.instruction || '').trim()) {
@@ -3095,6 +3154,8 @@ function buildSystemPrompt(config) {
   if (paymentGuidance) parts.push(paymentGuidance);
   const deliveryGuidance = getDeliveryGuidance(config);
   if (deliveryGuidance) parts.push(deliveryGuidance);
+  const stageGuidance = getStageGuidance(config, memoryContext);
+  if (stageGuidance) parts.push(stageGuidance);
 
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
@@ -3119,7 +3180,7 @@ function buildAiMessages(input) {
   });
 
   const messages = [];
-  const systemPrompt = buildSystemPrompt(input.config);
+  const systemPrompt = buildSystemPrompt(input.config, input.memoryContext);
   if (systemPrompt.trim()) {
     messages.push({
       role: 'system',
@@ -3948,7 +4009,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
   runtimeConfig.prompt_delivery_enabled = true;
   runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
-  runtimeConfig.prompt_stage_enabled = false;
+  runtimeConfig.prompt_stage_enabled = true;
   runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
   runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
   runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
@@ -4003,7 +4064,7 @@ app.delete('/config', (req, res) => {
   process.env.PROMPT_PAYMENT_TEXT = DEFAULT_PAYMENT_PROMPT;
   process.env.PROMPT_DELIVERY_ENABLED = 'true';
   process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
-  process.env.PROMPT_STAGE_ENABLED = 'false';
+  process.env.PROMPT_STAGE_ENABLED = 'true';
   process.env.PROMPT_STAGE_CHECKOUT_TEXT = DEFAULT_STAGE_CHECKOUT_PROMPT;
   process.env.PROMPT_STAGE_PAYMENT_TEXT = DEFAULT_STAGE_PAYMENT_PROMPT;
   process.env.PROMPT_STAGE_PAID_TEXT = DEFAULT_STAGE_PAID_PROMPT;
