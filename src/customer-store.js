@@ -639,8 +639,6 @@ function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
     ['Shoe size', facts.shoeSize?.value],
     ['Interest', facts.interest?.value],
     ['Last product', facts.lastProduct?.value],
-    ['Stage', state?.stage],
-    ['AI mode', state?.aiMode],
   ];
 
   pairs.forEach(([label, value]) => {

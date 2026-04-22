@@ -151,6 +151,7 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — менеджер магазина IWA
 
 Ведите разговор только к ближайшему следующему шагу.
 Если размер ещё не указан, спросите только размер.
+Если клиент уже назвал конкретный размер или спрашивает про конкретный размер, считайте размер уже указанным и не спрашивайте его повторно.
 Если размер уже указан, не спрашивайте его повторно.
 Если не хватает одной детали, спрашивайте только её.
 Не просите всё сразу и не превращайте ответ в анкету.
@@ -255,6 +256,7 @@ const DEFAULT_BEHAVIOR_PROMPT = [
   '{response_length_guidance}',
   '{persona_style_guidance}',
   '{persona_age_guidance}',
+  'Если клиент спросил про конкретный размер, подтверждайте его и ведите к следующему шагу. Не задавайте повторно вопрос про размер.',
 ].join('\n');
 
 const STAGE_ONE_LEGACY_RETAIL_PROMPT = [
@@ -961,6 +963,8 @@ function extractShoeSize(text) {
   const patterns = [
     /(?:у\s+меня|мой\s+размер|мои?\s+размер|ношу|размер\s+у\s+меня)\s*(?:размер\s*)?(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?/i,
     /(\d{2}(?:[.,]5)?)\s*(?:размер|р-р)\s*(?:у\s+меня|мой|мои|ношу)?/i,
+    /(?:есть|нужен|ищу|хочу|беру|возьму)\s+(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
+    /(?:на|под)\s*(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
   ];
   for (const pattern of patterns) {
     const match = source.match(pattern);
@@ -1008,8 +1012,12 @@ function isPaymentProofInput(input) {
   const text = String(input.text || '').toLowerCase();
   if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат|скрин.*оплат|receipt|payment)/i.test(text)) return true;
   if (!input.hasMedia) return false;
-  const state = getDialogState(input.chatId);
-  return ['waiting_payment', 'ready_to_buy', 'collecting_order_info'].includes(state?.stage);
+  const profile = getCustomerProfileSnapshot(input.chatId);
+  const lastOrder = profile?.lastOrder || null;
+  return [
+    lastOrder?.payment_status,
+    lastOrder?.status,
+  ].some((value) => ['payment_details_sent', 'proof_received', 'waiting_payment', 'collecting_info', 'draft'].includes(String(value || '')));
 }
 
 function inferConversationStage(input) {
@@ -1143,7 +1151,6 @@ function buildMemoryContext(chatId, options = {}) {
   const facts = memoryStore.facts[cleanChatId] || {};
   const state = memoryStore.states[cleanChatId] || null;
   const factLines = formatMemoryFacts(facts);
-  if (state?.stage) factLines.push(`Stage: ${state.stage}`);
 
   const summary = factLines.length
     ? [
@@ -1422,7 +1429,6 @@ async function runPaymentProofPrecheck(input) {
     paymentCheckSummary: json.summary || '',
     proofReceivedAt: new Date().toISOString(),
   }));
-  setConversationStage(input.chatId, 'waiting_payment', input.text || 'payment proof received');
   logEvent('PAYMENT_CHECK', {
     traceId: input.traceId,
     userId: input.userId,
@@ -2156,13 +2162,9 @@ function applyConfigUpdate(body) {
 
   [
     ['prompt_behavior_enabled', 'PROMPT_BEHAVIOR_ENABLED', true],
-    ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
     ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
-    ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', true],
-    ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
-    ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
   ].forEach(([key, envKey, defaultValue]) => {
@@ -2174,16 +2176,9 @@ function applyConfigUpdate(body) {
 
   [
     ['prompt_behavior_text', 'PROMPT_BEHAVIOR_TEXT', DEFAULT_BEHAVIOR_PROMPT],
-    ['prompt_retail_text', 'PROMPT_RETAIL_TEXT', DEFAULT_RETAIL_PROMPT],
     ['prompt_media_text', 'PROMPT_MEDIA_TEXT', DEFAULT_MEDIA_PROMPT],
-    ['prompt_layout_text', 'PROMPT_LAYOUT_TEXT', DEFAULT_LAYOUT_PROMPT],
-    ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
     ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
     ['prompt_delivery_text', 'PROMPT_DELIVERY_TEXT', DEFAULT_DELIVERY_PROMPT],
-    ['prompt_stage_checkout_text', 'PROMPT_STAGE_CHECKOUT_TEXT', DEFAULT_STAGE_CHECKOUT_PROMPT],
-    ['prompt_stage_payment_text', 'PROMPT_STAGE_PAYMENT_TEXT', DEFAULT_STAGE_PAYMENT_PROMPT],
-    ['prompt_stage_paid_text', 'PROMPT_STAGE_PAID_TEXT', DEFAULT_STAGE_PAID_PROMPT],
-    ['prompt_stage_delivery_text', 'PROMPT_STAGE_DELIVERY_TEXT', DEFAULT_STAGE_DELIVERY_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
   ].forEach(([key, envKey, defaultValue]) => {
@@ -3006,6 +3001,7 @@ function getPaymentGuidance(config) {
     bank && `Банк: ${bank}`,
     comment && `Комментарий для клиента: ${comment}`,
   ].filter(Boolean);
+  if (!details.length) return '';
 
   return renderPromptTemplate(config.prompt_payment_text || DEFAULT_PAYMENT_PROMPT, {
     payment_details: details.join('\n'),
@@ -3037,9 +3033,22 @@ function getPromptLayerState(config, memoryContext = null) {
 function getPromptConflictWarnings(config) {
   const warnings = [];
   const instruction = String(config.instruction || '').toLowerCase();
+  const hasPaymentDetails = [
+    config.payment_card_number,
+    config.payment_recipient_name,
+    config.payment_bank,
+  ].some((value) => String(value || '').trim());
 
   if (instruction.includes('в наличии') && instruction.includes('провер')) {
     warnings.push('Проверьте Instruction: внутри одной инструкции не должно быть одновременно правила “товар уже доступен к заказу” и требования дополнительно проверять наличие.');
+  }
+
+  if (parseConfigBoolean(config.payment_enabled, false) && !hasPaymentDetails) {
+    warnings.push('Оплата в диалоге включена, но реквизиты не заполнены. AI не должен уходить в оплату без настроенных данных.');
+  }
+
+  if (!parseConfigBoolean(config.payment_enabled, false) && hasPaymentDetails) {
+    warnings.push('Реквизиты сохранены, но блок оплаты в диалоге выключен. Перед продом включите оплату, если хотите отдавать реквизиты автоматически.');
   }
 
   return warnings;
@@ -3567,23 +3576,12 @@ app.get('/config/status', async (req, res) => {
     capabilities: getCapabilitySnapshot(runtimeConfig),
     prompt_behavior_enabled: parseConfigBoolean(runtimeConfig.prompt_behavior_enabled, true),
     prompt_behavior_text: runtimeConfig.prompt_behavior_text || DEFAULT_BEHAVIOR_PROMPT,
-    prompt_retail_enabled: parseConfigBoolean(runtimeConfig.prompt_retail_enabled, true),
-    prompt_retail_text: runtimeConfig.prompt_retail_text || DEFAULT_RETAIL_PROMPT,
     prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
     prompt_media_text: runtimeConfig.prompt_media_text || DEFAULT_MEDIA_PROMPT,
-    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, true),
-    prompt_layout_text: runtimeConfig.prompt_layout_text || DEFAULT_LAYOUT_PROMPT,
-    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
-    prompt_memory_text: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
     prompt_payment_text: runtimeConfig.prompt_payment_text || DEFAULT_PAYMENT_PROMPT,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT,
-    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
-    prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT,
-    prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT,
-    prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT,
-    prompt_stage_delivery_text: runtimeConfig.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
@@ -3826,38 +3824,80 @@ app.post('/config/models', async (req, res) => {
 app.post('/config/test-ai', async (req, res) => {
   const config = getRuntimeSnapshot();
   const text = truncateText(req.body.message || '');
+  const chatId = getMemoryChatId(req.body.chatId || 'test') || 'test';
+  const userId = getMemoryChatId(req.body.userId || chatId) || chatId;
+  const images = Array.isArray(req.body.images)
+    ? req.body.images.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
+  const messageType = String(req.body.messageType || (images.length ? 'photo' : 'test')).trim() || 'test';
   const traceId = createTraceId();
 
-  if (!text) {
+  if (!text && !images.length) {
     res.json({ ok: false, reply: '', error: 'Message is required' });
     return;
   }
+
+  const input = {
+    traceId,
+    chatId,
+    userId,
+    messageType,
+    text,
+    images,
+    hasMedia: images.length > 0,
+    hasLinkInput: /https?:\/\//i.test(text),
+    config,
+  };
 
   logEvent('IN', {
     traceId,
     status: 'ok',
     scope: 'test.ai',
-    userId: 'test',
-    chatId: 'test',
+    userId,
+    chatId,
     firstName: 'Test',
     username: 'test_user',
-    messageType: 'test',
+    messageType,
     text,
+    images: images.length,
+    hasMedia: images.length > 0,
   });
 
-  const reply = await requestAi({
-    chatId: 'test',
-    userId: 'test',
-    traceId,
-    messageType: 'test',
-    text,
-    images: [],
-    config,
-  });
+  if (parseConfigBoolean(config.memory_enabled, true)) {
+    updateCustomerMemoryFromInput(input);
+    appendMemoryMessage(input, 'user', getMemoryMessageText(input));
+  }
+
+  input.memoryContext = parseConfigBoolean(config.memory_enabled, true)
+    ? buildMemoryContext(chatId, {
+      limit: getConfigMemoryLimit(config),
+      excludeTraceIds: [traceId],
+    })
+    : { summary: '', history: [], facts: {}, state: null };
+
+  await runAiCrmExtractor(input);
+  await runPaymentProofPrecheck(input);
+
+  input.memoryContext = parseConfigBoolean(config.memory_enabled, true)
+    ? buildMemoryContext(chatId, {
+      limit: getConfigMemoryLimit(config),
+      excludeTraceIds: [traceId],
+    })
+    : { summary: '', history: [], facts: {}, state: null };
+
+  const reply = await requestAi(input);
 
   if (typeof reply !== 'string') {
     res.json({ ok: false, reply: '', error: 'AI did not return a reply' });
     return;
+  }
+
+  if (parseConfigBoolean(config.memory_enabled, true)) {
+    appendMemoryMessage({
+      chatId,
+      traceId,
+      text: reply,
+    }, 'assistant', reply);
   }
 
   res.json({ ok: true, reply });
