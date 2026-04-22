@@ -44,9 +44,11 @@ const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
 const BATCH_MAX_WINDOW_MS = 6500;
 const ORDER_PAYLOAD_BATCH_DEBOUNCE_MS = 5500;
-const SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS = 4500;
+const SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS = 7000;
 const SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS = 900;
 const ORDER_CONTEXT_BATCH_MAX_WINDOW_MS = 9000;
+const ORDER_CONTEXT_MERGE_GRACE_MS = 3000;
+const ORDER_CONTEXT_MERGE_POLL_MS = 120;
 const MIN_MEMORY_RECENT_LIMIT = 3;
 const MAX_MEMORY_RECENT_LIMIT = 20;
 const MIN_BATCH_DEBOUNCE_MS = 0;
@@ -54,6 +56,7 @@ const MAX_BATCH_DEBOUNCE_MS = 10000;
 const MANAGER_RETURN_DELAY_MS = 180000;
 const MIN_MANAGER_RETURN_DELAY_MS = 30000;
 const MAX_MANAGER_RETURN_DELAY_MS = 900000;
+const WEBHOOK_ERROR_GRACE_MS = 15 * 60 * 1000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_COOKIE_NAME = 'auth';
@@ -1430,13 +1433,22 @@ function isSizeOnlyFollowupMessage(text) {
   return !/(товар|модель|кроссовки|пара|цена|стоимость|артикул|фио|телефон|город|адрес|доставк|оплат|чек)/i.test(stripped);
 }
 
+function batchHasStructuredOrderPayload(inputs = []) {
+  return inputs.some((input) => looksLikeStructuredOrderPayload(input.text));
+}
+
+function batchHasSizeOnlyFollowup(inputs = []) {
+  return inputs.some((input) => isSizeOnlyFollowupMessage(input.text));
+}
+
 function batchHasPendingStructuredOrder(inputs = []) {
-  return inputs.some((input) => looksLikeStructuredOrderPayload(input.text) && !extractShoeSize(input.text));
+  return inputs.some((input) => looksLikeStructuredOrderPayload(input.text) && !extractShoeSize(input.text))
+    && !batchHasSizeOnlyFollowup(inputs);
 }
 
 function batchNeedsPendingPayloadContext(inputs = []) {
-  if (!inputs.length || batchHasPendingStructuredOrder(inputs)) return false;
-  if (!inputs.some((input) => isSizeOnlyFollowupMessage(input.text))) return false;
+  if (!inputs.length || batchHasStructuredOrderPayload(inputs) || batchHasPendingStructuredOrder(inputs)) return false;
+  if (!batchHasSizeOnlyFollowup(inputs)) return false;
   const lastInput = inputs[inputs.length - 1];
   const profile = getCustomerProfileSnapshot(lastInput.chatId);
   return !(
@@ -1444,6 +1456,11 @@ function batchNeedsPendingPayloadContext(inputs = []) {
     || profile?.facts?.lastProduct?.value
     || profile?.facts?.interest?.value
   );
+}
+
+function batchNeedsOrderContextMerge(inputs = []) {
+  return batchHasPendingStructuredOrder(inputs)
+    || (batchHasSizeOnlyFollowup(inputs) && !batchHasStructuredOrderPayload(inputs));
 }
 
 function getBatchDebounceDelayMs(batch, input) {
@@ -1481,6 +1498,81 @@ function scheduleBatchMaxTimer(key, batch, input) {
   batch.maxTimer = setTimeout(() => flushChatBatch(key), remainingMs);
 }
 
+function getBatchInputIdentity(input) {
+  if (input?.traceId) return `trace:${input.traceId}`;
+  if (input?.messageId) return `message:${input.updateType || ''}:${input.messageId}`;
+  return `text:${input?.updateType || ''}:${normalizeMemoryText(input?.text || '')}`;
+}
+
+function mergeBatchInputs(inputs, extraInputs) {
+  const seen = new Set();
+  return [...inputs, ...extraInputs]
+    .filter((input) => {
+      const key = getBatchInputIdentity(input);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftTs = Number(left?.receivedAt || 0);
+      const rightTs = Number(right?.receivedAt || 0);
+      if (leftTs !== rightTs) return leftTs - rightTs;
+      return Number(left?.messageId || 0) - Number(right?.messageId || 0);
+    });
+}
+
+function peekPendingChatBatch(chatId) {
+  const key = getMemoryChatId(chatId);
+  return chatBatches.get(key) || null;
+}
+
+function takePendingChatBatch(chatId) {
+  const key = getMemoryChatId(chatId);
+  const batch = chatBatches.get(key);
+  if (!batch) return [];
+  if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
+  if (batch.maxTimer) clearTimeout(batch.maxTimer);
+  chatBatches.delete(key);
+  return Array.isArray(batch.inputs) ? batch.inputs : [];
+}
+
+function shouldMergePendingOrderInputs(currentInputs = [], pendingInputs = []) {
+  if (!pendingInputs.length) return false;
+  const pendingHasStructured = pendingInputs.some((input) => looksLikeStructuredOrderPayload(input.text));
+  const pendingHasSizeOnly = pendingInputs.some((input) => isSizeOnlyFollowupMessage(input.text));
+  if (batchHasPendingStructuredOrder(currentInputs)) return pendingHasStructured || pendingHasSizeOnly;
+  if (batchHasSizeOnlyFollowup(currentInputs) && !batchHasStructuredOrderPayload(currentInputs)) return pendingHasStructured;
+  if (batchNeedsPendingPayloadContext(currentInputs)) return pendingHasStructured || pendingHasSizeOnly;
+  return false;
+}
+
+async function absorbPendingOrderContextInputs(inputs = []) {
+  let merged = mergeBatchInputs([], inputs);
+  if (!batchNeedsOrderContextMerge(merged)) return merged;
+
+  const chatId = merged[merged.length - 1]?.chatId || merged[0]?.chatId || '';
+  const deadline = Date.now() + ORDER_CONTEXT_MERGE_GRACE_MS;
+
+  while (Date.now() < deadline) {
+    const pendingBatch = peekPendingChatBatch(chatId);
+    const pendingInputs = Array.isArray(pendingBatch?.inputs) ? pendingBatch.inputs : [];
+    if (shouldMergePendingOrderInputs(merged, pendingInputs)) {
+      merged = mergeBatchInputs(merged, takePendingChatBatch(chatId));
+      if (!batchNeedsOrderContextMerge(merged)) break;
+      continue;
+    }
+    await wait(ORDER_CONTEXT_MERGE_POLL_MS);
+  }
+
+  const tailBatch = peekPendingChatBatch(chatId);
+  const tailInputs = Array.isArray(tailBatch?.inputs) ? tailBatch.inputs : [];
+  if (shouldMergePendingOrderInputs(merged, tailInputs)) {
+    merged = mergeBatchInputs(merged, takePendingChatBatch(chatId));
+  }
+
+  return merged;
+}
+
 function clientTextHasGreeting(text) {
   return /(?:^|[\s,!.?:;"'«»()\-])(здравствуй(?:те)?|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет(?:ствую)?)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
 }
@@ -1499,12 +1591,13 @@ function stripLeadingGreeting(text) {
 
 function hasRecentManagerOrAssistantReply(memoryContext = null) {
   const history = Array.isArray(memoryContext?.history) ? memoryContext.history : [];
-  const latestTs = history
-    .filter((message) => message.role === 'assistant' || /^Manager:/i.test(String(message.content || '')))
-    .map((message) => Date.parse(message.createdAt || ''))
-    .filter((value) => Number.isFinite(value))
-    .sort((left, right) => right - left)[0];
-  return Number.isFinite(latestTs) && (Date.now() - latestTs) < GREETING_DIALOG_TIMEOUT_MS;
+  const latestMessage = history[history.length - 1];
+  if (!latestMessage) return false;
+  const latestTs = Date.parse(latestMessage.createdAt || '');
+  if (Number.isFinite(latestTs) && (Date.now() - latestTs) >= GREETING_DIALOG_TIMEOUT_MS) {
+    return false;
+  }
+  return latestMessage.role === 'assistant' || /^Manager:/i.test(String(latestMessage.content || ''));
 }
 
 function finalizeAiReply(input, reply) {
@@ -1772,7 +1865,10 @@ async function runPaymentProofPrecheck(input) {
 async function processInputBatch(inputs) {
   if (!inputs.length) return;
 
-  const batchInput = buildBatchInput(inputs);
+  const preparedInputs = await absorbPendingOrderContextInputs(inputs);
+  if (!preparedInputs.length) return;
+
+  const batchInput = buildBatchInput(preparedInputs);
   batchInput.batchStartedAt = new Date().toISOString();
   try {
     batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
@@ -1788,8 +1884,8 @@ async function processInputBatch(inputs) {
       limit: getConfigMemoryLimit(batchInput.config),
     }) : { summary: '', history: [], facts: {}, state: null };
 
-    inputs.forEach((input) => logMessageDelivered(input));
-    await waitAndMarkBatchRead(batchInput.config, inputs);
+    preparedInputs.forEach((input) => logMessageDelivered(input));
+    await waitAndMarkBatchRead(batchInput.config, preparedInputs);
 
     logEvent('BATCH', {
       traceId: batchInput.traceId,
@@ -2093,7 +2189,19 @@ function buildTelegramHealth({ tokenValid, webhookInfo }) {
     };
   }
 
-  if (!webhookInfo || webhookInfo.last_error_message) {
+  if (!webhookInfo) {
+    return {
+      status: 'error',
+      label: 'Webhook с ошибкой',
+    };
+  }
+
+  const lastErrorTs = Number(webhookInfo.last_error_date || 0) * 1000;
+  const hasRecentWebhookError = Number.isFinite(lastErrorTs)
+    && lastErrorTs > 0
+    && (Date.now() - lastErrorTs) < WEBHOOK_ERROR_GRACE_MS;
+
+  if (!webhookInfo.url && webhookInfo.last_error_message) {
     return {
       status: 'error',
       label: 'Webhook с ошибкой',
@@ -2109,8 +2217,15 @@ function buildTelegramHealth({ tokenValid, webhookInfo }) {
 
   if (Number(webhookInfo.pending_update_count || 0) > 0) {
     return {
+      status: hasRecentWebhookError ? 'error' : 'warning',
+      label: hasRecentWebhookError ? 'Webhook с ошибкой' : 'Есть pending updates',
+    };
+  }
+
+  if (hasRecentWebhookError) {
+    return {
       status: 'warning',
-      label: 'Есть pending updates',
+      label: 'Были недавние ошибки webhook',
     };
   }
 
@@ -4000,12 +4115,14 @@ app.get('/config/status', async (req, res) => {
       status.webhook = {
         url: response.data?.result?.url || '',
         pending_update_count: response.data?.result?.pending_update_count || 0,
+        last_error_date: response.data?.result?.last_error_date || 0,
         last_error_message: response.data?.result?.last_error_message || '',
       };
     } catch (e) {
       status.webhook = {
         url: '',
         pending_update_count: 0,
+        last_error_date: Math.floor(Date.now() / 1000),
         last_error_message: e.response?.data?.description || e.message,
       };
     }
@@ -4013,6 +4130,7 @@ app.get('/config/status', async (req, res) => {
     status.webhook = {
       url: runtimeConfig.webhook_url || '',
       pending_update_count: 0,
+      last_error_date: 0,
       last_error_message: '',
     };
   }
@@ -4471,6 +4589,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       input.lastName = lastName;
       input.username = username;
       input.phoneNumber = phoneNumber;
+      input.receivedAt = Date.now();
       safeCustomerStoreCall('customer.upsert', (store) => store.getOrCreateByTelegram(input));
       logEvent('IN', {
         traceId,
