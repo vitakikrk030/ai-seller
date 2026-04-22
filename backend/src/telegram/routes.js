@@ -31,13 +31,14 @@ router.post('/webhook', (req, res) => {
     console.log('UPDATE:', JSON.stringify(update));
   }
 
-  // Support regular + Telegram Business messages
-  const msg = update.message || update.business_message || update.edited_business_message;
+  // Support regular + Telegram Business messages.
+  // edited_business_message is ignored here: edited texts were routed as new
+  // client messages and could produce a duplicate AI reply.
+  const msg = update.message || update.business_message;
 
   if (msg) {
     const businessConnectionId =
       update.business_message?.business_connection_id ||
-      update.edited_business_message?.business_connection_id ||
       null;
 
     handleMessage(msg, businessConnectionId).catch((err) =>

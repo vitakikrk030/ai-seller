@@ -62,6 +62,7 @@ const users = {
           ELSE 0
         END as pause_remaining,
         CASE
+          WHEN u.needs_manager = true THEN 120
           WHEN u.state = 'WAITING_PAYMENT' THEN 100
           WHEN u.state = 'WAITING_FORM' THEN 80
           WHEN u.state = 'WAITING_SIZE' THEN 60
@@ -99,6 +100,7 @@ const users = {
         SELECT product, size, price, status FROM orders WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
       ) lo ON true
       ORDER BY
+        u.needs_manager DESC,
         CASE WHEN um.created_at IS NOT NULL 
           AND (u.last_read_at IS NULL OR um.created_at > u.last_read_at)
           AND um.created_at > COALESCE(lr.created_at, '1970-01-01')
@@ -146,7 +148,7 @@ const users = {
     // When switching to 'ai', also clear manager_active
     if (mode === 'ai') {
       const result = await db.query(
-        'UPDATE users SET "mode" = $1, ai_mode = $2, manager_active = false, manager_active_at = NULL WHERE id = $3 RETURNING *',
+        'UPDATE users SET "mode" = $1, ai_mode = $2, manager_active = false, manager_active_at = NULL, needs_manager = false, handoff_reason = NULL, handoff_summary = NULL, handoff_at = NULL WHERE id = $3 RETURNING *',
         [mode, legacyMode, userId]
       );
       return result.rows[0];
@@ -163,6 +165,34 @@ const users = {
       'UPDATE users SET manager_active = $1, manager_active_at = $2 WHERE id = $3',
       [active, active ? new Date() : null, userId]
     );
+  },
+
+  async setNeedsManager(userId, reason, summary) {
+    const result = await db.query(
+      `UPDATE users
+       SET needs_manager = true,
+           handoff_reason = $1,
+           handoff_summary = $2,
+           handoff_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [reason || 'ai_uncertain', summary || 'AI остановил автоответ и просит менеджера проверить диалог.', userId]
+    );
+    return result.rows[0];
+  },
+
+  async clearNeedsManager(userId) {
+    const result = await db.query(
+      `UPDATE users
+       SET needs_manager = false,
+           handoff_reason = NULL,
+           handoff_summary = NULL,
+           handoff_at = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [userId]
+    );
+    return result.rows[0];
   },
 
   async clearStaleManagers(minutes) {

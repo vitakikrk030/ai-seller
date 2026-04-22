@@ -104,15 +104,15 @@ router.get('/users/:id/quick-replies', async (req, res) => {
         replies.push('Обычно эта модель идет размер в размер', 'Показать похожие варианты?');
         break;
       case 'WAITING_FORM':
-        if (mem?.full_name && mem?.phone && mem?.address) {
+        if (mem?.full_name && mem?.phone && (mem?.address || mem?.city)) {
           replies.push('Доставить по тем же данным или что-то изменилось?');
         } else {
-          replies.push('Отправьте ФИО, телефон и адрес одним сообщением');
+          replies.push('Отправьте ФИО, город и телефон одним сообщением');
         }
-        if (mem?.phone && !mem?.address) {
-          replies.push('Подскажите адрес доставки');
+        if (mem?.phone && !mem?.city && !mem?.address) {
+          replies.push('Подскажите город');
         }
-        replies.push('Доставка по всей России');
+        replies.push('Бесплатная доставка до ПВЗ по России');
         break;
       case 'WAITING_PAYMENT':
         replies.push('Скинуть реквизиты для оплаты?', 'Напоминаю — заказ ждет оплаты', 'После оплаты скиньте скрин');
@@ -178,6 +178,22 @@ router.patch('/users/:id/state', async (req, res) => {
   }
 });
 
+router.patch('/users/:id/handoff', async (req, res) => {
+  try {
+    const { needs_manager, reason, summary } = req.body;
+    let user;
+    if (needs_manager === true) {
+      user = await users.setNeedsManager(req.params.id, reason, summary);
+    } else {
+      user = await users.clearNeedsManager(req.params.id);
+    }
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // === MESSAGES ===
 
 router.get('/users/:id/messages', async (req, res) => {
@@ -206,6 +222,7 @@ router.post('/users/:id/messages', async (req, res) => {
 
     // Mark manager as active (for AUTO_WITH_MANAGER_OVERRIDE mode)
     await users.setManagerActive(user.id, true);
+    await users.clearNeedsManager(user.id);
 
     // Send via Telegram
     await bot.sendMessage(user.telegram_id, text);
@@ -424,7 +441,7 @@ router.post('/settings/change-token', async (req, res) => {
       try {
         await axios.post(`https://api.telegram.org/bot${token}/setWebhook`, {
           url: whUrl,
-          allowed_updates: ['message', 'callback_query', 'business_connection', 'business_message', 'edited_business_message'],
+          allowed_updates: ['message', 'callback_query', 'business_connection', 'business_message'],
         });
       } catch (err) {
         return res.json({ ok: true, bot: botInfo, webhook: false, webhook_error: err.response?.data?.description || err.message });

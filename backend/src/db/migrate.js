@@ -110,6 +110,83 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 
+-- Legacy schema catch-up: add missing base columns if database was created
+-- before the current initial schema existed.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='state') THEN
+    ALTER TABLE users ADD COLUMN state VARCHAR(50) DEFAULT 'NEW';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='ai_enabled') THEN
+    ALTER TABLE users ADD COLUMN ai_enabled BOOLEAN DEFAULT true;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen') THEN
+    ALTER TABLE users ADD COLUMN last_seen TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='created_at') THEN
+    ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='role') THEN
+    ALTER TABLE messages ADD COLUMN role VARCHAR(10) DEFAULT 'user';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='text') THEN
+    ALTER TABLE messages ADD COLUMN text TEXT DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='created_at') THEN
+    ALTER TABLE messages ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_messages_role') THEN
+    ALTER TABLE messages DROP CONSTRAINT chk_messages_role;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_messages_role') THEN
+    ALTER TABLE messages ADD CONSTRAINT chk_messages_role CHECK (role IN ('user', 'ai', 'admin'));
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='product') THEN
+    ALTER TABLE orders ADD COLUMN product VARCHAR(255);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='size') THEN
+    ALTER TABLE orders ADD COLUMN size VARCHAR(50);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='price') THEN
+    ALTER TABLE orders ADD COLUMN price NUMERIC;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='full_name') THEN
+    ALTER TABLE orders ADD COLUMN full_name VARCHAR(255);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='phone') THEN
+    ALTER TABLE orders ADD COLUMN phone VARCHAR(50);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='address') THEN
+    ALTER TABLE orders ADD COLUMN address TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='status') THEN
+    ALTER TABLE orders ADD COLUMN status VARCHAR(50) DEFAULT 'NEW';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='created_at') THEN
+    ALTER TABLE orders ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='prompt_settings' AND column_name='updated_at') THEN
+    ALTER TABLE prompt_settings ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='updated_at') THEN
+    ALTER TABLE settings ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS settings (
   id SERIAL PRIMARY KEY,
   key VARCHAR(100) UNIQUE NOT NULL,
@@ -233,35 +310,23 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Memory upgrade: last_order_summary, total_spent, order_count, vip
+-- AI handoff: dialogs where the AI decided a human should step in
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='last_order_summary') THEN
-    ALTER TABLE customer_memory ADD COLUMN last_order_summary JSONB DEFAULT NULL;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='needs_manager') THEN
+    ALTER TABLE users ADD COLUMN needs_manager BOOLEAN DEFAULT false;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='total_spent') THEN
-    ALTER TABLE customer_memory ADD COLUMN total_spent NUMERIC DEFAULT 0;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='handoff_reason') THEN
+    ALTER TABLE users ADD COLUMN handoff_reason VARCHAR(50);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='order_count') THEN
-    ALTER TABLE customer_memory ADD COLUMN order_count INTEGER DEFAULT 0;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='handoff_summary') THEN
+    ALTER TABLE users ADD COLUMN handoff_summary TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='handoff_at') THEN
+    ALTER TABLE users ADD COLUMN handoff_at TIMESTAMPTZ;
   END IF;
 END $$;
 
--- Performance index for unread + wait time calculations
-CREATE INDEX IF NOT EXISTS idx_messages_user_role_created ON messages(user_id, role, created_at DESC);
-
--- Simplified mode: 'ai' or 'manager' (replaces 4 ai_modes)
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mode') THEN
-    ALTER TABLE users ADD COLUMN "mode" VARCHAR(10) DEFAULT 'ai';
-    -- Migrate existing ai_mode values
-    UPDATE users SET "mode" = CASE
-      WHEN ai_mode = 'OBSERVE' THEN 'manager'
-      ELSE 'ai'
-    END;
-  END IF;
-END $$;
-
--- Customer memory: persistent memory for personalized sales
+-- Customer memory: create before memory upgrade columns below
 CREATE TABLE IF NOT EXISTS customer_memory (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
@@ -277,6 +342,35 @@ CREATE TABLE IF NOT EXISTS customer_memory (
   notes TEXT DEFAULT '',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Memory upgrade: last_order_summary, total_spent, order_count, vip
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='last_order_summary') THEN
+    ALTER TABLE customer_memory ADD COLUMN last_order_summary JSONB DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='total_spent') THEN
+    ALTER TABLE customer_memory ADD COLUMN total_spent NUMERIC DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customer_memory' AND column_name='order_count') THEN
+    ALTER TABLE customer_memory ADD COLUMN order_count INTEGER DEFAULT 0;
+  END IF;
+END $$;
+
+-- Performance index for unread + wait time calculations
+CREATE INDEX IF NOT EXISTS idx_messages_user_role_created ON messages(user_id, role, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_needs_manager ON users(needs_manager, handoff_at DESC) WHERE needs_manager = true;
+
+-- Simplified mode: 'ai' or 'manager' (replaces 4 ai_modes)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mode') THEN
+    ALTER TABLE users ADD COLUMN "mode" VARCHAR(10) DEFAULT 'ai';
+    -- Migrate existing ai_mode values
+    UPDATE users SET "mode" = CASE
+      WHEN ai_mode = 'OBSERVE' THEN 'manager'
+      ELSE 'ai'
+    END;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_customer_memory_user ON customer_memory(user_id);
 

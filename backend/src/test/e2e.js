@@ -1378,7 +1378,7 @@ async function testSalesOfftopicIntegration() {
   const r4 = await processMessage(formUser, 'Какая погода?');
   assert(typeof r4 === 'string', 'WAITING_FORM still responds to off-topic normally');
   // In WAITING_FORM without valid data → asks for form data
-  assert(r4.includes('ФИО') || r4.includes('телефон') || r4.includes('адрес') || r4.includes('сообщени'),
+  assert(r4.includes('ФИО') || r4.includes('телефон') || r4.includes('Город') || r4.includes('сообщени'),
     'WAITING_FORM response asks for form data');
 
   await cleanup(TG_ID);
@@ -1500,7 +1500,7 @@ async function testLivingFormResponse() {
   // Should be the new living response, not the old dry one
   assert(r1.includes('ФИО') || r1.includes('оформим'), 'Response asks for data in living tone');
   assert(!r1.includes('Пожалуйста, отправьте'), 'Old dry response is gone');
-  assert(r1.includes('🚀') || r1.includes('скинь') || r1.includes('Скинь'), 'New tone has emoji or casual language');
+  assert(r1.includes('Город') && r1.includes('Номер телефона'), 'New tone follows updated checkout rhythm');
 
   await cleanup(TG_ID);
 }
@@ -1938,13 +1938,28 @@ async function testAiModesCRUD() {
   const u8 = await users.getById(user.id);
   assert(u8.manager_active === false, 'setMode ai: clears manager_active');
 
+  // Handoff to manager
+  const h1 = await users.setNeedsManager(user.id, 'complaint', 'Клиент жалуется на брак');
+  assert(h1.needs_manager === true, 'handoff: needs_manager set');
+  assert(h1.handoff_reason === 'complaint', 'handoff: reason saved');
+  assert(h1.handoff_summary === 'Клиент жалуется на брак', 'handoff: summary saved');
+  assert(h1.handoff_at !== null, 'handoff: timestamp set');
+
+  const h2 = await users.clearNeedsManager(user.id);
+  assert(h2.needs_manager === false, 'handoff: needs_manager cleared');
+  assert(h2.handoff_reason === null, 'handoff: reason cleared');
+
+  await users.setNeedsManager(user.id, 'payment_issue', 'Клиент не может оплатить');
+  const u9 = await users.setMode(user.id, 'ai');
+  assert(u9.needs_manager === false, 'setMode ai: clears handoff');
+
   await cleanup(testId);
 }
 
 async function testCheckAiMode() {
   console.log('\n🧠 45. CHECK AI MODE LOGIC TEST (2-mode system)');
 
-  const { checkAiMode, isSimpleMessage, isComplexMessage } = require('../telegram/handler');
+  const { checkAiMode, isSimpleMessage, isComplexMessage, classifyHandoff } = require('../telegram/handler');
 
   // mode=manager — never responds
   const managerMode = checkAiMode({ mode: 'manager' }, 'привет');
@@ -1969,6 +1984,17 @@ async function testCheckAiMode() {
   const complex = checkAiMode({ mode: 'ai' }, 'хочу вернуть товар, брак');
   assert(!complex.shouldRespond, 'ai+complex: no response');
   assert(complex.reason === 'complex_escalation', 'ai+complex: correct reason');
+  assert(complex.handoff.reason === 'complaint', 'ai+complex: handoff reason');
+
+  const humanRequest = checkAiMode({ mode: 'ai' }, 'позовите менеджера');
+  assert(!humanRequest.shouldRespond, 'ai+human request: no response');
+  assert(humanRequest.handoff.reason === 'human_requested', 'ai+human request: handoff reason');
+
+  const alreadyHandoff = checkAiMode({ mode: 'ai', needs_manager: true }, 'привет');
+  assert(!alreadyHandoff.shouldRespond, 'needs_manager: AI paused');
+  assert(alreadyHandoff.reason === 'needs_manager', 'needs_manager: correct reason');
+
+  assert(classifyHandoff('не проходит оплата').reason === 'payment_issue', 'handoff classifier: payment');
 
   // mode=ai, simple message — responds
   const simple = checkAiMode({ mode: 'ai' }, 'сколько стоят?');
@@ -2185,15 +2211,14 @@ async function testBusinessWebhookRouting() {
     },
   };
 
-  const msg = bizUpdate.message || bizUpdate.business_message || bizUpdate.edited_business_message;
+  const msg = bizUpdate.message || bizUpdate.business_message;
   assert(msg !== undefined, 'routing: business_message extracted');
   assert(msg.text === 'бизнес привет', 'routing: business_message text correct');
 
-  const bcId = bizUpdate.business_message?.business_connection_id ||
-    bizUpdate.edited_business_message?.business_connection_id || null;
+  const bcId = bizUpdate.business_message?.business_connection_id || null;
   assert(bcId === 'conn_123', 'routing: business_connection_id extracted');
 
-  // Simulate edited_business_message
+  // Simulate edited_business_message — should not be routed as a new client message
   const editedUpdate = {
     edited_business_message: {
       from: { id: 999050, first_name: 'BizClient' },
@@ -2203,12 +2228,8 @@ async function testBusinessWebhookRouting() {
     },
   };
 
-  const msg2 = editedUpdate.message || editedUpdate.business_message || editedUpdate.edited_business_message;
-  assert(msg2.text === 'edited text', 'routing: edited_business_message extracted');
-
-  const bcId2 = editedUpdate.business_message?.business_connection_id ||
-    editedUpdate.edited_business_message?.business_connection_id || null;
-  assert(bcId2 === 'conn_456', 'routing: edited connectionId extracted');
+  const msg2 = editedUpdate.message || editedUpdate.business_message;
+  assert(msg2 === undefined, 'routing: edited_business_message ignored as new message');
 
   // Simulate regular message — backward compat
   const regularUpdate = {
@@ -2219,16 +2240,15 @@ async function testBusinessWebhookRouting() {
     },
   };
 
-  const msg3 = regularUpdate.message || regularUpdate.business_message || regularUpdate.edited_business_message;
+  const msg3 = regularUpdate.message || regularUpdate.business_message;
   assert(msg3.text === 'обычное', 'routing: regular message still works');
 
-  const bcId3 = regularUpdate.business_message?.business_connection_id ||
-    regularUpdate.edited_business_message?.business_connection_id || null;
+  const bcId3 = regularUpdate.business_message?.business_connection_id || null;
   assert(bcId3 === null, 'routing: no connectionId for regular msg');
 
   // Empty update — should not crash
   const emptyUpdate = {};
-  const msg4 = emptyUpdate.message || emptyUpdate.business_message || emptyUpdate.edited_business_message;
+  const msg4 = emptyUpdate.message || emptyUpdate.business_message;
   assert(msg4 === undefined, 'routing: empty update returns undefined');
 }
 
@@ -2922,7 +2942,7 @@ async function testChatUpgrade() {
     const quickReplies = {
       NEW: ['Какой размер носите?', 'Что ищете? Кроссовки, одежду?'],
       WAITING_SIZE: ['Какой размер носите?'],
-      WAITING_FORM: ['Отправьте ФИО, телефон и адрес одним сообщением'],
+      WAITING_FORM: ['Отправьте ФИО, город и телефон одним сообщением'],
       WAITING_PAYMENT: ['Скинуть реквизиты для оплаты?'],
     };
     assert(quickReplies[user.state] !== undefined, 'quick replies defined for WAITING_SIZE');
@@ -3283,7 +3303,7 @@ async function testReturningCustomerFormReuse() {
     await memory.update(user.id, {
       full_name: 'Иванов Иван',
       phone: '+79991234567',
-      address: 'Москва, ул. Ленина 15, кв 42',
+      city: 'Москва',
       shoe_size: '42',
     });
 
@@ -3300,6 +3320,72 @@ async function testReturningCustomerFormReuse() {
   } catch (err) {
     console.error('  Returning customer test error:', err.message);
     await cleanup(telegramId).catch(() => {});
+  }
+}
+
+async function testCheckoutRhythmAndDeliveryTruth() {
+  console.log('\n🧾 70b. CHECKOUT RHYTHM + DELIVERY TRUTH TEST');
+  const { processMessage } = require('../logic/sales');
+  const shop = require('../shop');
+
+  const step1Id = 880001 + Math.floor(Math.random() * 999);
+  const step2Id = 881001 + Math.floor(Math.random() * 999);
+  const deliveryId = 882001 + Math.floor(Math.random() * 999);
+
+  const originalGetCatalog = shop.getCatalog;
+  const originalSearchProducts = shop.searchProducts;
+  const originalFindProductInText = shop.findProductInText;
+
+  const demoProduct = {
+    id: 501,
+    name: 'Nike Air Max 95',
+    price: 5190,
+    sizes: ['41', '42', '43', '44', '45'],
+    available: true,
+  };
+
+  try {
+    shop.getCatalog = async () => ({ available: true, status: 'ok', products: [demoProduct] });
+    shop.searchProducts = async () => [demoProduct];
+    shop.findProductInText = () => ({ product: demoProduct, confidence: 'high' });
+
+    await cleanup(step1Id);
+    const user1 = await users.findOrCreate(step1Id, 'Ритм1', 'rhythm1');
+    const r1 = await processMessage(user1, 'хочу Nike Air Max 95');
+    assert(r1.includes('Какой размер берёте'), 'scenario 1: asks only for size');
+    assert(!r1.includes('телефон') && !r1.includes('ФИО') && !r1.includes('Город'), 'scenario 1: no form fields in first step');
+
+    await cleanup(step2Id);
+    const user2 = await users.findOrCreate(step2Id, 'Ритм2', 'rhythm2');
+    await users.updateState(user2.id, 'WAITING_SIZE');
+    await messages.save(user2.id, 'user', 'Nike Air Max 95');
+    const waitingSizeUser = await users.getById(user2.id);
+    const r2 = await processMessage(waitingSizeUser, 'M размер');
+    assert(r2.includes('M записал') || r2.includes('M записал.'), 'scenario 2: size acknowledged');
+    assert(r2.includes('ФИО') && r2.includes('Город') && r2.includes('Номер телефона'), 'scenario 2: asks for fio/city/phone');
+    assert(!r2.includes('адрес'), 'scenario 2: does not ask address');
+    assert(r2.includes('бесплатная доставка'), 'scenario 2: mentions free delivery');
+
+    await cleanup(deliveryId);
+    const user3 = await users.findOrCreate(deliveryId, 'Доставка', 'deliverytruth');
+    const r3 = await processMessage(user3, 'у вас бесплатная доставка?');
+    assert(r3.toLowerCase().includes('бесплатная доставка'), 'scenario 3: confirms free delivery');
+    assert(r3.includes('ПВЗ') || r3.includes('пвз'), 'scenario 3: mentions pickup point');
+    assert(r3.includes('CDEK') || r3.includes('СДЭК') || r3.includes('Почта') || r3.includes('Ozon') || r3.includes('WB'),
+      'scenario 3: mentions delivery services');
+
+    await cleanup(step1Id);
+    await cleanup(step2Id);
+    await cleanup(deliveryId);
+  } catch (err) {
+    console.error('  Checkout rhythm test error:', err.message);
+    await cleanup(step1Id).catch(() => {});
+    await cleanup(step2Id).catch(() => {});
+    await cleanup(deliveryId).catch(() => {});
+  } finally {
+    shop.getCatalog = originalGetCatalog;
+    shop.searchProducts = originalSearchProducts;
+    shop.findProductInText = originalFindProductInText;
   }
 }
 
@@ -3598,13 +3684,13 @@ async function testSafetyGateHardcodedMessages() {
     'Понял, сейчас гляну по наличию 👀 Если именно этой нет — подберу максимально похожие. Какой размер нужен?',
     'Хороший выбор 👍 Сейчас проверю наличие. Если что — есть очень похожие варианты. Размер какой?',
     'Норм модель 🔥 Гляну что есть. А пока скажи — какой размер носишь?',
-    'Скинь одним сообщением: ФИО, телефон и адрес доставки — и сразу оформим 🚀',
+    'Скинь ФИО, город и телефон — и оформим 🚀',
     'Уточняю цену на этот товар. Подскажи, какой именно интересует — пересчитаем 🙏',
     '✅ Отлично! Заказ оформлен!\n\nМы проверим оплату и отправим заказ как можно скорее. Спасибо за покупку! 🎉',
     'Давай начнём заново — что хотите заказать? 😊',
     'Секунду, подбираю варианты 👌',
     'Ещё думаешь над размером? Если что — подскажу 👟',
-    'Скинь ФИО, телефон и адрес — и оформим заказ 🚀',
+    'Скинь ФИО, город и телефон — и оформим заказ 🚀',
     'Напоминаю — заказ ждёт оплаты. Переведи и скинь скрин 💳',
   ];
 
@@ -3618,7 +3704,7 @@ async function testSafetyGateHardcodedMessages() {
     'Привет! Всё ок? Заказ ждёт — если есть вопросы, пиши 😊',
     'Напоминаю про заказ 💳 Переведи и скинь скрин — отправим сразу!',
     'Заказ всё ещё ждёт! Может, оформим? Если что-то смущает — скажи, решим 🤝',
-    'Осталось совсем чуть-чуть! Скинь ФИО, телефон и адрес — и оформим 🚀',
+    'Осталось совсем чуть-чуть! Скинь ФИО, город и телефон — и оформим 🚀',
     'Определился с размером? Если надо — помогу подобрать 👟',
   ];
 
@@ -3740,6 +3826,7 @@ async function run() {
     await testAutoNudgeChain();
     await testQueueMonitoringEndpoint();
     await testReturningCustomerFormReuse();
+    await testCheckoutRhythmAndDeliveryTruth();
     await testSafetyGateSanitizer();
     await testSafetyGateDetector();
     await testSafetyGateEnforce();

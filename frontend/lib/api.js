@@ -87,6 +87,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ state }),
     }),
+  setHandoff: (id, data) =>
+    fetchAPI(`/users/${id}/handoff`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   deleteUser: (id) =>
     fetchAPI(`/users/${id}`, { method: 'DELETE' }),
   markRead: (id) =>

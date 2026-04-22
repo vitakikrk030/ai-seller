@@ -63,6 +63,33 @@ const COMPLEX_PATTERNS = [
   /проблема с доставк|не пришл|не получил|потерял/i,
 ];
 
+const HANDOFF_RULES = [
+  {
+    reason: 'human_requested',
+    summary: 'Клиент просит подключить живого менеджера.',
+    reply: 'Понял, подключаю менеджера. Он сейчас посмотрит диалог и ответит.',
+    patterns: [/менеджер|оператор|человек|живой|админ|позови|позовите/i],
+  },
+  {
+    reason: 'complaint',
+    summary: 'Клиент пишет про жалобу, возврат, обмен или брак.',
+    reply: 'Понял. Тут лучше подключу менеджера, чтобы нормально разобраться.',
+    patterns: [/жалоб|рекламаци|возврат|вернуть|брак|обмен|сломал|сломалась|порвал|порвалась/i],
+  },
+  {
+    reason: 'delivery_problem',
+    summary: 'Клиент сообщает о проблеме с доставкой или получением заказа.',
+    reply: 'Принял. Передаю менеджеру, он проверит доставку и вернется с ответом.',
+    patterns: [/проблема с доставк|не пришл|не получил|потерял|где заказ|трек|трек.?номер|доставка задерж/i],
+  },
+  {
+    reason: 'payment_issue',
+    summary: 'Клиент сообщает о спорной оплате или проблеме с переводом.',
+    reply: 'Понял по оплате. Подключаю менеджера, он проверит и ответит.',
+    patterns: [/оплат.*не|деньги.*ушли|перев[её]л.*не|ошиб.*оплат|не проходит оплат|двойная оплат/i],
+  },
+];
+
 function isSimpleMessage(text) {
   if (!text) return false;
   if (text.length < 30) return true;
@@ -70,8 +97,23 @@ function isSimpleMessage(text) {
   return false;
 }
 
+function classifyHandoff(text) {
+  if (!text) return null;
+  for (const rule of HANDOFF_RULES) {
+    if (rule.patterns.some((p) => p.test(text))) {
+      return {
+        reason: rule.reason,
+        summary: rule.summary,
+        reply: rule.reply,
+      };
+    }
+  }
+  return null;
+}
+
 function isComplexMessage(text) {
   if (!text) return false;
+  if (classifyHandoff(text)) return true;
   if (COMPLEX_PATTERNS.some((p) => p.test(text))) return true;
   return false;
 }
@@ -98,13 +140,38 @@ function checkAiMode(user, text) {
     return { shouldRespond: false, reason: 'manager_pause' };
   }
 
+  // If AI already escalated this dialog, keep it silent until manager resolves it
+  if (user.needs_manager) {
+    return { shouldRespond: false, reason: 'needs_manager' };
+  }
+
   // 2. Complex messages (complaints, requests for human) — escalate silently
-  if (isComplexMessage(text)) {
-    return { shouldRespond: false, reason: 'complex_escalation' };
+  const handoff = classifyHandoff(text);
+  if (handoff || isComplexMessage(text)) {
+    return {
+      shouldRespond: false,
+      reason: 'complex_escalation',
+      handoff: handoff || {
+        reason: 'ai_uncertain',
+        summary: 'AI не уверен, что может безопасно обработать сообщение.',
+        reply: 'Секунду, подключу менеджера — он точнее подскажет.',
+      },
+    };
   }
 
   // 3. AI responds
   return { shouldRespond: true, reason: 'ai_mode' };
+}
+
+async function escalateToManager(user, telegramId, handoff, businessConnectionId) {
+  await users.setNeedsManager(user.id, handoff.reason, handoff.summary);
+
+  // Only send one handoff acknowledgement per escalation window.
+  if (user.needs_manager) return;
+
+  const sendOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : {};
+  await messages.save(user.id, 'ai', handoff.reply);
+  await bot.sendMessage(telegramId, handoff.reply, sendOpts);
 }
 
 async function sendAIResponse(telegramId, user, response, businessConnectionId) {
@@ -190,8 +257,13 @@ async function handleMessage(msg, businessConnectionId) {
     if (autoReply === 'false') return;
 
     const msgContent = text || msg.caption || '[фото]';
-    const { shouldRespond } = checkAiMode(user, msgContent);
-    if (!shouldRespond) return;
+    const aiDecision = checkAiMode(user, msgContent);
+    if (!aiDecision.shouldRespond) {
+      if (aiDecision.reason === 'complex_escalation' && aiDecision.handoff) {
+        await escalateToManager(user, telegramId, aiDecision.handoff, businessConnectionId);
+      }
+      return;
+    }
 
     // Check if manager cancelled AI for this chat
     if (queue.isCancelled(String(telegramId))) return;
@@ -205,6 +277,7 @@ async function handleMessage(msg, businessConnectionId) {
       const freshUser = await users.getById(user.id);
       if (!freshUser || !freshUser.ai_enabled) return;
       if (freshUser.manager_active) return;
+      if (freshUser.needs_manager) return;
 
       let response;
       if (photo && Array.isArray(photo) && photo.length > 0) {
@@ -229,4 +302,4 @@ async function handleMessage(msg, businessConnectionId) {
   }
 }
 
-module.exports = { handleMessage, checkAiMode, isSimpleMessage, isComplexMessage, AI_MODES, queue };
+module.exports = { handleMessage, checkAiMode, classifyHandoff, isSimpleMessage, isComplexMessage, AI_MODES, queue };

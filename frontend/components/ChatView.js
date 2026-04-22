@@ -30,6 +30,14 @@ const STATE_COLORS = {
   DONE: 'var(--c-active)',
 };
 
+const HANDOFF_LABELS = {
+  human_requested: 'Просит менеджера',
+  complaint: 'Жалоба / возврат',
+  delivery_problem: 'Проблема доставки',
+  payment_issue: 'Проблема оплаты',
+  ai_uncertain: 'AI не уверен',
+};
+
 // ── Time helpers ──
 
 function fmtTime(date) {
@@ -150,6 +158,7 @@ function Chip({ children, color, variant }) {
 
 const FILTERS = [
   { key: 'all', label: 'Все' },
+  { key: 'needs_manager', label: 'Нужен менеджер' },
   { key: 'unread', label: 'Ждут ответа' },
   { key: 'order', label: 'С заказом' },
 ];
@@ -302,6 +311,15 @@ export default function ChatView() {
     } catch (e) {}
   }
 
+  async function clearHandoff() {
+    if (!selected) return;
+    try {
+      const updated = await api.setHandoff(selected.id, { needs_manager: false });
+      setSelected({ ...selected, ...updated });
+      loadUsers();
+    } catch (e) {}
+  }
+
   async function deleteDialog() {
     if (!selected) return;
     if (!confirm('Удалить диалог с ' + (selected.name || 'клиентом') + '? Все данные будут удалены.')) return;
@@ -329,6 +347,7 @@ export default function ChatView() {
 
   function getAiStatus(user) {
     if (!user) return { text: '', cls: '' };
+    if (user.needs_manager) return { text: 'Нужен менеджер', cls: 'cv-ai-handoff' };
     if (!user.ai_enabled) return { text: 'AI выкл', cls: 'cv-ai-off' };
     const actor = user.active_actor || ((user.mode || 'ai') === 'manager' ? 'manager' : user.manager_active ? 'paused' : 'ai');
     if (actor === 'manager') return { text: 'Менеджер ведёт', cls: 'cv-ai-manager' };
@@ -367,6 +386,7 @@ export default function ChatView() {
   // Filtered users
   const filteredUsers = useMemo(() => {
     let list = users;
+    if (filter === 'needs_manager') list = list.filter(u => u.needs_manager);
     if (filter === 'unread') list = list.filter(u => u.unread);
     if (filter === 'order') list = list.filter(u => u.order_product);
     return list;
@@ -409,6 +429,9 @@ export default function ChatView() {
               {f.key === 'unread' && users.filter(u => u.unread).length > 0 && (
                 <span className="cv-filter-count">{users.filter(u => u.unread).length}</span>
               )}
+              {f.key === 'needs_manager' && users.filter(u => u.needs_manager).length > 0 && (
+                <span className="cv-filter-count cv-filter-count-alert">{users.filter(u => u.needs_manager).length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -443,6 +466,7 @@ export default function ChatView() {
                     {u.unread && <span className="cv-unread-dot" />}
                   </div>
                   <div className="cv-list-chips">
+                    {u.needs_manager && <Chip variant="handoff">Нужен менеджер</Chip>}
                     <Chip color={stateColor(u.state)}>{stateLabel(u.state)}</Chip>
                     {u.order_price && <Chip>{u.order_price} р</Chip>}
                     {u.order_size && <Chip>{u.order_size}</Chip>}
@@ -450,6 +474,7 @@ export default function ChatView() {
                     <span className={`cv-ai-dot ${aiSt.cls}`} title={aiSt.text}>{
                       aiSt.cls === 'cv-ai-manager' ? 'М' :
                       aiSt.cls === 'cv-ai-paused' ? 'П' :
+                      aiSt.cls === 'cv-ai-handoff' ? '!' :
                       aiSt.cls === 'cv-ai-active' ? 'AI' : ''
                     }</span>
                   </div>
@@ -502,6 +527,9 @@ export default function ChatView() {
 
             {/* Dialog chips bar */}
             <div className="cv-dialog-chips">
+              {selected.needs_manager && (
+                <Chip variant="handoff"><AlertTriangle size={9} /> {HANDOFF_LABELS[selected.handoff_reason] || 'Нужен менеджер'}</Chip>
+              )}
               <Chip color={stateColor(selected.state)}>{stateLabel(selected.state)}</Chip>
               {customerMemory?.shoe_size && <Chip variant="memory">р.{customerMemory.shoe_size}</Chip>}
               {customerMemory?.city && <Chip variant="memory">{customerMemory.city}</Chip>}
@@ -518,6 +546,13 @@ export default function ChatView() {
                 <Chip variant="wait"><AlertTriangle size={9} /> Долго ждет</Chip>
               )}
             </div>
+
+            {selected.needs_manager && (
+              <div className="cv-handoff-banner">
+                <AlertTriangle size={12} />
+                <span>{selected.handoff_summary || 'AI остановил автоответ и ждет менеджера.'}</span>
+              </div>
+            )}
 
             {/* Next action recommendation */}
             {customerMemory?._next_action && (
@@ -652,6 +687,14 @@ export default function ChatView() {
 
             <div className="cv-section">
               <div className="cv-section-label">Управление диалогом</div>
+              {selected.needs_manager && (
+                <div className="cv-handoff-card">
+                  <div className="cv-handoff-title">AI просит менеджера</div>
+                  <div className="cv-handoff-reason">{HANDOFF_LABELS[selected.handoff_reason] || selected.handoff_reason || 'Нужна проверка'}</div>
+                  <div className="cv-handoff-text">{selected.handoff_summary || 'Проверьте диалог и ответьте клиенту вручную.'}</div>
+                  <button className="btn btn-outline btn-small" onClick={clearHandoff}>Снять флаг</button>
+                </div>
+              )}
               <div className="cv-mode-toggle-wrap">
                 <span className={`cv-mode-label ${(selected.mode || 'ai') === 'ai' ? 'cv-mode-label-active' : ''}`}>AI ведёт</span>
                 <div

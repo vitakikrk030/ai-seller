@@ -201,10 +201,11 @@ const memory = {
   /**
    * Save form data from the sales flow (handleWaitingForm).
    */
-  async saveFormData(userId, { fullName, phone, address }) {
+  async saveFormData(userId, { fullName, phone, city, address }) {
     const data = {};
     if (fullName) data.full_name = fullName;
     if (phone) data.phone = phone;
+    if (city) data.city = city;
     if (address) data.address = address;
     return await memory.update(userId, data);
   },
@@ -258,7 +259,7 @@ const memory = {
    */
   hasFullDeliveryData(mem) {
     if (!mem) return false;
-    return !!(mem.full_name && mem.phone && mem.address);
+    return !!(mem.full_name && mem.phone && (mem.address || mem.city));
   },
 
   /**
@@ -289,7 +290,7 @@ const memory = {
         return 'Ждём размер → помоги определиться';
       case 'WAITING_FORM':
         if (hasData) return 'Данные уже есть → предложи использовать прошлые';
-        return 'Ждём данные → запроси ФИО, телефон, адрес';
+        return 'Ждём данные → запроси ФИО, город, телефон';
       case 'WAITING_PAYMENT':
         if (beh.often_disappears) return 'Клиент часто пропадает → быстрый дожим';
         return 'Ждём оплату → мягко напомни';

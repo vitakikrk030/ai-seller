@@ -25,6 +25,78 @@ function getSoftResponse() {
   return SOFT_RESPONSES[Math.floor(Math.random() * SOFT_RESPONSES.length)];
 }
 
+const PHONE_RE = /(\+?\d[\d\s\-()]{8,})/;
+const DELIVERY_QUESTION_RE = /бесплатн|доставк|пвз|пункт выдачи|пункт|ozon|wb|вайлдберриз|яндекс|почта|cdek|сдэк|курьер/i;
+
+function isDeliveryQuestion(text) {
+  return DELIVERY_QUESTION_RE.test(text || '');
+}
+
+// Temporary canonical delivery truth for the current sales contour.
+// If delivery starts differing by channel/product/region, move this into the
+// existing data/settings layer instead of adding another prompt or logic layer.
+function getDeliveryTruth() {
+  return 'Да — у нас бесплатная доставка до удобного ПВЗ: Яндекс Доставка, Ozon, WB, Почта России или CDEK. После оплаты оформляем накладную, дальше отслеживание идет в приложении выбранной службы. Если срочно по Москве — можем курьером до двери, но это уже доп. оплата.';
+}
+
+function normalizeSizes(sizes) {
+  if (Array.isArray(sizes)) {
+    return sizes.map((size) => String(size).trim()).filter(Boolean);
+  }
+  if (typeof sizes === 'string') {
+    return sizes.split(',').map((size) => size.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined || value === '') return 'цену уточню';
+  return `${value} ₽`;
+}
+
+function buildSizeStep(product) {
+  const sizes = normalizeSizes(product?.sizes);
+  const sizePrompt = sizes.length > 0
+    ? `Какой размер берёте: ${sizes.join(' / ')}?`
+    : 'Какой размер берёте?';
+
+  return `Отлично — оформляем ${product.name} за ${formatMoney(product.price)}. ${sizePrompt}`;
+}
+
+function buildCheckoutPrompt(order) {
+  const sizeLine = order?.size ? `${order.size} записал.` : 'Размер записал.';
+  const totalLine = order?.price ? `\n\nИтого: ${formatMoney(order.price)}.` : '';
+
+  return `Отлично — ${sizeLine}\nНапомню: у нас бесплатная доставка.\nНапишите, пожалуйста:\nФИО\nГород\nНомер телефона${totalLine}`;
+}
+
+function parseCheckoutForm(text, user) {
+  const prepared = String(text || '').replace(/\r/g, '\n');
+  const extracted = memory.validateExtracted(memory.extractFromText(prepared));
+  const parts = prepared
+    .split(/\n|[,;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const phone = extracted.phone || (prepared.match(PHONE_RE)?.[1] || '').replace(/[\s\-()]/g, '');
+  const nonPhoneParts = parts.filter((part) => !PHONE_RE.test(part));
+
+  let fullName = extracted.full_name || null;
+  let city = extracted.city || null;
+  let address = extracted.address || null;
+
+  if (nonPhoneParts.length >= 1) fullName = nonPhoneParts[0];
+  if (!city && nonPhoneParts.length >= 2) city = nonPhoneParts[1];
+  if (!address && nonPhoneParts.length >= 3) address = nonPhoneParts.slice(2).join(', ');
+
+  return {
+    fullName: (fullName || user.name || 'Не указано').trim(),
+    phone: phone.trim(),
+    city: (city || '').trim(),
+    address: (address || '').trim(),
+  };
+}
+
 /**
  * Get catalog + status. Single entry point for catalog access.
  */
@@ -109,16 +181,28 @@ async function handleNew(user, text, lower) {
     return safeAIResponse(user, text, products, available);
   }
 
+  if (isDeliveryQuestion(lower)) {
+    return getDeliveryTruth();
+  }
+
   if (wantsToBuy) {
     // Search for relevant products
     const matched = available ? await shop.searchProducts(text) : [];
-    const hasRelevant = matched.length > 0 && matched.length < (products || []).length;
+    const hasRelevant = matched.length > 0 && (matched.length < (products || []).length || matched.length === 1);
 
     if (hasRelevant) {
-      // FAST SALE: exact match found — sell immediately
-      const response = await safeAIResponse(user, text, matched, available);
       await users.updateState(user.id, 'WAITING_SIZE');
-      return response;
+
+      const directMatch = shop.findProductInText(text, matched);
+      const chosenProduct = (directMatch && ['high', 'medium'].includes(directMatch.confidence))
+        ? directMatch.product
+        : (matched.length === 1 ? matched[0] : null);
+
+      if (chosenProduct) {
+        return buildSizeStep(chosenProduct);
+      }
+
+      return safeAIResponse(user, text, matched, available);
     }
 
     // SOFT MODE: no exact match or catalog down — soft transition, never say "нет"
@@ -141,6 +225,10 @@ async function handleNew(user, text, lower) {
 }
 
 async function handleWaitingSize(user, text, lower) {
+  if (isDeliveryQuestion(lower)) {
+    return getDeliveryTruth();
+  }
+
   const sizeMatch = text.match(/\b(\d{2})\b/) || text.match(/\b(XXS|XS|S|M|L|XL|XXL|XXXL)\b/i);
 
   if (sizeMatch) {
@@ -205,7 +293,7 @@ async function handleWaitingSize(user, text, lower) {
     // Save size + brand + price to customer memory (non-blocking)
     memory.saveOrderData(user.id, { product: product.name, size, brand: null, price: product.price }).catch(() => {});
 
-    return `Отлично! Записал:\n👟 ${product.name}\n📏 Размер: ${size}\n💰 Стоимость: ${product.price}₽\n\nОсталось чуть-чуть — скинь одним сообщением: ФИО, телефон и адрес доставки 📝`;
+    return buildCheckoutPrompt({ product: product.name, size, price: product.price });
   }
 
   // AI helps pick size (with catalog data)
@@ -214,30 +302,24 @@ async function handleWaitingSize(user, text, lower) {
 }
 
 async function handleWaitingForm(user, text, lower) {
+  if (isDeliveryQuestion(lower)) {
+    return getDeliveryTruth();
+  }
+
   // Returning customer: check if memory has full data and user confirms
   const customerMem = await memory.get(user.id).catch(() => null);
   if (memory.hasFullDeliveryData(customerMem)) {
     const confirmYes = ['да', 'ок', 'окей', 'ага', 'угу', 'конечно', 'давай', 'подтверж', 'те же', 'тот же', 'прошлые', 'старые', 'как раньше', 'как прошлый'];
     if (confirmYes.some(kw => lower.includes(kw))) {
       // Use saved data
-      text = `${customerMem.full_name} ${customerMem.phone} ${customerMem.address}`;
+      text = `${customerMem.full_name}\n${customerMem.city || customerMem.address}\n${customerMem.phone}`;
     }
   }
 
-  const phoneMatch = text.match(/(\+?\d[\d\s\-()]{8,})/);
-  const hasPhone = !!phoneMatch;
-  const longEnough = text.length > 15;
+  const parsed = parseCheckoutForm(text, user);
+  const hasCheckoutData = !!(parsed.fullName && parsed.phone && (parsed.city || parsed.address));
 
-  if (hasPhone && longEnough) {
-    const phone = phoneMatch[1].trim();
-
-    const phoneIndex = text.indexOf(phoneMatch[0]);
-    const beforePhone = text.substring(0, phoneIndex).trim().replace(/[,;]+$/, '').trim();
-    const afterPhone = text.substring(phoneIndex + phoneMatch[0].length).trim().replace(/^[,;]+/, '').trim();
-
-    const fullName = beforePhone || user.name || 'Не указано';
-    const address = afterPhone || 'Не указан';
-
+  if (hasCheckoutData) {
     let order = await orders.getLatestByUser(user.id);
     if (!order) {
       // Should not happen — order should exist from handleWaitingSize
@@ -255,7 +337,7 @@ async function handleWaitingForm(user, text, lower) {
       await client.query('BEGIN');
       await client.query(
         'UPDATE orders SET full_name = $1, phone = $2, address = $3 WHERE id = $4',
-        [fullName, phone, address, order.id]
+        [parsed.fullName, parsed.phone, parsed.address || parsed.city, order.id]
       );
       await client.query('UPDATE users SET state = $1 WHERE id = $2', ['WAITING_PAYMENT', user.id]);
       await client.query('COMMIT');
@@ -267,7 +349,12 @@ async function handleWaitingForm(user, text, lower) {
     }
 
     // Save form data to customer memory (non-blocking)
-    memory.saveFormData(user.id, { fullName, phone, address }).catch(() => {});
+    memory.saveFormData(user.id, {
+      fullName: parsed.fullName,
+      phone: parsed.phone,
+      city: parsed.city,
+      address: parsed.address || parsed.city,
+    }).catch(() => {});
 
     const cardNumber = await settings.get('payment_card_number');
     const cardName = await settings.get('payment_name');
@@ -287,10 +374,16 @@ async function handleWaitingForm(user, text, lower) {
     return `Спасибо! Данные записаны ✅\n\n📦 Ваш заказ:\n👟 ${order.product}\n📏 Размер: ${order.size}\n💰 К оплате: ${order.price}₽\n\nДля оплаты свяжитесь с менеджером 💬`;
   }
 
-  return 'Скинь одним сообщением: ФИО, телефон и адрес доставки — и сразу оформим 🚀';
+  const order = await orders.getLatestByUser(user.id);
+  if (!order) return 'Напишите, пожалуйста:\nФИО\nГород\nНомер телефона';
+  return buildCheckoutPrompt(order);
 }
 
 async function handleWaitingPayment(user, text, lower) {
+  if (isDeliveryQuestion(lower)) {
+    return getDeliveryTruth();
+  }
+
   const payKeywords = ['оплатил', 'перевел', 'перевёл', 'отправил', 'оплата', 'скрин', 'чек'];
   const confirmedPay = payKeywords.some((kw) => lower.includes(kw));
 
