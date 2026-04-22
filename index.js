@@ -1055,25 +1055,94 @@ function getCustomerProfileSnapshot(chatId) {
 }
 
 function extractPhone(text) {
-  const match = String(text || '').match(/(?:\+?\d[\s().-]*){10,16}/);
-  return match ? match[0].replace(/[^\d+]/g, '') : '';
+  const source = String(text || '');
+  const matches = source.match(/(?:\+?\d[\s().-]*){10,16}/g) || [];
+  for (const match of matches) {
+    const groups = match.match(/\d+/g) || [];
+    if (!groups.length) continue;
+    if (groups.length >= 4 && groups.every((group) => group.length <= 2)) continue;
+    return match.replace(/[^\d+]/g, '');
+  }
+  return '';
+}
+
+function normalizeSizeToken(value) {
+  return String(value || '').replace(',', '.').trim().toUpperCase();
+}
+
+function extractSizeTokens(text) {
+  const seen = new Set();
+  const tokens = [];
+  const pattern = /\b(\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)\b/gi;
+  for (const match of String(text || '').matchAll(pattern)) {
+    const token = normalizeSizeToken(match[1]);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+function extractAvailableSizeOptions(text) {
+  const source = String(text || '');
+  const options = [];
+  const seen = new Set();
+  const patterns = [
+    /(?:^|\n|\r)\s*(?:доступные\s+)?размер(?:ы)?\s*[:\-]\s*([^\n\r]+)/gi,
+    /(?:^|\n|\r)\s*(?:в\s+наличии|есть)\s+размер(?:ы)?\s*[:\-]?\s*([^\n\r]+)/gi,
+  ];
+  patterns.forEach((pattern) => {
+    for (const match of source.matchAll(pattern)) {
+      extractSizeTokens(match[1]).forEach((token) => {
+        if (seen.has(token)) return;
+        seen.add(token);
+        options.push(token);
+      });
+    }
+  });
+  return options;
+}
+
+function extractSingleLabeledSize(text) {
+  const source = String(text || '');
+  const match = source.match(/(?:^|\n|\r)\s*(?:размер\s+клиента|нужный\s+размер|выбранный\s+размер|размер|size)\s*[:\-]\s*([^\n\r]+)/i);
+  if (!match) return '';
+  const tokens = extractSizeTokens(match[1]);
+  return tokens.length === 1 ? tokens[0] : '';
 }
 
 function extractShoeSize(text) {
-  const source = String(text || '');
+  const source = String(text || '').trim();
+  if (!source) return '';
+
+  const labeled = extractSingleLabeledSize(source);
+  if (labeled) return labeled;
+
   const patterns = [
     /(?:у\s+меня|мой\s+размер|мои?\s+размер|ношу|размер\s+у\s+меня)\s*(?:размер\s*)?(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?/i,
-    /(\d{2}(?:[.,]5)?)\s*(?:размер|р-р)\s*(?:у\s+меня|мой|мои|ношу)?/i,
-    /(?:есть|нужен|ищу|хочу|беру|возьму)\s+(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
+    /(\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)\s*(?:размер|р-р|size)\b/i,
+    /(?:размер|size)\s*(\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)\b/i,
+    /(?:есть|нужен|нужна|ищу|хочу|беру|возьму|можно(?:\s+\S+){0,2}|давайте|закаж(?:у|ите)?|оформ(?:ить|ляем)?|подойд[её]т|возьму)\s+(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
+    /(?:можно|беру|возьму|нужен|нужна|хочу|давайте)\s+(XXS|XS|S|M|L|XL|XXL|XXXL)\b/i,
     /(?:на|под)\s*(\d{2}(?:[.,]5)?)(?:\s*(?:размер|р-р))?(?:\b|\?)/i,
-    /\b(XXS|XS|S|M|L|XL|XXL|XXXL)\s*(?:размер|size)?\b/i,
-    /(?:размер|size)\s*(XXS|XS|S|M|L|XL|XXL|XXXL)\b/i,
+    /^(\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)\s*(?:размер|р-р|size)?$/i,
   ];
   for (const pattern of patterns) {
     const match = source.match(pattern);
-    if (match) return match[1].replace(',', '.').toUpperCase();
+    if (match) return normalizeSizeToken(match[1]);
   }
+
+  if (extractAvailableSizeOptions(source).length > 1) return '';
   return '';
+}
+
+function normalizeExtractedShoeSize(value, sourceText = '') {
+  const explicit = extractShoeSize(sourceText);
+  if (explicit) return explicit;
+  const tokens = extractSizeTokens(value);
+  if (tokens.length !== 1) return '';
+  if (extractAvailableSizeOptions(sourceText).length > 1) return '';
+  return tokens[0];
 }
 
 function extractCity(text) {
@@ -1101,8 +1170,16 @@ function extractDeliveryAddress(text) {
 }
 
 function extractLastProduct(text) {
-  const source = normalizeMemoryText(text);
-  const explicit = source.match(/(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*([^.,\n]{3,120})/i);
+  const source = String(text || '');
+  const explicitLine = source.match(/(?:^|\n|\r)\s*(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*([^\n\r]{3,160})/i);
+  if (explicitLine) {
+    const cleaned = explicitLine[1]
+      .split(/\s+(?:цена|стоимость|размер(?:ы)?|цвет|артикул|количество)\s*[:\-]/i)[0]
+      .trim();
+    if (cleaned) return cleaned;
+  }
+  const normalized = normalizeMemoryText(source);
+  const explicit = normalized.match(/(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*(.{3,120}?)(?=\s+(?:цена|стоимость|размер(?:ы)?|цвет|артикул|количество)\s*[:\-]|$)/i);
   if (explicit) return explicit[1].trim();
   return '';
 }
@@ -1446,15 +1523,18 @@ function applyExtractedCustomerData(input, extracted) {
   const intent = extracted.intent && typeof extracted.intent === 'object' ? extracted.intent : {};
   const confidence = extracted.confidence && typeof extracted.confidence === 'object' ? extracted.confidence : {};
   const source = input.text || getMemoryMessageText(input);
+  const normalizedSize = normalizeExtractedShoeSize(order.size || customer.shoeSize || '', source);
+  const explicitProduct = extractLastProduct(source);
+  const normalizedProduct = explicitProduct || String(order.product || intent.interest || '').trim();
 
   [
     ['fullName', customer.fullName],
     ['phone', customer.phone],
     ['city', customer.city],
     ['deliveryAddress', customer.deliveryAddress],
-    ['shoeSize', customer.shoeSize],
-    ['interest', intent.interest],
-    ['lastProduct', order.product || intent.interest],
+    ['shoeSize', normalizedSize],
+    ['interest', normalizedProduct || intent.interest],
+    ['lastProduct', normalizedProduct],
   ].forEach(([key, value]) => {
     if (!value) return;
     upsertMemoryFact(chatId, key, value, source);
@@ -1466,8 +1546,8 @@ function applyExtractedCustomerData(input, extracted) {
 
   if (order.product || order.size || order.status || customer.phone || customer.deliveryAddress || customer.fullName) {
     safeCustomerStoreCall('customer.order.ai_extractor', (store) => store.upsertOrder(chatId, {
-      product: order.product || intent.interest || '',
-      size: order.size || customer.shoeSize || '',
+      product: normalizedProduct || intent.interest || '',
+      size: normalizedSize || '',
       price: order.price || '',
       fullName: customer.fullName || '',
       phone: customer.phone || '',
