@@ -547,7 +547,7 @@ const runtimeConfig = {
   prompt_payment_text: process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT,
   prompt_delivery_enabled: process.env.PROMPT_DELIVERY_ENABLED !== 'false',
   prompt_delivery_text: process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT,
-  prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED !== 'false',
+  prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED === 'true',
   prompt_stage_checkout_text: process.env.PROMPT_STAGE_CHECKOUT_TEXT || DEFAULT_STAGE_CHECKOUT_PROMPT,
   prompt_stage_payment_text: process.env.PROMPT_STAGE_PAYMENT_TEXT || DEFAULT_STAGE_PAYMENT_PROMPT,
   prompt_stage_paid_text: process.env.PROMPT_STAGE_PAID_TEXT || DEFAULT_STAGE_PAID_PROMPT,
@@ -1055,7 +1055,7 @@ function inferConversationStage(input) {
   if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат)/i.test(text)) return 'waiting_payment';
   if (/(беру|оформляем|оформить|куда платить|реквизит|оплатить|заказываю)/i.test(text)) return 'ready_to_buy';
   if (/(фио|адрес|телефон|\+?\d[\s().-]*\d[\s().-]*\d[\s().-]*\d[\s().-]*\d)/i.test(text)) return 'collecting_order_info';
-  if (/(размер|сколько стоит|цена|налич|есть\s+\d{2}|какие есть|доставка)/i.test(text)) return 'choosing';
+  if (/(размер|сколько стоит|цена|налич|есть\s+\d{2}|какие есть)/i.test(text)) return 'choosing';
   if (input.hasMedia || input.hasLinkInput || ['photo', 'document', 'video', 'video_note'].includes(input.messageType)) return 'interested';
   return '';
 }
@@ -1924,7 +1924,7 @@ function getRuntimeSnapshot() {
     prompt_payment_text: runtimeConfig.prompt_payment_text,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text,
-    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
+    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, false),
     prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text,
     prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text,
     prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text,
@@ -2004,7 +2004,7 @@ function loadPersistedConfig() {
       ['prompt_retail_enabled', false],
       ['prompt_layout_enabled', false],
       ['prompt_memory_enabled', false],
-      ['prompt_stage_enabled', true],
+      ['prompt_stage_enabled', false],
     ].forEach(([key, nextValue]) => {
       if (runtimeConfig[key] !== nextValue) {
         runtimeConfig[key] = nextValue;
@@ -3037,7 +3037,7 @@ function getDeliveryGuidance(config) {
 }
 
 function getStageGuidance(config, memoryContext = null) {
-  if (!parseConfigBoolean(config.prompt_stage_enabled, true)) return '';
+  if (!parseConfigBoolean(config.prompt_stage_enabled, false)) return '';
 
   const stage = String(memoryContext?.state?.stage || '').trim().toLowerCase();
   const orderStatus = String(memoryContext?.lastOrder?.status || '').trim().toLowerCase();
@@ -3081,7 +3081,7 @@ function getPromptLayerState(config, memoryContext = null) {
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
-    stage: !!getStageGuidance(config, memoryContext),
+    stage: false,
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -3154,9 +3154,6 @@ function buildSystemPrompt(config, memoryContext = null) {
   if (paymentGuidance) parts.push(paymentGuidance);
   const deliveryGuidance = getDeliveryGuidance(config);
   if (deliveryGuidance) parts.push(deliveryGuidance);
-  const stageGuidance = getStageGuidance(config, memoryContext);
-  if (stageGuidance) parts.push(stageGuidance);
-
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
@@ -4009,7 +4006,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
   runtimeConfig.prompt_delivery_enabled = true;
   runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
-  runtimeConfig.prompt_stage_enabled = true;
+  runtimeConfig.prompt_stage_enabled = false;
   runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
   runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
   runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
@@ -4064,7 +4061,7 @@ app.delete('/config', (req, res) => {
   process.env.PROMPT_PAYMENT_TEXT = DEFAULT_PAYMENT_PROMPT;
   process.env.PROMPT_DELIVERY_ENABLED = 'true';
   process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
-  process.env.PROMPT_STAGE_ENABLED = 'true';
+  process.env.PROMPT_STAGE_ENABLED = 'false';
   process.env.PROMPT_STAGE_CHECKOUT_TEXT = DEFAULT_STAGE_CHECKOUT_PROMPT;
   process.env.PROMPT_STAGE_PAYMENT_TEXT = DEFAULT_STAGE_PAYMENT_PROMPT;
   process.env.PROMPT_STAGE_PAID_TEXT = DEFAULT_STAGE_PAID_PROMPT;
