@@ -26,6 +26,7 @@ const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
+const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
 const READ_DELAY_MAX_MS = 3500;
@@ -43,7 +44,9 @@ const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
 const BATCH_MAX_WINDOW_MS = 6500;
 const ORDER_PAYLOAD_BATCH_DEBOUNCE_MS = 5500;
+const SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS = 4500;
 const SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS = 900;
+const ORDER_CONTEXT_BATCH_MAX_WINDOW_MS = 9000;
 const MIN_MEMORY_RECENT_LIMIT = 3;
 const MAX_MEMORY_RECENT_LIMIT = 20;
 const MIN_BATCH_DEBOUNCE_MS = 0;
@@ -536,7 +539,7 @@ const runtimeConfig = {
   payment_bank: process.env.PAYMENT_BANK || '',
   payment_comment: process.env.PAYMENT_COMMENT || '',
   prompt_behavior_enabled: process.env.PROMPT_BEHAVIOR_ENABLED !== 'false',
-  prompt_behavior_text: process.env.PROMPT_BEHAVIOR_TEXT || DEFAULT_BEHAVIOR_PROMPT,
+  prompt_behavior_text: normalizeBehaviorPromptConfigValue(process.env.PROMPT_BEHAVIOR_TEXT || DEFAULT_BEHAVIOR_PROMPT),
   prompt_retail_enabled: process.env.PROMPT_RETAIL_ENABLED !== 'false',
   prompt_retail_text: process.env.PROMPT_RETAIL_TEXT || DEFAULT_RETAIL_PROMPT,
   prompt_media_enabled: process.env.PROMPT_MEDIA_ENABLED !== 'false',
@@ -668,11 +671,29 @@ function hasLegacyPaymentPromptMarkers(value) {
   );
 }
 
+function hasLegacyBehaviorPromptMarkers(value) {
+  return (
+    hasLegacyCheckoutInstructionMarkers(value)
+    || hasLegacyDeliveryPromptMarkers(value)
+    || hasLegacyPaymentPromptMarkers(value)
+  );
+}
+
 function normalizeInstructionConfigValue(value) {
   const current = String(value || '').trim();
   if (!current) return DEFAULT_CORE_INSTRUCTION;
   if (isLegacyPromptValue(current, LEGACY_DEFAULT_INSTRUCTION)) return DEFAULT_CORE_INSTRUCTION;
   if (hasLegacyCheckoutInstructionMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
+  if (hasLegacyDeliveryPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
+  if (hasLegacyPaymentPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
+  return current;
+}
+
+function normalizeBehaviorPromptConfigValue(value) {
+  const current = String(value || '').trim();
+  if (!current) return DEFAULT_BEHAVIOR_PROMPT;
+  if (isLegacyPromptValue(current, LEGACY_DEFAULT_BEHAVIOR_PROMPT)) return DEFAULT_BEHAVIOR_PROMPT;
+  if (hasLegacyBehaviorPromptMarkers(current)) return DEFAULT_BEHAVIOR_PROMPT;
   return current;
 }
 
@@ -1365,7 +1386,17 @@ function buildMemoryContext(chatId, options = {}) {
 }
 
 function buildBatchText(inputs) {
-  const items = inputs
+  const orderedInputs = [...inputs].sort((left, right) => {
+    const leftStructured = looksLikeStructuredOrderPayload(left.text);
+    const rightStructured = looksLikeStructuredOrderPayload(right.text);
+    if (leftStructured !== rightStructured) return leftStructured ? -1 : 1;
+    const leftSizeOnly = isSizeOnlyFollowupMessage(left.text);
+    const rightSizeOnly = isSizeOnlyFollowupMessage(right.text);
+    if (leftSizeOnly !== rightSizeOnly) return leftSizeOnly ? 1 : -1;
+    return 0;
+  });
+
+  const items = orderedInputs
     .map((input) => getMemoryMessageText(input))
     .filter(Boolean);
 
@@ -1403,14 +1434,95 @@ function batchHasPendingStructuredOrder(inputs = []) {
   return inputs.some((input) => looksLikeStructuredOrderPayload(input.text) && !extractShoeSize(input.text));
 }
 
+function batchNeedsPendingPayloadContext(inputs = []) {
+  if (!inputs.length || batchHasPendingStructuredOrder(inputs)) return false;
+  if (!inputs.some((input) => isSizeOnlyFollowupMessage(input.text))) return false;
+  const lastInput = inputs[inputs.length - 1];
+  const profile = getCustomerProfileSnapshot(lastInput.chatId);
+  return !(
+    profile?.lastOrder?.product
+    || profile?.facts?.lastProduct?.value
+    || profile?.facts?.interest?.value
+  );
+}
+
 function getBatchDebounceDelayMs(batch, input) {
   const baseDelay = getConfigBatchDebounceMs(input.config);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
-  if (!batchHasPendingStructuredOrder(inputs)) return baseDelay;
-  if (isSizeOnlyFollowupMessage(input.text)) {
-    return Math.min(baseDelay, SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS);
+  if (batchHasPendingStructuredOrder(inputs)) {
+    if (isSizeOnlyFollowupMessage(input.text)) {
+      return Math.min(baseDelay, SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS);
+    }
+    return Math.max(baseDelay, ORDER_PAYLOAD_BATCH_DEBOUNCE_MS);
   }
-  return Math.max(baseDelay, ORDER_PAYLOAD_BATCH_DEBOUNCE_MS);
+  if (batchNeedsPendingPayloadContext(inputs)) {
+    return Math.max(baseDelay, SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS);
+  }
+  return baseDelay;
+}
+
+function getBatchMaxWindowMs(batch, input) {
+  const baseWindow = Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000);
+  const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
+  if (batchHasPendingStructuredOrder(inputs) || batchNeedsPendingPayloadContext(inputs)) {
+    return Math.max(baseWindow, ORDER_CONTEXT_BATCH_MAX_WINDOW_MS);
+  }
+  return baseWindow;
+}
+
+function scheduleBatchMaxTimer(key, batch, input) {
+  if (batch.maxTimer) clearTimeout(batch.maxTimer);
+  const maxWindowMs = getBatchMaxWindowMs(batch, input);
+  const remainingMs = Math.max(0, maxWindowMs - (Date.now() - batch.startedAt));
+  if (remainingMs === 0) {
+    setImmediate(() => flushChatBatch(key));
+    return;
+  }
+  batch.maxTimer = setTimeout(() => flushChatBatch(key), remainingMs);
+}
+
+function clientTextHasGreeting(text) {
+  return /(?:^|[\s,!.?:;"'«»()\-])(здравствуй(?:те)?|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет(?:ствую)?)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
+}
+
+function replyStartsWithGreeting(text) {
+  return /^\s*(здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
+}
+
+function stripLeadingGreeting(text) {
+  const next = String(text || '')
+    .replace(/^\s*(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\s*[!,.:\-]*/i, '')
+    .trim();
+  if (!next) return '';
+  return next.charAt(0).toUpperCase() + next.slice(1);
+}
+
+function hasRecentManagerOrAssistantReply(memoryContext = null) {
+  const history = Array.isArray(memoryContext?.history) ? memoryContext.history : [];
+  const latestTs = history
+    .filter((message) => message.role === 'assistant' || /^Manager:/i.test(String(message.content || '')))
+    .map((message) => Date.parse(message.createdAt || ''))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => right - left)[0];
+  return Number.isFinite(latestTs) && (Date.now() - latestTs) < GREETING_DIALOG_TIMEOUT_MS;
+}
+
+function finalizeAiReply(input, reply) {
+  let next = String(reply || '').trim();
+  if (!next) return '';
+
+  const shouldAvoidGreeting = hasRecentManagerOrAssistantReply(input.memoryContext);
+  if (shouldAvoidGreeting && replyStartsWithGreeting(next)) {
+    next = stripLeadingGreeting(next);
+  }
+
+  if (!next) return '';
+
+  if (!shouldAvoidGreeting && clientTextHasGreeting(input.text) && !replyStartsWithGreeting(next)) {
+    next = `Здравствуйте! ${next}`;
+  }
+
+  return next;
 }
 
 function pickReplyTargetMessageId(inputs, config = runtimeConfig) {
@@ -1697,6 +1809,8 @@ async function processInputBatch(inputs) {
     try {
       const reply = await requestAi(batchInput);
       if (typeof reply === 'string') {
+        const finalReply = finalizeAiReply(batchInput, reply);
+        if (!finalReply) return;
         const dialogState = getDialogState(batchInput.chatId);
         const managerLastMessageAt = dialogState?.managerLastMessageAt
           ? new Date(dialogState.managerLastMessageAt).getTime()
@@ -1720,9 +1834,9 @@ async function processInputBatch(inputs) {
           return;
         }
         if (parseConfigBoolean(batchInput.config.memory_enabled, true)) {
-          appendMemoryMessage(batchInput, 'assistant', reply);
+          appendMemoryMessage(batchInput, 'assistant', finalReply);
         }
-        await sendHumanizedTelegramReply(batchInput.config, batchInput, reply);
+        await sendHumanizedTelegramReply(batchInput.config, batchInput, finalReply);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {
@@ -1847,11 +1961,11 @@ function enqueueInputForBatch(input) {
       maxTimer: null,
       processing: false,
     };
-    batch.maxTimer = setTimeout(() => flushChatBatch(key), Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000));
     chatBatches.set(key, batch);
   }
 
   batch.inputs.push(input);
+  scheduleBatchMaxTimer(key, batch, input);
 
   if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
   batch.debounceTimer = setTimeout(() => flushChatBatch(key), getBatchDebounceDelayMs(batch, input));
@@ -2159,6 +2273,12 @@ function loadPersistedConfig() {
       shouldRewrite = true;
     }
 
+    const normalizedBehaviorPrompt = normalizeBehaviorPromptConfigValue(runtimeConfig.prompt_behavior_text);
+    if (normalizedBehaviorPrompt !== runtimeConfig.prompt_behavior_text) {
+      runtimeConfig.prompt_behavior_text = normalizedBehaviorPrompt;
+      shouldRewrite = true;
+    }
+
     const promptMigrations = [
       ['prompt_behavior_text', LEGACY_DEFAULT_BEHAVIOR_PROMPT, DEFAULT_BEHAVIOR_PROMPT],
       ['prompt_retail_text', LEGACY_DEFAULT_RETAIL_PROMPT, DEFAULT_RETAIL_PROMPT],
@@ -2417,7 +2537,9 @@ function applyConfigUpdate(body) {
   ].forEach(([key, envKey, defaultValue]) => {
     if (Object.prototype.hasOwnProperty.call(body, key)) {
       const rawValue = String(body[key] || defaultValue);
-      if (key === 'prompt_payment_text') {
+      if (key === 'prompt_behavior_text') {
+        runtimeConfig[key] = normalizeBehaviorPromptConfigValue(rawValue);
+      } else if (key === 'prompt_payment_text') {
         runtimeConfig[key] = normalizePaymentPromptConfigValue(rawValue);
       } else if (key === 'prompt_delivery_text') {
         runtimeConfig[key] = normalizeDeliveryPromptConfigValue(rawValue);
@@ -4158,15 +4280,21 @@ app.post('/config/test-ai', async (req, res) => {
     return;
   }
 
+  const finalReply = finalizeAiReply(input, reply);
+  if (!finalReply) {
+    res.json({ ok: false, reply: '', error: 'AI returned empty reply after normalization' });
+    return;
+  }
+
   if (parseConfigBoolean(config.memory_enabled, true)) {
     appendMemoryMessage({
       chatId,
       traceId,
-      text: reply,
-    }, 'assistant', reply);
+      text: finalReply,
+    }, 'assistant', finalReply);
   }
 
-  res.json({ ok: true, reply });
+  res.json({ ok: true, reply: finalReply });
 });
 
 app.delete('/config', (req, res) => {
