@@ -783,15 +783,6 @@ function extractOrderPrice(text) {
   return currency ? currency[1] : '';
 }
 
-function appendDetectedOrderPrice(text) {
-  const source = String(text || '').trim();
-  if (!source) return '';
-  const price = extractOrderPrice(source);
-  if (!price) return source;
-  if (/(?:цена|стоимость|итого)\s*[:\-]?\s*\d{3,6}/i.test(source)) return source;
-  return `${source}\nЦена: ${price}`;
-}
-
 function extractDeliveryService(text) {
   const source = String(text || '').toLowerCase();
   if (!source) return '';
@@ -1144,10 +1135,7 @@ function buildBatchText(inputs) {
   if (!items.length) return '';
   if (items.length === 1) return items[0];
 
-  return [
-    'Клиент отправил несколько сообщений подряд:',
-    ...items.map((text, index) => `${index + 1}. ${text}`),
-  ].join('\n');
+  return items.join('\n\n');
 }
 
 function looksLikeStructuredOrderPayload(text) {
@@ -1532,7 +1520,7 @@ function buildBatchInput(inputs) {
     batchHasSizeOnlyFollowup: hasSizeOnlyFollowup,
     pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
-    text: appendDetectedOrderPrice(buildBatchText(inputs)),
+    text: buildBatchText(inputs),
     images,
     hasMedia,
     hasLinkInput,
@@ -2904,11 +2892,6 @@ async function normalizeTelegramMessage(config, context, message) {
     } catch (e) {
       logEvent('ERROR', { scope: 'telegram.getFile', message: e.message, messageType });
     }
-    if (!text) {
-      text = config.conversation_mode === 'retail'
-        ? 'Пользователь прислал фото товара или похожего товара. Рассматривай это как вероятный интерес к товару и помоги с выбором или покупкой, если это уместно.'
-        : 'опиши изображение';
-    }
   }
 
   if (message.document) {
@@ -2925,11 +2908,6 @@ async function normalizeTelegramMessage(config, context, message) {
         logEvent('ERROR', { scope: 'telegram.getFile', message: e.message, messageType: 'document' });
       }
 
-      if (!text) {
-        text = config.conversation_mode === 'retail'
-          ? 'Пользователь прислал скрин или изображение товара. Рассматривай это как вероятный интерес к товару и помоги с выбором или покупкой, если это уместно.'
-          : 'пользователь прислал изображение или скрин';
-      }
     }
   }
 
@@ -2985,19 +2963,11 @@ async function normalizeTelegramMessage(config, context, message) {
     text = `пользователь отправил опрос ${message.poll.question || ''}`.trim();
   }
 
-  if (!text) {
+  if (!text && !images.length) {
     text = 'пользователь отправил сообщение без текста';
   }
 
   hasLinkInput = hasLinkInput || containsLink(text);
-
-  if (config.conversation_mode === 'retail') {
-    if (images.length > 0) {
-      text = `Клиент прислал товарный визуал. Это горячий вход к заказу.\n\nВход пользователя:\n${text}`;
-    } else if (hasLinkInput) {
-      text = `Клиент прислал ссылку на товар из вашего контента. Это горячий вход к заказу.\n\nВход пользователя:\n${text}`;
-    }
-  }
 
   return {
     text: truncateText(text),
