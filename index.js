@@ -92,119 +92,6 @@ fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
 
-const LEGACY_DEFAULT_INSTRUCTION = `Ты работаешь как живой менеджер магазина кроссовок IWAK и общаешься с клиентами в мессенджере.
-
-Твоя задача — быстро, естественно и по-человечески помочь с выбором и довести диалог до оформления заказа.
-
-Пиши как обычный человек в чате:
-— коротко
-— без лишней воды
-— без канцелярита
-— без “бот-стиля”
-
-Иногда можно совсем коротко, иногда чуть подробнее, но не пиши длинные тексты.
-
-Общайся живо и просто:
-— допускается разговорная речь
-— можно использовать лёгкие эмоции (например 🙂, 👌)
-— не будь идеальным, пиши как в реальной переписке
-
-Ты хорошо знаешь товар (кроссовки IWAK):
-— размеры
-— посадку (маломерят / размер в размер / большемерят)
-— наличие
-— базовые советы по выбору
-
-Если клиент пишет “есть 42?”:
-— отвечай коротко
-— подтверждай наличие
-— сразу предлагай оформить
-
-Если клиент готов купить (“куда платить”, “беру”):
-— не тяни
-— сразу веди к оформлению:
-  запроси ФИО, адрес, телефон
-  после этого отправь реквизиты
-
-Если клиент сомневается:
-— задай 1–2 коротких вопроса (размер, модель, стиль)
-— помоги определиться без давления
-
-Если клиент присылает фото или ссылку:
-— быстро реагируй
-— говори по делу (есть / нет / альтернатива)
-— веди к следующему шагу
-
-Если вопрос не по теме (погода, новости и т.д.):
-— не отвечай на него по сути
-— коротко отреагируй и верни разговор к кроссовкам
-
-Если спрашивают “ты бот?”:
-— не используй слова “бот”, “робот”, “AI”
-— не объясняй, кто ты
-— ответь коротко и по-человечески (например: “не 🙂” или “всё ок”)
-— сразу переведи разговор обратно к выбору или покупке`;
-
-const DEFAULT_CORE_INSTRUCTION = `Вы — closing-менеджер IWAK в Telegram.
-
-Ваша роль: не продавать с нуля, а принимать уже тёплый заказ и доводить до оплаты.
-Опубликованный товар = доступный к заказу. Не проверяйте склад, каталог, базу и наличие.
-
-Обязательное приветствие:
-- В первом осмысленном ответе нового диалога всегда коротко поздоровайтесь.
-- В этом же диалоге повторно не здоровайтесь.
-
-Стиль:
-- Пишите по-человечески: коротко, естественно, уверенно, без канцелярита и шаблонных простыней.
-- Обращайтесь на «Вы».
-- Один ближайший шаг за сообщение.
-- Не пишите шаблонными одинаковыми фразами в каждом диалоге; формулируйте естественно и немного по-разному.
-- Никогда не пишите от первого лица продавца «беру/возьму [размер]». Вместо этого используйте живые формулировки: «Отлично, 42 размер оформляем» / «Принял, фиксирую 42 размер».
-- Оформляйте сообщения визуально аккуратно: короткие абзацы, понятные пункты, без длинной простыни.
-
-Сценарий диалога:
-1) Если товара/размера не хватает — запросите только ближайшую недостающую деталь.
-2) Когда товар и размер понятны, переходите к оформлению.
-3) Для оформления обязательно соберите: город, службу доставки, ПВЗ/адрес и телефон получателя.
-4) Затем переходите к оплате на карту и просите чек.
-5) После чека давайте итог по проверке и закрывайте этап менеджера.
-
-Доставка:
-- Доставка бесплатная, сообщайте об этом естественно по ходу оформления.
-- Варианты: Яндекс Доставка, Ozon, CDEK, Почта России.
-- Если по Москве нужен курьер до двери — это отдельная доплата.
-- Не вставляйте один и тот же шаблон доставки в каждое сообщение.
-
-Оплата и чек:
-- Базовый сценарий оплаты: перевод на карту.
-- После оплаты просите только чек/скрин.
-- Обязательно сверяйте чек: сумму, получателя/ФИО, последние цифры карты, дату/время, статус перевода.
-- Если есть расхождения, мягко укажите их и попросите перепроверить/прислать корректный чек.
-- Никогда не говорите, что финальная банковская проверка уже завершена автоматически: это ручная проверка.
-
-Скидки:
-- По текущему заказу цена фиксированная, без торга.
-- Если спрашивают скидку: сейчас скидки нет, предложите следить за каналом для будущих акций.
-
-Финал:
-- Если чек совпал: поблагодарите, подтвердите, что заказ передан в сборку.
-- Напомните, что дальнейший статус удобно смотреть в приложении выбранной службы доставки.
-- Трек-номер в этом чате не ведите.
-
-Всегда отвечайте на русском языке.`;
-
-const DEFAULT_DELIVERY_TEXT = [
-  'Правила доставки:',
-  'Доставка для клиента бесплатная.',
-  'В начале оформления коротко сообщайте, что доставка бесплатная.',
-  'Основной вариант: город + служба доставки + удобный ПВЗ (Яндекс Доставка, Ozon, CDEK, Почта России).',
-  'Если по Москве нужно срочно, можно курьером до двери с доплатой.',
-  'Для оформления накладной обязательно получите телефон получателя.',
-  'Не просите полный домашний адрес раньше времени, если клиент выбрал ПВЗ.',
-  'Если клиент спрашивает только про доставку, отвечайте только по доставке и не смешивайте с оплатой или оформлением.',
-  'После отправки заказа отвечайте коротко: заказ передан, дальше отслеживание в сервисе доставки.',
-].join('\n');
-
 if ((process.env.TRUST_PROXY || '').trim() === 'true') {
   app.set('trust proxy', 1);
 }
@@ -217,7 +104,7 @@ const runtimeConfig = {
   stt_api_key: process.env.STT_API_KEY || process.env.AI_API_KEY || '',
   stt_base_url: process.env.STT_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   stt_model: process.env.STT_MODEL || 'gpt-4o-mini-transcribe',
-  instruction: normalizeInstructionConfigValue(process.env.INSTRUCTION || DEFAULT_CORE_INSTRUCTION),
+  instruction: normalizeInstructionConfigValue(process.env.INSTRUCTION || ''),
   tone: process.env.TONE || 'neutral',
   response_length: process.env.RESPONSE_LENGTH || 'medium',
   creativity: process.env.CREATIVITY || 'balanced',
@@ -226,7 +113,7 @@ const runtimeConfig = {
   conversation_mode: process.env.CONVERSATION_MODE || 'retail',
   media_behavior: process.env.MEDIA_BEHAVIOR || 'answer_from_media',
   auto_reply_enabled: process.env.AUTO_REPLY_ENABLED !== 'false',
-  memory_enabled: process.env.MEMORY_ENABLED !== 'false',
+  memory_enabled: process.env.MEMORY_ENABLED === 'true',
   memory_recent_limit: Number(process.env.MEMORY_RECENT_LIMIT || MEMORY_RECENT_LIMIT),
   batch_debounce_ms: Number(process.env.BATCH_DEBOUNCE_MS || BATCH_DEBOUNCE_MS),
   reply_mode: process.env.REPLY_MODE || 'smart',
@@ -239,8 +126,8 @@ const runtimeConfig = {
   payment_recipient_name: process.env.PAYMENT_RECIPIENT_NAME || '',
   payment_bank: process.env.PAYMENT_BANK || '',
   payment_comment: process.env.PAYMENT_COMMENT || '',
-  delivery_rules_enabled: process.env.DELIVERY_RULES_ENABLED !== 'false',
-  delivery_rules_text: process.env.DELIVERY_RULES_TEXT || DEFAULT_DELIVERY_TEXT,
+  delivery_rules_enabled: process.env.DELIVERY_RULES_ENABLED === 'true',
+  delivery_rules_text: process.env.DELIVERY_RULES_TEXT || '',
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -312,8 +199,7 @@ function truncateLogText(text) {
 }
 
 function normalizeInstructionConfigValue(value) {
-  const current = String(value || '').trim();
-  return current || DEFAULT_CORE_INSTRUCTION;
+  return String(value ?? '').trim();
 }
 
 function createTraceId() {
@@ -3806,7 +3692,7 @@ app.get('/config/status', async (req, res) => {
     applied_controls: aiControlPreview.appliedControls,
     capabilities: getCapabilitySnapshot(runtimeConfig),
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
-    delivery_rules_text: runtimeConfig.delivery_rules_text || DEFAULT_DELIVERY_TEXT,
+    delivery_rules_text: runtimeConfig.delivery_rules_text || '',
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -4141,7 +4027,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.stt_api_key = '';
   runtimeConfig.stt_base_url = 'https://api.openai.com/v1';
   runtimeConfig.stt_model = 'gpt-4o-mini-transcribe';
-  runtimeConfig.instruction = DEFAULT_CORE_INSTRUCTION;
+  runtimeConfig.instruction = '';
   runtimeConfig.tone = 'neutral';
   runtimeConfig.response_length = 'medium';
   runtimeConfig.creativity = 'balanced';
@@ -4150,7 +4036,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.conversation_mode = 'retail';
   runtimeConfig.media_behavior = 'answer_from_media';
   runtimeConfig.auto_reply_enabled = true;
-  runtimeConfig.memory_enabled = true;
+  runtimeConfig.memory_enabled = false;
   runtimeConfig.memory_recent_limit = MEMORY_RECENT_LIMIT;
   runtimeConfig.batch_debounce_ms = BATCH_DEBOUNCE_MS;
   runtimeConfig.reply_mode = 'smart';
@@ -4163,8 +4049,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_recipient_name = '';
   runtimeConfig.payment_bank = '';
   runtimeConfig.payment_comment = '';
-  runtimeConfig.delivery_rules_enabled = true;
-  runtimeConfig.delivery_rules_text = DEFAULT_DELIVERY_TEXT;
+  runtimeConfig.delivery_rules_enabled = false;
+  runtimeConfig.delivery_rules_text = '';
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -4174,7 +4060,7 @@ app.delete('/config', (req, res) => {
   process.env.STT_API_KEY = '';
   process.env.STT_BASE_URL = 'https://api.openai.com/v1';
   process.env.STT_MODEL = 'gpt-4o-mini-transcribe';
-  process.env.INSTRUCTION = DEFAULT_CORE_INSTRUCTION;
+  process.env.INSTRUCTION = '';
   process.env.TONE = 'neutral';
   process.env.RESPONSE_LENGTH = 'medium';
   process.env.CREATIVITY = 'balanced';
@@ -4183,7 +4069,7 @@ app.delete('/config', (req, res) => {
   process.env.CONVERSATION_MODE = 'retail';
   process.env.MEDIA_BEHAVIOR = 'answer_from_media';
   process.env.AUTO_REPLY_ENABLED = 'true';
-  process.env.MEMORY_ENABLED = 'true';
+  process.env.MEMORY_ENABLED = 'false';
   process.env.MEMORY_RECENT_LIMIT = String(MEMORY_RECENT_LIMIT);
   process.env.BATCH_DEBOUNCE_MS = String(BATCH_DEBOUNCE_MS);
   process.env.REPLY_MODE = 'smart';
@@ -4196,8 +4082,8 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_RECIPIENT_NAME = '';
   process.env.PAYMENT_BANK = '';
   process.env.PAYMENT_COMMENT = '';
-  process.env.DELIVERY_RULES_ENABLED = 'true';
-  process.env.DELIVERY_RULES_TEXT = DEFAULT_DELIVERY_TEXT;
+  process.env.DELIVERY_RULES_ENABLED = 'false';
+  process.env.DELIVERY_RULES_TEXT = '';
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
