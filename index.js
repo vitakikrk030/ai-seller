@@ -1038,6 +1038,32 @@ function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTra
     .slice(-limit);
 }
 
+function selectRecentDialogTurns(messages = [], limit = MEMORY_RECENT_LIMIT) {
+  const items = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  const maxTurns = getConfigMemoryLimit({ memory_recent_limit: limit });
+  let turns = 0;
+  let insideClientBlock = false;
+  let startIndex = 0;
+
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const role = items[index]?.role;
+    if (role === 'user') {
+      if (!insideClientBlock) {
+        turns += 1;
+        insideClientBlock = true;
+        if (turns > maxTurns) {
+          startIndex = index + 1;
+          break;
+        }
+      }
+    } else {
+      insideClientBlock = false;
+    }
+  }
+
+  return items.slice(startIndex);
+}
+
 function formatMemoryFacts(facts = {}) {
   const labels = {
     name: 'Name',
@@ -1090,7 +1116,16 @@ function buildMemoryContext(chatId, options = {}) {
 
   let usedChars = 0;
   const history = [];
-  getRecentMemoryMessages(cleanChatId, options.limit || MEMORY_RECENT_LIMIT, options.excludeTraceIds || []).reverse().forEach((message) => {
+  const dialogHistory = selectRecentDialogTurns(
+    getRecentMemoryMessages(
+      cleanChatId,
+      Math.min(100, (options.limit || MEMORY_RECENT_LIMIT) * 6),
+      options.excludeTraceIds || [],
+    ),
+    options.limit || MEMORY_RECENT_LIMIT,
+  );
+
+  dialogHistory.reverse().forEach((message) => {
     const text = normalizeMemoryText(message.text);
     if (!text || usedChars + text.length > MEMORY_HISTORY_CHAR_LIMIT) return;
     usedChars += text.length;

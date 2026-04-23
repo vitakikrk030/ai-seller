@@ -225,6 +225,32 @@ function createCustomerStore(options = {}) {
       .map(mapMessageRow);
   }
 
+  function selectRecentDialogTurns(messages = [], limit = 10) {
+    const items = Array.isArray(messages) ? messages.filter(Boolean) : [];
+    const maxTurns = Math.max(1, Math.min(20, Number(limit) || 10));
+    let turns = 0;
+    let insideClientBlock = false;
+    let startIndex = 0;
+
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const role = items[index]?.role;
+      if (role === 'user') {
+        if (!insideClientBlock) {
+          turns += 1;
+          insideClientBlock = true;
+          if (turns > maxTurns) {
+            startIndex = index + 1;
+            break;
+          }
+        }
+      } else {
+        insideClientBlock = false;
+      }
+    }
+
+    return items.slice(startIndex);
+  }
+
   function getCustomerContext(inputOrChatId, options = {}) {
     const customer = getOrCreateByTelegram(typeof inputOrChatId === 'object' ? inputOrChatId : { chatId: inputOrChatId });
     if (!customer) return { summary: '', history: [], facts: {}, state: null, customer: null, lastOrder: null };
@@ -232,7 +258,11 @@ function createCustomerStore(options = {}) {
     const facts = getFactMapByCustomerId(customer.id, statements);
     const state = getDialogState(customer.telegram_chat_id);
     const lastOrder = statements.getLastOrder.get(customer.id) || null;
-    const history = getRecentMessages(customer.telegram_chat_id, options.limit || 20, options.excludeTraceIds || []);
+    const dialogLimit = Math.max(1, Math.min(20, Number(options.limit) || 10));
+    const history = selectRecentDialogTurns(
+      getRecentMessages(customer.telegram_chat_id, Math.min(100, dialogLimit * 6), options.excludeTraceIds || []),
+      dialogLimit,
+    );
     const summary = buildProfileSummary(customer, facts, state, lastOrder, options);
 
     return {
