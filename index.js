@@ -1212,17 +1212,73 @@ function extractDeliveryAddress(text) {
 
 function extractLastProduct(text) {
   const source = String(text || '');
+  const cleanCandidate = (value) => {
+    let candidate = normalizeMemoryText(value)
+      .replace(/^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)[!,.:\-\s]*/i, '')
+      .replace(/^(?:хочу\s+заказать|оформить(?:\s+заказ)?|оформляем)\s*[:\-]?\s*/i, '')
+      .trim();
+    if (!candidate) return '';
+
+    [
+      /\s+(?:https?:\/\/|www\.)\S+.*$/i,
+      /\s+(?:источник|source|ссылка|линк|link|url|канал|пост|сайт)\s*[:\-]?\s*.+$/i,
+      /\s+(?:id|id\s+товара|товар\s+id|артикул|артикул\s+товара)\s*[:#-]?\s*\S.*$/i,
+      /\s+(?:цена|стоимость)\s*[:\-]?\s*\d{3,6}(?:\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?))?.*$/i,
+      /\s+\d{3,6}\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?).*$/i,
+    ].forEach((pattern) => {
+      candidate = candidate.replace(pattern, '').trim();
+    });
+
+    candidate = candidate
+      .replace(/\s+(?:(?:\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)\s*){2,}$/i, '')
+      .replace(/\s+\d{2}(?:[.,]5)?\s*(?:размер|р-р|size)\s*$/i, '')
+      .replace(/\s+(?:XXS|XS|S|M|L|XL|XXL|XXXL)\s*(?:размер|р-р|size)\s*$/i, '')
+      .replace(/[|,;:-]\s*$/g, '')
+      .trim();
+
+    if (!candidate) return '';
+    if (isSizeOnlyFollowupMessage(candidate)) return '';
+    if (/^(?:цена|стоимость|price)\b/i.test(candidate)) return '';
+    if (/^\d{3,6}(?:\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?))?$/i.test(candidate)) return '';
+    return candidate;
+  };
+
   const explicitLine = source.match(/(?:^|\n|\r)\s*(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*([^\n\r]{3,160})/i);
   if (explicitLine) {
-    const cleaned = explicitLine[1]
-      .split(/\s+(?:цена|стоимость|размер(?:ы)?|цвет|артикул|количество)\s*[:\-]/i)[0]
-      .trim();
+    const cleaned = cleanCandidate(
+      explicitLine[1].split(/\s+(?:цена|стоимость|размер(?:ы)?|цвет|артикул|количество)\s*[:\-]/i)[0],
+    );
     if (cleaned) return cleaned;
   }
   const normalized = normalizeMemoryText(source);
   const explicit = normalized.match(/(?:модель|товар|кроссовки|пара)\s*[:\-]?\s*(.{3,120}?)(?=\s+(?:цена|стоимость|размер(?:ы)?|цвет|артикул|количество)\s*[:\-]|$)/i);
-  if (explicit) return explicit[1].trim();
+  if (explicit) {
+    const cleaned = cleanCandidate(explicit[1]);
+    if (cleaned) return cleaned;
+  }
+  const orderIntent = normalized.match(/(?:хочу\s+заказать|оформить(?:\s+заказ)?|оформляем)\s*[:\-]?\s*(.{3,200})/i);
+  if (orderIntent) {
+    const cleaned = cleanCandidate(orderIntent[1]);
+    if (cleaned) return cleaned;
+  }
   return '';
+}
+
+function extractOrderPrice(text) {
+  const source = String(text || '');
+  const labeled = source.match(/(?:цена|стоимость|итого)\s*[:\-]?\s*(\d{3,6})(?:\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?))?/i);
+  if (labeled) return labeled[1];
+  const currency = source.match(/(?:^|[^\d])(\d{3,6})\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?)(?=$|[^0-9A-Za-zА-Яа-яЁё])/i);
+  return currency ? currency[1] : '';
+}
+
+function appendDetectedOrderPrice(text) {
+  const source = String(text || '').trim();
+  if (!source) return '';
+  const price = extractOrderPrice(source);
+  if (!price) return source;
+  if (/(?:цена|стоимость|итого)\s*[:\-]?\s*\d{3,6}/i.test(source)) return source;
+  return `${source}\nЦена: ${price}`;
 }
 
 function isPaymentIntentText(text) {
@@ -1879,7 +1935,7 @@ function buildBatchInput(inputs) {
     clientHadGreeting,
     pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
-    text: buildBatchText(inputs),
+    text: appendDetectedOrderPrice(buildBatchText(inputs)),
     images,
     hasMedia,
     hasLinkInput,
@@ -1957,7 +2013,9 @@ function applyExtractedCustomerData(input, extracted) {
   const source = input.text || getMemoryMessageText(input);
   const normalizedSize = normalizeExtractedShoeSize(order.size || customer.shoeSize || '', source);
   const explicitProduct = extractLastProduct(source);
+  const explicitPrice = extractOrderPrice(source);
   const normalizedProduct = explicitProduct || String(order.product || intent.interest || '').trim();
+  const normalizedPrice = explicitPrice || String(order.price || '').trim();
 
   [
     ['fullName', customer.fullName],
@@ -1976,11 +2034,11 @@ function applyExtractedCustomerData(input, extracted) {
   const stage = extracted.stage || intent.stage || order.status;
   if (stage) setConversationStage(chatId, stage, source);
 
-  if (order.product || order.size || order.status || customer.phone || customer.deliveryAddress || customer.fullName) {
+  if (order.product || order.size || normalizedPrice || order.status || customer.phone || customer.deliveryAddress || customer.fullName) {
     safeCustomerStoreCall('customer.order.ai_extractor', (store) => store.upsertOrder(chatId, {
       product: normalizedProduct || intent.interest || '',
       size: normalizedSize || '',
-      price: order.price || '',
+      price: normalizedPrice,
       fullName: customer.fullName || '',
       phone: customer.phone || '',
       deliveryAddress: customer.deliveryAddress || '',
@@ -3953,7 +4011,7 @@ async function requestAi(input) {
       text: input.text,
       instructionPreview: truncateLogText(input.config.instruction || ''),
       memoryHistory: input.memoryContext?.history?.length || 0,
-      memoryStage: input.memoryContext?.state?.stage || '',
+      memoryStage: input.memoryContext?.state?.stage ? 'set' : '',
       memoryFacts: Object.keys(input.memoryContext?.facts || {}),
       appliedPrompts: getPromptLayerState(input.config, input.memoryContext),
       promptWarnings: getPromptConflictWarnings(input.config),

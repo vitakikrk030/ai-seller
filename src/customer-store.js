@@ -645,14 +645,15 @@ function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
     if (value) lines.push(`- ${label}: ${value}`);
   });
 
-  if (lastOrder?.product || lastOrder?.status) {
-    lines.push(`- Last order: ${[lastOrder.product, lastOrder.size && `size ${lastOrder.size}`, lastOrder.status].filter(Boolean).join(', ')}`);
+  if (lastOrder?.product) {
+    lines.push(`- Last order: ${[
+      lastOrder.product,
+      lastOrder.size && `size ${lastOrder.size}`,
+      lastOrder.price && `price ${lastOrder.price}`,
+    ].filter(Boolean).join(', ')}`);
   }
 
-  if (lastOrder?.payment_status || lastOrder?.payment_check_status) {
-    lines.push(`- Payment: ${[lastOrder.payment_status, lastOrder.payment_check_status].filter(Boolean).join(', ')}`);
-    if (lastOrder.payment_check_summary) lines.push(`- Payment check note: ${lastOrder.payment_check_summary}`);
-  }
+  if (lastOrder?.payment_check_summary) lines.push(`- Payment check note: ${lastOrder.payment_check_summary}`);
 
   if (!lines.length) return '';
   const memoryGuidance = options.memoryPromptEnabled === false
