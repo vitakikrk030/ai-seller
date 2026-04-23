@@ -364,6 +364,8 @@ const DEFAULT_LAYOUT_PROMPT = [
   'Пишите как живой человек в Telegram, а не как оператор по шаблону.',
   'Обычно ответ — 1–3 короткие строки или 1–2 короткие фразы.',
   'Одна реплика — одна мысль. Один следующий вопрос максимум.',
+  'Если нужна структура, оформляйте короткими абзацами; можно использовать 2–4 коротких пункта без длинной простыни.',
+  'Когда подтверждаете заказ, цену выделяйте визуально (пример: **5490 ₽**).',
   'Не повторяйте слова клиента в начале ответа и не копируйте его формулировку.',
   'Не здоровайтесь заново в середине диалога.',
   'Не используйте списки, нумерацию, длинные инструкции и плотные абзацы, если клиент сам не попросил “по шагам” или “подробно”.',
@@ -477,6 +479,7 @@ const DEFAULT_STAGE_CHECKOUT_PROMPT = [
   'Отвечайте коротко и живо.',
   'Подтверждайте полученные данные одной фразой и сразу ведите к следующему шагу.',
   'Не делайте формальную сводку и не превращайте сообщение в шаблон оператора.',
+  'Не пересказывайте товар, цену, размер и доставку большим блоком без запроса клиента.',
   'Если данных не хватает, запросите только один ближайший недостающий пункт.',
   'Перед оплатой должны быть собраны: город, служба доставки, ПВЗ/адрес и телефон получателя.',
   'Избегайте повторяемых канцелярских конструкций; формулируйте как в обычной переписке.',
@@ -1189,11 +1192,24 @@ function getCustomerProfileSnapshot(chatId) {
 function extractPhone(text) {
   const source = String(text || '');
   const matches = source.match(/(?:\+?\d[\s().-]*){10,16}/g) || [];
+  const hasPhoneHint = /(тел(?:ефон)?|номер|контакт|phone|whatsapp|ватсап)/i.test(source);
   for (const match of matches) {
     const groups = match.match(/\d+/g) || [];
     if (!groups.length) continue;
-    if (groups.length >= 4 && groups.every((group) => group.length <= 2)) continue;
-    return match.replace(/[^\d+]/g, '');
+    const digits = match.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 11) continue;
+    if (!digits.startsWith('9') && !digits.startsWith('7') && !digits.startsWith('8')) continue;
+
+    if (!hasPhoneHint) {
+      const manyTinyGroups = groups.length >= 4 && groups.filter((group) => group.length <= 2).length >= 3;
+      const hasPriceLikeTail = groups.some((group) => group.length >= 4);
+      if (manyTinyGroups && hasPriceLikeTail) continue;
+    }
+
+    if (digits.length === 10) return `+7${digits}`;
+    if (digits.startsWith('8')) return `+7${digits.slice(1)}`;
+    if (digits.startsWith('7')) return `+${digits}`;
+    return `+7${digits.slice(-10)}`;
   }
   return '';
 }
@@ -1506,15 +1522,14 @@ function buildSlotSummary(snapshot) {
     payment_proof_received: 'Подтвердить получение чека',
   };
   const lines = [
-    snapshot.product && `- Product: ${snapshot.product}`,
-    snapshot.size && `- Size: ${snapshot.size}`,
-    snapshot.insoleCm && `- Insole cm: ${snapshot.insoleCm}`,
-    snapshot.fullName && `- Full name: ${snapshot.fullName}`,
-    snapshot.phone && `- Phone: ${snapshot.phone}`,
-    snapshot.city && `- City: ${snapshot.city}`,
-    snapshot.deliveryService && `- Delivery service: ${snapshot.deliveryService}`,
-    snapshot.pickupPoint && `- Pickup point: ${snapshot.pickupPoint}`,
-    `- Shoe context: ${snapshot.shoeContext ? 'yes' : 'no'}`,
+    `- Product slot: ${snapshot.product ? 'set' : 'missing'}`,
+    `- Size slot: ${snapshot.size ? 'set' : 'missing'}`,
+    `- Insole slot: ${snapshot.shoeContext ? (snapshot.insoleCm ? 'set' : 'missing') : 'not_required'}`,
+    `- Name slot: ${snapshot.fullName ? 'set' : 'missing'}`,
+    `- Phone slot: ${snapshot.phone ? 'set' : 'missing'}`,
+    `- City slot: ${snapshot.city ? 'set' : 'missing'}`,
+    `- Delivery service slot: ${snapshot.deliveryService ? 'set' : 'missing'}`,
+    `- Pickup/address slot: ${snapshot.pickupPoint ? 'set' : 'missing'}`,
     `- Payment requested: ${snapshot.paymentRequested ? 'yes' : 'no'}`,
     `- Payment proof received: ${snapshot.paymentProofReceived ? 'yes' : 'no'}`,
     snapshot.closedSlots?.length && `- Closed slots: ${snapshot.closedSlots.join(', ')}`,
@@ -1522,7 +1537,7 @@ function buildSlotSummary(snapshot) {
     snapshot.nextBlockingSlot && nextStepAction[snapshot.nextBlockingSlot] && `- Action now: ${nextStepAction[snapshot.nextBlockingSlot]}`,
   ].filter(Boolean);
   if (!lines.length) return '';
-  return ['Checkout context:', ...lines].join('\n');
+  return ['Internal checkout context (do not copy verbatim to client):', ...lines].join('\n');
 }
 
 function isPaymentIntentText(text) {
@@ -3587,6 +3602,26 @@ function splitReplyForTelegram(reply) {
   return parts.filter(Boolean);
 }
 
+function escapeTelegramHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function emphasizePriceInHtml(text) {
+  return String(text || '').replace(
+    /(\d{3,6})\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?)/gi,
+    '<b>$1 ₽</b>',
+  );
+}
+
+function formatTelegramOutgoingText(text) {
+  return String(text || '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function markTelegramBusinessMessageRead(config, context) {
   if (!config.telegram_token || !context.businessConnectionId || !context.messageId) {
     return false;
@@ -4485,6 +4520,8 @@ async function sendTelegramMessage(config, context, text) {
   const replyToMessageId = context.useReply && context.replyToMessageId
     ? context.replyToMessageId
     : '';
+  const outgoingText = formatTelegramOutgoingText(text);
+  const htmlText = emphasizePriceInHtml(escapeTelegramHtml(outgoingText));
 
   try {
     logEvent('TG_SEND', {
@@ -4495,12 +4532,14 @@ async function sendTelegramMessage(config, context, text) {
       businessConnectionId: context.businessConnectionId || '',
       messageType: context.messageType,
       replyToMessageId,
-      text,
+      text: outgoingText,
       status: 'process',
     });
     const payload = {
       chat_id: context.chatId,
-      text,
+      text: htmlText,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
     };
     if (context.businessConnectionId) {
       payload.business_connection_id = context.businessConnectionId;
