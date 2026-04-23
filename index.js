@@ -1666,14 +1666,18 @@ function finalizeAiReply(input, reply) {
   let next = String(reply || '').trim();
   if (!next) return '';
 
-  const shouldAvoidGreeting = hasRecentManagerOrAssistantReply(input.memoryContext);
+  const clientHadGreeting = !!input.clientHadGreeting || clientTextHasGreeting(input.text);
+  const keepOpeningGreeting = clientHadGreeting
+    && !!input.batchHasStructuredOrderPayload
+    && !!input.batchHasSizeOnlyFollowup;
+  const shouldAvoidGreeting = !keepOpeningGreeting && hasRecentManagerOrAssistantReply(input.memoryContext);
   if (shouldAvoidGreeting && replyStartsWithGreeting(next)) {
     next = stripLeadingGreeting(next);
   }
 
   if (!next) return '';
 
-  if (!shouldAvoidGreeting && clientTextHasGreeting(input.text) && !replyStartsWithGreeting(next)) {
+  if (!shouldAvoidGreeting && clientHadGreeting && !replyStartsWithGreeting(next)) {
     next = `Здравствуйте! ${next}`;
   }
 
@@ -1715,6 +1719,8 @@ function buildBatchInput(inputs) {
   const messageTypes = Array.from(new Set(inputs.map((input) => input.messageType).filter(Boolean)));
   const hasMedia = inputs.some((input) => input.hasMedia);
   const hasLinkInput = inputs.some((input) => input.hasLinkInput);
+  const hasStructuredOrderPayload = batchHasStructuredOrderPayload(inputs);
+  const hasSizeOnlyFollowup = batchHasSizeOnlyFollowup(inputs);
 
   return {
     ...lastInput,
@@ -1723,6 +1729,9 @@ function buildBatchInput(inputs) {
     batchSize: inputs.length,
     batchTraceIds: inputs.map((input) => input.traceId),
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
+    batchHasStructuredOrderPayload: hasStructuredOrderPayload,
+    batchHasSizeOnlyFollowup: hasSizeOnlyFollowup,
+    clientHadGreeting: inputs.some((input) => clientTextHasGreeting(input.text)),
     pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: buildBatchText(inputs),
