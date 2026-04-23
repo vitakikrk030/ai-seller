@@ -2998,31 +2998,84 @@ function getCreativityTemperature(creativity) {
   return map[creativity] ?? map.balanced;
 }
 
+function getToneGuidance(tone) {
+  const map = {
+    neutral: 'тон: нейтрально, ясно, без лишней эмоциональности',
+    friendly: 'тон: дружелюбно, тепло, по-человечески',
+    sales: 'тон: уверенно и закрывающе, но без давления',
+    concise: 'тон: очень коротко и прямо',
+  };
+  return map[tone] || map.neutral;
+}
+
+function getResponseLengthGuidance(responseLength) {
+  const map = {
+    short: 'длина ответа: коротко, без простыней',
+    medium: 'длина ответа: средне, только нужные детали',
+    long: 'длина ответа: можно подробнее, если клиенту реально нужно объяснение',
+  };
+  return map[responseLength] || map.medium;
+}
+
+function getPersonaGuidance(config) {
+  const styleMap = {
+    calm: 'манера: спокойная',
+    conversational: 'манера: разговорная',
+    reserved: 'манера: сдержанная',
+  };
+  const age = String(config.persona_age || '').trim();
+  return [styleMap[config.persona_style] || styleMap.calm, age && `возрастной ритм: примерно ${age}`]
+    .filter(Boolean)
+    .join(', ');
+}
+
+function getMediaBehaviorGuidance(mediaBehavior) {
+  const map = {
+    describe_media: 'медиа: если есть фото/скрин, сначала понять и описать, что на нём',
+    answer_from_media: 'медиа: если есть фото/скрин, использовать его как главный контекст ответа',
+    text_first: 'медиа: сначала опираться на текст клиента, фото/скрин использовать как дополнительный контекст',
+  };
+  return map[mediaBehavior] || map.answer_from_media;
+}
+
 function getVisiblePaymentGuidance(config) {
-  if (!parseConfigBoolean(config.payment_enabled, false)) return '';
+  if (!parseConfigBoolean(config.payment_enabled, false)) {
+    return 'Оплата в AI Control выключена: не отправляйте и не придумывайте реквизиты, номер карты/телефона, банк или получателя.';
+  }
 
   const details = [
-    String(config.payment_card_number || '').trim() && `Карта / реквизиты: ${String(config.payment_card_number).trim()}`,
+    `Способ оплаты: ${String(config.payment_method || 'card').trim()}`,
+    String(config.payment_card_number || '').trim() && `Реквизиты: ${String(config.payment_card_number).trim()}`,
     String(config.payment_recipient_name || '').trim() && `Получатель: ${String(config.payment_recipient_name).trim()}`,
     String(config.payment_bank || '').trim() && `Банк: ${String(config.payment_bank).trim()}`,
     String(config.payment_comment || '').trim() && `Комментарий клиенту: ${String(config.payment_comment).trim()}`,
   ].filter(Boolean);
 
-  if (!details.length) return '';
-  return ['Оплата включена в AI Control.', ...details].join('\n');
+  if (details.length <= 1) {
+    return 'Оплата в AI Control включена, но реквизиты не заполнены: не придумывайте реквизиты, попросите клиента подождать или уточнить их у менеджера.';
+  }
+  return [
+    'Оплата в AI Control включена.',
+    'Используйте только эти реквизиты. Не изменяйте и не придумывайте номер, банк или получателя.',
+    ...details,
+  ].join('\n');
 }
 
 function getVisibleDeliveryGuidance(config) {
-  if (!parseConfigBoolean(config.delivery_rules_enabled, true)) return '';
-  return String(config.delivery_rules_text || '').trim();
+  if (!parseConfigBoolean(config.delivery_rules_enabled, true)) {
+    return 'Доставка в AI Control выключена: не придумывайте условия, службы, сроки или стоимость доставки.';
+  }
+  const text = String(config.delivery_rules_text || '').trim();
+  if (!text) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
+  return ['Доставка из AI Control:', text].join('\n');
 }
 
 function getVisibleControlState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
-    behavior: false,
-    media: false,
-    persona: false,
+    behavior: true,
+    media: true,
+    persona: true,
     memory: parseConfigBoolean(config.memory_enabled, true) && !!memoryContext?.summary,
     payment: parseConfigBoolean(config.payment_enabled, false),
     delivery: parseConfigBoolean(config.delivery_rules_enabled, true)
@@ -3047,15 +3100,23 @@ function getCapabilitySnapshot(config) {
 
 function buildSystemPrompt(config, memoryContext = null) {
   const parts = [];
+  const control = [
+    'AI Control:',
+    getToneGuidance(config.tone),
+    getResponseLengthGuidance(config.response_length),
+    getPersonaGuidance(config),
+    getMediaBehaviorGuidance(config.media_behavior),
+  ].filter(Boolean);
 
   if (String(config.instruction || '').trim()) {
-    parts.push(String(config.instruction).trim());
+    control.push('Инструкция:', String(config.instruction).trim());
   }
 
   const paymentGuidance = getVisiblePaymentGuidance(config);
-  if (paymentGuidance) parts.push(paymentGuidance);
+  if (paymentGuidance) control.push(paymentGuidance);
   const deliveryGuidance = getVisibleDeliveryGuidance(config);
-  if (deliveryGuidance) parts.push(deliveryGuidance);
+  if (deliveryGuidance) control.push(deliveryGuidance);
+  parts.push(control.join('\n'));
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
