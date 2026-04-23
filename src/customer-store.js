@@ -269,7 +269,7 @@ function createCustomerStore(options = {}) {
       summary,
       history: history.map((message) => ({
         role: message.role === 'assistant' ? 'assistant' : 'user',
-        content: message.role === 'manager' ? `Manager: ${message.text}` : message.text,
+        content: message.role === 'manager' ? `Менеджер: ${message.text}` : message.text,
         createdAt: message.createdAt,
         type: message.type,
       })),
@@ -664,11 +664,11 @@ function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
   const lines = [];
   const name = facts.fullName?.value || [customer.first_name, customer.last_name].filter(Boolean).join(' ').trim();
   const pairs = [
-    ['Name', name],
-    ['City', facts.city?.value],
-    ['Shoe size', facts.shoeSize?.value],
-    ['Interest', facts.interest?.value],
-    ['Last product', facts.lastProduct?.value],
+    ['Имя', name],
+    ['Город', facts.city?.value],
+    ['Размер обуви', facts.shoeSize?.value],
+    ['Интерес клиента', facts.interest?.value],
+    ['Последний товар', facts.lastProduct?.value],
   ];
 
   pairs.forEach(([label, value]) => {
@@ -676,18 +676,18 @@ function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
   });
 
   if (lastOrder?.product) {
-    lines.push(`- Last order: ${[
+    lines.push(`- Последний заказ: ${[
       lastOrder.product,
-      lastOrder.size && `size ${lastOrder.size}`,
-      lastOrder.price && `price ${lastOrder.price}`,
+      lastOrder.size && `размер ${lastOrder.size}`,
+      lastOrder.price && `цена ${lastOrder.price}`,
     ].filter(Boolean).join(', ')}`);
   }
 
-  if (lastOrder?.payment_check_summary) lines.push(`- Payment check note: ${lastOrder.payment_check_summary}`);
+  if (lastOrder?.payment_check_summary) lines.push(`- Заметка по чеку: ${lastOrder.payment_check_summary}`);
 
   if (!lines.length) return '';
   return [
-    'Customer profile:',
+    'Память клиента:',
     ...lines,
   ].filter(Boolean).join('\n');
 }

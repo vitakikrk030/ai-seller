@@ -894,22 +894,21 @@ function buildSlotSummary(snapshot) {
     payment_proof_received: 'Подтвердить получение чека',
   };
   const lines = [
-    `- Product slot: ${snapshot.product ? 'set' : 'missing'}`,
-    `- Size slot: ${snapshot.size ? 'set' : 'missing'}`,
-    `- Insole slot: ${snapshot.shoeContext ? (snapshot.insoleCm ? 'set' : 'missing') : 'not_required'}`,
-    `- Name slot: ${snapshot.fullName ? 'set' : 'missing'}`,
-    `- Phone slot: ${snapshot.phone ? 'set' : 'missing'}`,
-    `- City slot: ${snapshot.city ? 'set' : 'missing'}`,
-    `- Delivery service slot: ${snapshot.deliveryService ? 'set' : 'missing'}`,
-    `- Pickup/address slot: ${snapshot.pickupPoint ? 'set' : 'missing'}`,
-    `- Payment requested: ${snapshot.paymentRequested ? 'yes' : 'no'}`,
-    `- Payment proof received: ${snapshot.paymentProofReceived ? 'yes' : 'no'}`,
-    snapshot.closedSlots?.length && `- Closed slots: ${snapshot.closedSlots.join(', ')}`,
-    snapshot.nextBlockingSlot && `- Next blocking step: ${snapshot.nextBlockingSlot}`,
-    snapshot.nextBlockingSlot && nextStepAction[snapshot.nextBlockingSlot] && `- Action now: ${nextStepAction[snapshot.nextBlockingSlot]}`,
+    `- Товар: ${snapshot.product ? 'есть' : 'нет'}`,
+    `- Размер: ${snapshot.size ? 'есть' : 'нет'}`,
+    `- Стелька: ${snapshot.shoeContext ? (snapshot.insoleCm ? 'есть' : 'нет') : 'не нужна'}`,
+    `- ФИО: ${snapshot.fullName ? 'есть' : 'нет'}`,
+    `- Телефон: ${snapshot.phone ? 'есть' : 'нет'}`,
+    `- Город: ${snapshot.city ? 'есть' : 'нет'}`,
+    `- Служба доставки: ${snapshot.deliveryService ? 'есть' : 'нет'}`,
+    `- ПВЗ/адрес: ${snapshot.pickupPoint ? 'есть' : 'нет'}`,
+    `- Реквизиты уже отправлены: ${snapshot.paymentRequested ? 'да' : 'нет'}`,
+    `- Чек получен: ${snapshot.paymentProofReceived ? 'да' : 'нет'}`,
+    snapshot.closedSlots?.length && `- Уже закрыто: ${snapshot.closedSlots.join(', ')}`,
+    snapshot.nextBlockingSlot && nextStepAction[snapshot.nextBlockingSlot] && `- Ближайший шаг: ${nextStepAction[snapshot.nextBlockingSlot]}`,
   ].filter(Boolean);
   if (!lines.length) return '';
-  return ['Internal checkout context (do not copy verbatim to client):', ...lines].join('\n');
+  return ['Контекст оформления для AI Control. Не копировать клиенту дословно:', ...lines].join('\n');
 }
 
 function isPaymentIntentText(text) {
@@ -1066,19 +1065,19 @@ function selectRecentDialogTurns(messages = [], limit = MEMORY_RECENT_LIMIT) {
 
 function formatMemoryFacts(facts = {}) {
   const labels = {
-    name: 'Name',
-    fullName: 'Full name',
-    phone: 'Phone',
-    city: 'City',
-    size: 'Size',
-    address: 'Delivery address',
-    deliveryAddress: 'Delivery address',
-    shoeSize: 'Shoe size',
-    insoleCm: 'Insole cm',
-    deliveryService: 'Delivery service',
-    pickupPoint: 'Pickup point',
-    interest: 'Interest',
-    lastProduct: 'Last product',
+    name: 'Имя',
+    fullName: 'ФИО',
+    phone: 'Телефон',
+    city: 'Город',
+    size: 'Размер',
+    address: 'Адрес доставки',
+    deliveryAddress: 'Адрес доставки',
+    shoeSize: 'Размер обуви',
+    insoleCm: 'Стелька, см',
+    deliveryService: 'Служба доставки',
+    pickupPoint: 'ПВЗ',
+    interest: 'Интерес клиента',
+    lastProduct: 'Последний товар',
   };
   return Object.entries(labels)
     .filter(([key]) => facts[key]?.value)
@@ -1109,7 +1108,7 @@ function buildMemoryContext(chatId, options = {}) {
 
   const baseSummary = factLines.length
     ? [
-      'Client memory:',
+      'Память клиента:',
       ...factLines.map((line) => `- ${line}`),
     ].filter(Boolean).join('\n')
     : '';
@@ -1130,7 +1129,7 @@ function buildMemoryContext(chatId, options = {}) {
     if (!text || usedChars + text.length > MEMORY_HISTORY_CHAR_LIMIT) return;
     usedChars += text.length;
     const content = message.role === 'manager'
-      ? `Manager: ${text}`
+      ? `Менеджер: ${text}`
       : text;
     history.push({
       role: message.role === 'assistant' ? 'assistant' : 'user',
