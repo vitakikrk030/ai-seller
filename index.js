@@ -173,6 +173,10 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — менеджер магазина IWA
 Если клиент спрашивает про оплату, кратко давайте реквизиты.
 Если клиент прислал чек или скрин оплаты, отвечайте, что чек получен и будет проверен вручную. Не говорите, что оплата финально подтверждена только по скрину.
 
+Цена для клиента фиксированная.
+Не предлагайте скидку, не обещайте скидку, не подтверждайте скидку, не торгуйтесь и не называйте новую сниженную цену.
+Если клиент просит скидку, дешевле, последнюю цену или уступить, спокойно отвечайте, что цена фиксированная и без торга, после чего мягко возвращайте разговор к оформлению.
+
 Если клиент пока просто уточняет, отвечайте по делу и помогайте без давления.
 Если клиент сомневается, дайте уверенность и задайте один простой вопрос.
 
@@ -270,6 +274,7 @@ const DEFAULT_BEHAVIOR_PROMPT = [
   '{persona_style_guidance}',
   '{persona_age_guidance}',
   'Если клиент спросил про конкретный размер, подтверждайте его и ведите к следующему шагу. Не задавайте повторно вопрос про размер.',
+  'Если клиент просит скидку или дешевле, отвечайте спокойно и коротко: цена фиксированная. Не обещайте скидку, не уступайте и не пишите новую цену.',
 ].join('\n');
 
 const STAGE_ONE_LEGACY_RETAIL_PROMPT = [
@@ -643,6 +648,28 @@ function normalizePromptCheckText(value) {
   return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function hasDiscountGuardMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return (
+    normalized.includes('цена фиксирован')
+    && normalized.includes('скид')
+    && (
+      normalized.includes('без торга')
+      || normalized.includes('не торгу')
+      || normalized.includes('не уступ')
+      || normalized.includes('не пишите новую цену')
+      || normalized.includes('не называйте новую сниженную цену')
+    )
+  );
+}
+
+function ensurePromptContainsRule(value, fallback, rule, markerCheck) {
+  const current = String(value || '').trim();
+  if (!current) return fallback;
+  if (markerCheck(current)) return current;
+  return `${current}\n\n${rule}`.trim();
+}
+
 function hasLegacyCheckoutInstructionMarkers(value) {
   const normalized = normalizePromptCheckText(value);
   return [
@@ -690,7 +717,16 @@ function normalizeInstructionConfigValue(value) {
   if (hasLegacyCheckoutInstructionMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
   if (hasLegacyDeliveryPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
   if (hasLegacyPaymentPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
-  return current;
+  return ensurePromptContainsRule(
+    current,
+    DEFAULT_CORE_INSTRUCTION,
+    [
+      'Цена для клиента фиксированная.',
+      'Не предлагайте скидку, не обещайте скидку, не подтверждайте скидку, не торгуйтесь и не называйте новую сниженную цену.',
+      'Если клиент просит скидку, дешевле, последнюю цену или уступить, спокойно отвечайте, что цена фиксированная и без торга, после чего мягко возвращайте разговор к оформлению.',
+    ].join('\n'),
+    hasDiscountGuardMarkers,
+  );
 }
 
 function normalizeBehaviorPromptConfigValue(value) {
@@ -698,7 +734,12 @@ function normalizeBehaviorPromptConfigValue(value) {
   if (!current) return DEFAULT_BEHAVIOR_PROMPT;
   if (isLegacyPromptValue(current, LEGACY_DEFAULT_BEHAVIOR_PROMPT)) return DEFAULT_BEHAVIOR_PROMPT;
   if (hasLegacyBehaviorPromptMarkers(current)) return DEFAULT_BEHAVIOR_PROMPT;
-  return current;
+  return ensurePromptContainsRule(
+    current,
+    DEFAULT_BEHAVIOR_PROMPT,
+    'Если клиент просит скидку или дешевле, отвечайте спокойно и коротко: цена фиксированная. Не обещайте скидку, не уступайте и не пишите новую цену.',
+    hasDiscountGuardMarkers,
+  );
 }
 
 function normalizeDeliveryPromptConfigValue(value) {
