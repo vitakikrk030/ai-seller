@@ -46,6 +46,8 @@ const BATCH_MAX_WINDOW_MS = 6500;
 const SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS = 900;
 const ORDER_CONTEXT_BATCH_MAX_WINDOW_MS = 9000;
 const ORDER_PENDING_REPLY_SETTLE_MS = 5000;
+const SEMANTIC_BATCH_DEBOUNCE_MS = 9000;
+const SEMANTIC_BATCH_MAX_WINDOW_MS = 15000;
 const ORDER_CONTEXT_MERGE_GRACE_MS = 3000;
 const ORDER_CONTEXT_MERGE_POLL_MS = 120;
 const MIN_MEMORY_RECENT_LIMIT = 3;
@@ -1438,6 +1440,90 @@ function looksLikeStructuredOrderPayload(text) {
   return score >= 3;
 }
 
+function isFullNameOnlyText(text) {
+  const source = String(text || '').trim();
+  if (!source || source.length > 90) return false;
+  if (/[?!:;@#/=]|\d/.test(source)) return false;
+  if (/(достав|оплат|чек|товар|модель|размер|пвз|курьер|cdek|сд[эе]к|ozon|wb|яндекс|почт)/i.test(source)) return false;
+  return /^[А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+(?:\s+[А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z-]+){1,2}$/.test(source);
+}
+
+function isCityOnlyText(text) {
+  const source = normalizeMemoryText(text);
+  if (!source || source.length > 60) return false;
+  if (/[?!:;@#/=]|\d/.test(source)) return false;
+  return /^(?:город\s+|г\.\s*|из\s+)?(?:москва|санкт[- ]петербург|спб|казань|сочи|краснодар|екатеринбург|новосибирск|ростов(?:-на-дону)?|самара|уфа|пермь|омск|челябинск|воронеж|нижний\s+новгород)$/i.test(source);
+}
+
+function isPickupPointText(text) {
+  return /(?:пвз|пункт(?:е|а)?\s+выдач|cdek|сд[эе]к|ozon|озон|wb|wildberries|вайлдберр|яндекс|почт[ауы]|рядом\s+с\s+домом)/i.test(String(text || ''));
+}
+
+function isDeliveryTopicText(text) {
+  return /(?:доставк|пвз|пункт(?:е|а)?\s+выдач|cdek|сд[эе]к|ozon|озон|wb|wildberries|вайлдберр|яндекс|почт[ауы]|курьер|по\s+москве|москва)/i.test(String(text || ''));
+}
+
+function isPaymentTopicText(text) {
+  return isPaymentIntentText(text)
+    || /(оплатил|оплатила|оплатили|перев[её]л|перевела|чек|квитанц|скрин.*оплат|receipt|payment)/i.test(String(text || ''));
+}
+
+function getSemanticMergeInfo(input = {}) {
+  const text = String(input.text || '');
+  const structuredOrder = looksLikeStructuredOrderPayload(text);
+  const sizeOnly = isSizeOnlyFollowupMessage(text);
+  const phone = !!extractPhone(text);
+  const fullName = !!extractFullName(text) || isFullNameOnlyText(text);
+  const city = !!extractCity(text) || isCityOnlyText(text);
+  const pickup = isPickupPointText(text);
+  const delivery = isDeliveryTopicText(text);
+  const payment = isPaymentTopicText(text) || isPaymentProofInput(input);
+  const returnTopic = /(возврат|вернуть|обмен|гарант)/i.test(text);
+  const product = structuredOrder || !!extractLastProduct(text) || input.hasMedia || input.hasLinkInput;
+  const contact = sizeOnly || phone || fullName || city || pickup;
+  return {
+    structuredOrder,
+    sizeOnly,
+    phone,
+    fullName,
+    city,
+    pickup,
+    delivery,
+    payment,
+    returnTopic,
+    product,
+    contact,
+    hasMedia: !!input.hasMedia,
+  };
+}
+
+function batchNeedsSemanticMerge(inputs = []) {
+  if (!inputs.length) return false;
+  const infos = inputs.map((input) => getSemanticMergeInfo(input));
+  if (infos.some((info) => info.returnTopic)) return false;
+
+  const checkoutPieces = infos.every((info) => (
+    info.structuredOrder
+    || info.sizeOnly
+    || info.phone
+    || info.fullName
+    || info.city
+    || info.pickup
+    || info.product
+  ));
+  const hasCheckoutAnchor = infos.some((info) => info.structuredOrder || info.product || info.sizeOnly);
+  const hasCheckoutDetail = infos.some((info) => info.phone || info.fullName || info.city || info.pickup || info.sizeOnly);
+  if (checkoutPieces && hasCheckoutAnchor && hasCheckoutDetail) return true;
+
+  const deliveryPieces = infos.every((info) => info.delivery || info.pickup || info.city);
+  if (deliveryPieces && infos.some((info) => info.delivery || info.pickup)) return true;
+
+  const paymentPieces = infos.every((info) => info.payment || info.hasMedia);
+  if (paymentPieces && infos.some((info) => info.payment)) return true;
+
+  return false;
+}
+
 function isSizeOnlyFollowupMessage(text) {
   const source = normalizeMemoryText(text);
   const size = extractShoeSize(source);
@@ -1475,7 +1561,8 @@ function batchNeedsPendingPayloadContext(inputs = []) {
 
 function batchNeedsOrderContextMerge(inputs = []) {
   return batchHasPendingStructuredOrder(inputs)
-    || (batchHasSizeOnlyFollowup(inputs) && !batchHasStructuredOrderPayload(inputs));
+    || (batchHasSizeOnlyFollowup(inputs) && !batchHasStructuredOrderPayload(inputs))
+    || batchNeedsSemanticMerge(inputs);
 }
 
 function getBatchDebounceDelayMs(batch, input) {
@@ -1490,14 +1577,23 @@ function getBatchDebounceDelayMs(batch, input) {
   if (batchNeedsPendingPayloadContext(inputs)) {
     return Math.max(baseDelay, ORDER_CONTEXT_BATCH_MAX_WINDOW_MS);
   }
+  if (batchNeedsSemanticMerge(inputs)) {
+    return Math.max(baseDelay, SEMANTIC_BATCH_DEBOUNCE_MS);
+  }
   return baseDelay;
 }
 
 function getBatchMaxWindowMs(batch, input) {
   const baseWindow = Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
+  if (inputs.length > 1 && batchNeedsSemanticMerge(inputs)) {
+    return Math.max(baseWindow, SEMANTIC_BATCH_MAX_WINDOW_MS);
+  }
   if (batchHasPendingStructuredOrder(inputs) || batchNeedsPendingPayloadContext(inputs)) {
     return Math.max(baseWindow, ORDER_CONTEXT_BATCH_MAX_WINDOW_MS);
+  }
+  if (batchNeedsSemanticMerge(inputs)) {
+    return Math.max(baseWindow, SEMANTIC_BATCH_MAX_WINDOW_MS);
   }
   return baseWindow;
 }
@@ -1558,7 +1654,18 @@ function shouldMergePendingOrderInputs(currentInputs = [], pendingInputs = []) {
   if (batchHasPendingStructuredOrder(currentInputs)) return pendingHasStructured || pendingHasSizeOnly;
   if (batchHasSizeOnlyFollowup(currentInputs) && !batchHasStructuredOrderPayload(currentInputs)) return pendingHasStructured;
   if (batchNeedsPendingPayloadContext(currentInputs)) return pendingHasStructured || pendingHasSizeOnly;
+  if (batchNeedsSemanticMerge(mergeBatchInputs(currentInputs, pendingInputs))) return true;
   return false;
+}
+
+function shouldSplitSemanticBatchForInput(batch, input) {
+  const existingInputs = Array.isArray(batch?.inputs) ? batch.inputs : [];
+  if (!existingInputs.length) return false;
+  if (!batchNeedsSemanticMerge(existingInputs)) return false;
+  const baseDelay = getConfigBatchDebounceMs(input.config);
+  const elapsedSinceLastInput = Date.now() - Number(batch.lastInputAt || batch.startedAt || Date.now());
+  if (elapsedSinceLastInput <= baseDelay) return false;
+  return !batchNeedsSemanticMerge(mergeBatchInputs(existingInputs, [input]));
 }
 
 function buildRecentStructuredOrderContextInput(inputs = []) {
@@ -1639,6 +1746,40 @@ function clientTextHasGreeting(text) {
   return /(?:^|[\s,!.?:;"'«»()\-])(здравствуй(?:те)?|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет(?:ствую)?)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
 }
 
+function isOrderLikeClientText(text) {
+  const source = String(text || '');
+  if (!source.trim()) return false;
+  return looksLikeStructuredOrderPayload(source)
+    || /(хочу\s+заказать|оформить\s+заказ|заказ)/i.test(source)
+    || (extractShoeSize(source) && /(размер|беру|возьму|хочу|можно|оформ)/i.test(source))
+    || !!extractLastProduct(source);
+}
+
+function batchHasOrderLikeContext(inputs = []) {
+  return batchHasStructuredOrderPayload(inputs)
+    || batchHasSizeOnlyFollowup(inputs)
+    || batchNeedsSemanticMerge(inputs)
+    || inputs.some((input) => isOrderLikeClientText(input.text));
+}
+
+function recentOrderContextHadGreeting(inputs = []) {
+  if (!batchHasOrderLikeContext(inputs)) return false;
+  const lastInput = inputs[inputs.length - 1];
+  const recentMessages = getRecentMemoryMessages(lastInput?.chatId, 12, inputs.map((input) => input.traceId));
+  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+    const message = recentMessages[index];
+    if (!message) continue;
+    if (message.role === 'manager' || message.role === 'assistant') break;
+    if (message.role === 'user' && clientTextHasGreeting(message.text) && isOrderLikeClientText(message.text)) return true;
+  }
+  return false;
+}
+
+function batchClientHadGreeting(inputs = []) {
+  return inputs.some((input) => clientTextHasGreeting(input.text))
+    || recentOrderContextHadGreeting(inputs);
+}
+
 function replyStartsWithGreeting(text) {
   return /^\s*(здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
 }
@@ -1668,8 +1809,10 @@ function finalizeAiReply(input, reply) {
 
   const clientHadGreeting = !!input.clientHadGreeting || clientTextHasGreeting(input.text);
   const keepOpeningGreeting = clientHadGreeting
-    && !!input.batchHasStructuredOrderPayload
-    && !!input.batchHasSizeOnlyFollowup;
+    && (!!input.batchHasOpeningOrderContext || (
+      !!input.batchHasStructuredOrderPayload
+      && !!input.batchHasSizeOnlyFollowup
+    ));
   const shouldAvoidGreeting = !keepOpeningGreeting && hasRecentManagerOrAssistantReply(input.memoryContext);
   if (shouldAvoidGreeting && replyStartsWithGreeting(next)) {
     next = stripLeadingGreeting(next);
@@ -1721,6 +1864,7 @@ function buildBatchInput(inputs) {
   const hasLinkInput = inputs.some((input) => input.hasLinkInput);
   const hasStructuredOrderPayload = batchHasStructuredOrderPayload(inputs);
   const hasSizeOnlyFollowup = batchHasSizeOnlyFollowup(inputs);
+  const clientHadGreeting = batchClientHadGreeting(inputs);
 
   return {
     ...lastInput,
@@ -1731,7 +1875,8 @@ function buildBatchInput(inputs) {
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
     batchHasStructuredOrderPayload: hasStructuredOrderPayload,
     batchHasSizeOnlyFollowup: hasSizeOnlyFollowup,
-    clientHadGreeting: inputs.some((input) => clientTextHasGreeting(input.text)),
+    batchHasOpeningOrderContext: clientHadGreeting && batchHasOrderLikeContext(inputs),
+    clientHadGreeting,
     pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: buildBatchText(inputs),
@@ -2144,10 +2289,15 @@ function enqueueInputForBatch(input) {
   }
 
   let batch = chatBatches.get(key);
+  if (batch && shouldSplitSemanticBatchForInput(batch, input)) {
+    flushChatBatch(key);
+    batch = null;
+  }
   if (!batch) {
     batch = {
       inputs: [],
       startedAt: Date.now(),
+      lastInputAt: 0,
       debounceTimer: null,
       maxTimer: null,
       processing: false,
@@ -2156,6 +2306,7 @@ function enqueueInputForBatch(input) {
   }
 
   batch.inputs.push(input);
+  batch.lastInputAt = Date.now();
   scheduleBatchMaxTimer(key, batch, input);
 
   if (batch.debounceTimer) clearTimeout(batch.debounceTimer);
