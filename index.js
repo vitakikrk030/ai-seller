@@ -158,6 +158,8 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — closing-менеджер IWAK в Tele
 - Пишите по-человечески: коротко, естественно, уверенно, без канцелярита и шаблонных простыней.
 - Обращайтесь на «Вы».
 - Один ближайший шаг за сообщение.
+- Не пишите шаблонными одинаковыми фразами в каждом диалоге; формулируйте естественно и немного по-разному.
+- Никогда не пишите от первого лица продавца «беру/возьму [размер]». Вместо этого используйте живые формулировки: «Отлично, 42 размер оформляем» / «Принял, фиксирую 42 размер».
 
 Сценарий диалога:
 1) Если товара/размера не хватает — запросите только ближайшую недостающую деталь.
@@ -170,6 +172,7 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — closing-менеджер IWAK в Tele
 - Всегда сразу сообщайте: доставка бесплатная.
 - Варианты: Яндекс Доставка, Ozon, CDEK, Почта России.
 - Если по Москве нужен курьер до двери — это отдельная доплата.
+- Когда клиент пишет «можно заказать [размер]», в этом же первом ответе после приветствия сразу дайте короткий блок про бесплатную доставку и варианты служб, затем задайте только один следующий вопрос по оформлению.
 
 Оплата и чек:
 - Базовый сценарий оплаты: перевод на карту.
@@ -328,6 +331,8 @@ const DEFAULT_RETAIL_PROMPT = [
   'Если клиент прислал товар/ссылку/пост/фото, считайте это горячим входом к заказу.',
   'Не уводите клиента в каталог и не спрашивайте наличие.',
   'Держите диалог в формате closing: коротко, по делу, к следующему шагу.',
+  'Не используйте фразы вида «беру 42», «берём 42». Это звучит неестественно для менеджера.',
+  'В первом ответе по заказу после приветствия сразу сообщайте: доставка бесплатная, варианты — Яндекс Доставка / Ozon / CDEK / Почта России.',
 ].join(' ');
 
 const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
@@ -474,6 +479,7 @@ const DEFAULT_STAGE_CHECKOUT_PROMPT = [
   'Не делайте формальную сводку и не превращайте сообщение в шаблон оператора.',
   'Если данных не хватает, запросите только один ближайший недостающий пункт.',
   'Перед оплатой должны быть собраны: город, служба доставки, ПВЗ/адрес и телефон получателя.',
+  'Избегайте повторяемых канцелярских конструкций; формулируйте как в обычной переписке.',
 ].join(' ');
 
 const DEFAULT_STAGE_PAYMENT_PROMPT = [
@@ -661,6 +667,25 @@ function hasDiscountGuardMarkers(value) {
   );
 }
 
+function hasAntiTemplateSpeechMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return (
+    normalized.includes('не пишите одинаковыми шаблонами')
+    && normalized.includes('беру/бер')
+  );
+}
+
+function hasFirstReplyDeliveryMarkers(value) {
+  const normalized = normalizePromptCheckText(value);
+  return (
+    normalized.includes('первом ответе')
+    && normalized.includes('доставка бесплат')
+    && normalized.includes('яндекс')
+    && normalized.includes('ozon')
+    && normalized.includes('cdek')
+  );
+}
+
 function ensurePromptContainsRule(value, fallback, rule, markerCheck) {
   const current = String(value || '').trim();
   if (!current) return fallback;
@@ -715,7 +740,7 @@ function normalizeInstructionConfigValue(value) {
   if (hasLegacyCheckoutInstructionMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
   if (hasLegacyDeliveryPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
   if (hasLegacyPaymentPromptMarkers(current)) return DEFAULT_CORE_INSTRUCTION;
-  return ensurePromptContainsRule(
+  const withDiscountGuard = ensurePromptContainsRule(
     current,
     DEFAULT_CORE_INSTRUCTION,
     [
@@ -725,6 +750,24 @@ function normalizeInstructionConfigValue(value) {
     ].join('\n'),
     hasDiscountGuardMarkers,
   );
+  const withAntiTemplateGuard = ensurePromptContainsRule(
+    withDiscountGuard,
+    DEFAULT_CORE_INSTRUCTION,
+    [
+      'Не пишите одинаковыми шаблонами в каждом диалоге: формулируйте живо и чуть по-разному.',
+      'Никогда не используйте формулировки «беру/берём/возьму [размер]» от лица менеджера.',
+    ].join('\n'),
+    hasAntiTemplateSpeechMarkers,
+  );
+  return ensurePromptContainsRule(
+    withAntiTemplateGuard,
+    DEFAULT_CORE_INSTRUCTION,
+    [
+      'В первом ответе по заказу (после приветствия) сразу коротко сообщайте: доставка бесплатная.',
+      'Сразу называйте варианты служб: Яндекс Доставка, Ozon, CDEK, Почта России.',
+    ].join('\n'),
+    hasFirstReplyDeliveryMarkers,
+  );
 }
 
 function normalizeBehaviorPromptConfigValue(value) {
@@ -732,11 +775,20 @@ function normalizeBehaviorPromptConfigValue(value) {
   if (!current) return DEFAULT_BEHAVIOR_PROMPT;
   if (isLegacyPromptValue(current, LEGACY_DEFAULT_BEHAVIOR_PROMPT)) return DEFAULT_BEHAVIOR_PROMPT;
   if (hasLegacyBehaviorPromptMarkers(current)) return DEFAULT_BEHAVIOR_PROMPT;
-  return ensurePromptContainsRule(
+  const withDiscountGuard = ensurePromptContainsRule(
     current,
     DEFAULT_BEHAVIOR_PROMPT,
     'Если клиент просит скидку или дешевле, отвечайте спокойно и коротко: цена фиксированная. Не обещайте скидку, не уступайте и не пишите новую цену.',
     hasDiscountGuardMarkers,
+  );
+  return ensurePromptContainsRule(
+    withDiscountGuard,
+    DEFAULT_BEHAVIOR_PROMPT,
+    [
+      'Не повторяйте одинаковые заготовки в разных диалогах.',
+      'Не используйте формулировки «беру 42», «берём 42», «возьму 42».',
+    ].join('\n'),
+    hasAntiTemplateSpeechMarkers,
   );
 }
 
