@@ -1227,6 +1227,29 @@ function normalizeExtractedShoeSize(value, sourceText = '') {
   return tokens[0];
 }
 
+function extractNumericSize(text) {
+  const token = extractShoeSize(text);
+  return /^\d{2}(?:\.\d+)?$/.test(String(token || '')) ? token : '';
+}
+
+function extractSize(text) {
+  return extractShoeSize(text);
+}
+
+function extractInsoleCm(text) {
+  const source = String(text || '');
+  const patterns = [
+    /(?:стелька|стельки|по\s+стельке|стельк(?:а|и|е))\s*(?:в|—|-|:)?\s*(\d{1,2}(?:[.,]\d)?)\s*(?:см|cm)?\b/i,
+    /(\d{1,2}(?:[.,]\d)?)\s*(?:см|cm)\s*(?:по\s+стельке|по\s+стельк|стелька|стельки|стельке)\b/i,
+    /(?:по\s+стельке|по\s+стельк[еии])\s*(\d{1,2}(?:[.,]\d)?)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) return match[1].replace(',', '.');
+  }
+  return '';
+}
+
 function extractCity(text) {
   const match = String(text || '').match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
   return match ? match[1].trim() : '';
@@ -1322,6 +1345,141 @@ function appendDetectedOrderPrice(text) {
   return `${source}\nЦена: ${price}`;
 }
 
+function extractDeliveryService(text) {
+  const source = String(text || '').toLowerCase();
+  if (!source) return '';
+  if (/(сд[эе]к|cdek)\b/i.test(source)) return 'CDEK';
+  if (/(wildberries|\bwb\b)/i.test(source)) return 'WB';
+  if (/(ozon|озон)\b/i.test(source)) return 'Ozon';
+  if (/(яндекс.*достав|доставк.*яндекс|яндекс go|yandex)/i.test(source)) return 'Яндекс Доставка';
+  if (/(почта\s+россии|почтой|почта)/i.test(source)) return 'Почта России';
+  if (/(курьер|до двери)/i.test(source)) return 'Курьер';
+  return '';
+}
+
+function extractPickupPoint(text) {
+  const source = String(text || '').trim();
+  if (!source) return '';
+  const lines = source.split(/\n/).map((line) => line.trim()).filter(Boolean);
+  const explicit = lines.find((line) => /(пвз|пункт\s+выдачи|ozon|озон|wildberries|\bwb\b|сд[эе]к|cdek|яндекс|почта)/i.test(line) && line.length >= 6);
+  if (explicit) return explicit;
+  const inline = source.match(/(?:пвз|пункт\s+выдачи)\s*[:\-]?\s*([^\n]{4,180})/i);
+  return inline ? inline[1].trim() : '';
+}
+
+function detectShoeContextFromText(text) {
+  const source = String(text || '').toLowerCase();
+  if (!source) return false;
+  if (/(худи|футболк|лонгслив|штаны|джинс|куртк|свитшот|сумк|рюкзак|футболка|одежд)/i.test(source)) return false;
+  return /(кроссовк|кеды|обув|shoe|sneaker|air max|air force|jordan|new balance|asics|yeezy|nike|adidas|puma|reebok|salomon)/i.test(source);
+}
+
+function buildSlotSnapshot(chatId, currentInput = null) {
+  const profile = getCustomerProfileSnapshot(chatId) || {};
+  const facts = profile.facts || {};
+  const lastOrder = profile.lastOrder || {};
+  const currentText = normalizeMemoryText(currentInput?.text || '');
+  const product = normalizeMemoryText(lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText));
+  const size = normalizeMemoryText(lastOrder.size || facts.size?.value || facts.shoeSize?.value || extractSize(currentText));
+  const insoleCm = normalizeMemoryText(facts.insoleCm?.value || extractInsoleCm(currentText));
+  const fullName = normalizeMemoryText(lastOrder.full_name || facts.fullName?.value || extractFullName(currentText));
+  const phone = normalizeMemoryText(lastOrder.phone || facts.phone?.value || extractPhone(currentText));
+  const city = normalizeMemoryText(facts.city?.value || extractCity(currentText));
+  const deliveryService = normalizeMemoryText(facts.deliveryService?.value || extractDeliveryService(currentText));
+  const pickupPoint = normalizeMemoryText(facts.pickupPoint?.value || lastOrder.delivery_address || extractPickupPoint(currentText));
+  const shoeContext = Boolean(
+    facts.shoeContext?.value === 'true'
+    || detectShoeContextFromText(product)
+    || detectShoeContextFromText(facts.interest?.value || '')
+    || detectShoeContextFromText(currentText)
+  );
+  const paymentRequested = ['payment_details_sent', 'proof_received'].includes(String(lastOrder.payment_status || ''));
+  const paymentProofReceived = Boolean(
+    lastOrder.payment_status === 'proof_received'
+    || lastOrder.payment_check_status
+    || lastOrder.proof_received_at
+  );
+
+  const closedSlots = [
+    product && 'product',
+    size && 'size',
+    insoleCm && 'insole_cm',
+    fullName && 'full_name',
+    phone && 'phone',
+    city && 'city',
+    deliveryService && 'delivery_service',
+    pickupPoint && 'pickup_point',
+    paymentRequested && 'payment_requested',
+    paymentProofReceived && 'payment_proof_received',
+  ].filter(Boolean);
+
+  let nextBlockingSlot = '';
+  if (!product) nextBlockingSlot = 'product';
+  else if (!size) nextBlockingSlot = 'size';
+  else if (shoeContext && !insoleCm) nextBlockingSlot = 'insole_cm';
+  else if (!fullName) nextBlockingSlot = 'full_name';
+  else if (!phone) nextBlockingSlot = 'phone';
+  else if (!deliveryService) nextBlockingSlot = 'delivery_service';
+  else if (!pickupPoint) nextBlockingSlot = 'pickup_point';
+  else if (parseConfigBoolean(currentInput?.config?.payment_enabled, false) && !paymentRequested) nextBlockingSlot = 'payment_requested';
+  else if (parseConfigBoolean(currentInput?.config?.payment_enabled, false) && !paymentProofReceived) nextBlockingSlot = 'payment_proof_received';
+
+  return {
+    product,
+    size,
+    insoleCm,
+    fullName,
+    phone,
+    city,
+    deliveryService,
+    pickupPoint,
+    paymentRequested,
+    paymentProofReceived,
+    shoeContext,
+    closedSlots,
+    nextBlockingSlot,
+  };
+}
+
+function buildSlotSummary(snapshot) {
+  if (!snapshot) return '';
+  const nextStepGuidance = {
+    product: 'If product is still unclear, ask only which exact item the client wants.',
+    size: 'Ask only for the size now. Do not ask about delivery, payment, or other details yet.',
+    insole_cm: 'This is shoe context. Ask only for the insole length in centimeters now.',
+    full_name: 'Ask only for the recipient full name now. Do not ask for a list of other fields together.',
+    phone: 'Ask only for the phone number now.',
+    city: 'Ask only for the city now.',
+    delivery_service: 'Ask only which delivery service is convenient now: Yandex, Ozon, WB, CDEK, or Russian Post.',
+    pickup_point: 'Ask only for the convenient pickup point now. Do not ask for delivery service again if it is already known.',
+    payment_requested: 'The order details are already collected. Move only to payment now: give the payment details briefly.',
+    payment_proof_received: 'Do not repeat payment details. Ask only for the receipt, check, or screenshot of payment now.',
+  };
+  const lines = [
+    snapshot.product && `- Product: ${snapshot.product}`,
+    snapshot.size && `- Size: ${snapshot.size}`,
+    snapshot.insoleCm && `- Insole cm: ${snapshot.insoleCm}`,
+    snapshot.fullName && `- Full name: ${snapshot.fullName}`,
+    snapshot.phone && `- Phone: ${snapshot.phone}`,
+    snapshot.city && `- City: ${snapshot.city}`,
+    snapshot.deliveryService && `- Delivery service: ${snapshot.deliveryService}`,
+    snapshot.pickupPoint && `- Pickup point: ${snapshot.pickupPoint}`,
+    `- Shoe context: ${snapshot.shoeContext ? 'yes' : 'no'}`,
+    `- Payment requested: ${snapshot.paymentRequested ? 'yes' : 'no'}`,
+    `- Payment proof received: ${snapshot.paymentProofReceived ? 'yes' : 'no'}`,
+    snapshot.closedSlots?.length && `- Closed slots: ${snapshot.closedSlots.join(', ')}`,
+    snapshot.nextBlockingSlot && `- Next blocking step: ${snapshot.nextBlockingSlot}`,
+    snapshot.nextBlockingSlot && nextStepGuidance[snapshot.nextBlockingSlot] && `- Next step guidance: ${nextStepGuidance[snapshot.nextBlockingSlot]}`,
+    (snapshot.shoeContext && snapshot.size && snapshot.insoleCm) && '- Size and insole length are already provided by the client. Treat both as closed and do not suggest another size unless the client explicitly asks for sizing advice.',
+    (snapshot.deliveryService && snapshot.pickupPoint) && '- Delivery service and pickup point are already chosen. Do not ask for delivery details again.',
+    snapshot.paymentProofReceived && '- Payment proof is already received. Do not ask for payment details, delivery details, or old order fields again.',
+    snapshot.nextBlockingSlot === 'payment_requested' && '- Move directly to payment details now. Do not ask for comments, extra confirmations, or reopen closed slots.',
+    (snapshot.closedSlots?.length || snapshot.nextBlockingSlot) && '- Ask only about the next blocking step naturally. Do not repeat closed slots.',
+  ].filter(Boolean);
+  if (!lines.length) return '';
+  return ['Checkout context:', ...lines].join('\n');
+}
+
 function isPaymentIntentText(text) {
   return /(куда\s+платить|как\s+оплат|реквизит|карта|номер\s+карты|перевести|оплатить)/i.test(String(text || ''));
 }
@@ -1356,8 +1514,14 @@ function updateCustomerMemoryFromInput(input) {
   const phone = extractPhone(input.text);
   if (phone) upsertMemoryFact(chatId, 'phone', phone, source);
 
-  const shoeSize = extractShoeSize(input.text);
-  if (shoeSize) upsertMemoryFact(chatId, 'shoeSize', shoeSize, source);
+  const size = extractSize(input.text);
+  if (size) {
+    upsertMemoryFact(chatId, 'size', size, source);
+    if (/^\d{2}(?:\.\d+)?$/.test(size)) upsertMemoryFact(chatId, 'shoeSize', size, source);
+  }
+
+  const insoleCm = extractInsoleCm(input.text);
+  if (insoleCm) upsertMemoryFact(chatId, 'insoleCm', insoleCm, source);
 
   const city = extractCity(input.text);
   if (city) upsertMemoryFact(chatId, 'city', city, source);
@@ -1368,8 +1532,19 @@ function updateCustomerMemoryFromInput(input) {
   const deliveryAddress = extractDeliveryAddress(input.text);
   if (deliveryAddress) upsertMemoryFact(chatId, 'deliveryAddress', deliveryAddress, source);
 
+  const deliveryService = extractDeliveryService(input.text);
+  if (deliveryService) upsertMemoryFact(chatId, 'deliveryService', deliveryService, source);
+
+  const pickupPoint = extractPickupPoint(input.text);
+  if (pickupPoint) upsertMemoryFact(chatId, 'pickupPoint', pickupPoint, source);
+
   const lastProduct = extractLastProduct(input.text);
   if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
+
+  const slotContextText = [lastProduct, memoryStore.facts[chatId]?.lastProduct?.value, memoryStore.facts[chatId]?.interest?.value, input.text].filter(Boolean).join(' ');
+  if (detectShoeContextFromText(slotContextText)) {
+    upsertMemoryFact(chatId, 'shoeContext', 'true', source);
+  }
 
   if (input.hasMedia || input.hasLinkInput) {
     upsertMemoryFact(chatId, 'interest', getMemoryMessageText(input), source);
@@ -1382,10 +1557,10 @@ function updateCustomerMemoryFromInput(input) {
   if (isPaymentIntentText(input.text)) {
     safeCustomerStoreCall('customer.order.payment_requested', (store) => store.upsertOrder(chatId, {
       product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
-      size: shoeSize || memoryStore.facts[chatId]?.shoeSize?.value || '',
+      size: size || memoryStore.facts[chatId]?.size?.value || memoryStore.facts[chatId]?.shoeSize?.value || '',
       fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
       phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
-      deliveryAddress: deliveryAddress || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      deliveryAddress: pickupPoint || deliveryAddress || memoryStore.facts[chatId]?.pickupPoint?.value || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
       status: 'waiting_payment',
       paymentStatus: 'payment_details_sent',
     }));
@@ -1394,10 +1569,10 @@ function updateCustomerMemoryFromInput(input) {
   if (stage === 'ready_to_buy' || stage === 'collecting_order_info') {
     safeCustomerStoreCall('customer.order.draft', (store) => store.upsertOrder(chatId, {
       product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
-      size: shoeSize || memoryStore.facts[chatId]?.shoeSize?.value || '',
+      size: size || memoryStore.facts[chatId]?.size?.value || memoryStore.facts[chatId]?.shoeSize?.value || '',
       fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
       phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
-      deliveryAddress: deliveryAddress || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      deliveryAddress: pickupPoint || deliveryAddress || memoryStore.facts[chatId]?.pickupPoint?.value || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
       status: stage === 'ready_to_buy' ? 'draft' : 'collecting_info',
     }));
   }
@@ -1410,7 +1585,7 @@ function applyManagerStageHints(input) {
   const chatId = getMemoryChatId(input?.chatId || input);
   if (!chatId || !text) return;
 
-  if (/(передал[аи]?\s+в\s+доставк|передан[ао]?\s+в\s+доставк|отправил[аи]?\b|отправлен[ао]?\b|трек|накладн|сд[эе]к|яндекс.*достав|ozon|wildberries|wb\b)/i.test(text)) {
+  if (/(передал[аи]?\s+в\s+доставк|передан[ао]?\s+в\s+доставк|отправил[аи]?\b|отправлен[ао]?\b|трек|накладн|номер\s+отправлени)/i.test(text)) {
     setConversationStage(chatId, 'delivery', text);
     safeCustomerStoreCall('customer.order.delivery', (store) => store.upsertOrder(chatId, {
       status: 'delivery',
@@ -1437,9 +1612,13 @@ function formatMemoryFacts(facts = {}) {
     fullName: 'Full name',
     phone: 'Phone',
     city: 'City',
+    size: 'Size',
     address: 'Delivery address',
     deliveryAddress: 'Delivery address',
     shoeSize: 'Shoe size',
+    insoleCm: 'Insole cm',
+    deliveryService: 'Delivery service',
+    pickupPoint: 'Pickup point',
     interest: 'Interest',
     lastProduct: 'Last product',
   };
@@ -1464,13 +1643,21 @@ function buildMemoryContext(chatId, options = {}) {
     memoryPromptEnabled: false,
     memoryPromptText: '',
   }));
-  if (dbContext) return dbContext;
+  if (dbContext) {
+    const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
+    const slotSummary = buildSlotSummary(slotSnapshot);
+    return {
+      ...dbContext,
+      summary: [dbContext.summary, slotSummary].filter(Boolean).join('\n\n'),
+      slotSnapshot,
+    };
+  }
 
   const facts = memoryStore.facts[cleanChatId] || {};
   const state = memoryStore.states[cleanChatId] || null;
   const factLines = formatMemoryFacts(facts);
 
-  const summary = factLines.length
+  const baseSummary = factLines.length
     ? [
       'Client memory:',
       ...factLines.map((line) => `- ${line}`),
@@ -1494,11 +1681,15 @@ function buildMemoryContext(chatId, options = {}) {
     });
   });
 
+  const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
+  const slotSummary = buildSlotSummary(slotSnapshot);
+
   return {
-    summary,
+    summary: [baseSummary, slotSummary].filter(Boolean).join('\n\n'),
     history: history.reverse(),
     facts,
     state,
+    slotSnapshot,
   };
 }
 
@@ -2064,6 +2255,8 @@ function applyExtractedCustomerData(input, extracted) {
     ['city', customer.city],
     ['deliveryAddress', customer.deliveryAddress],
     ['shoeSize', normalizedSize],
+    ['pickupPoint', customer.deliveryAddress],
+    ['size', normalizedSize],
     ['interest', normalizedProduct || intent.interest],
     ['lastProduct', normalizedProduct],
   ].forEach(([key, value]) => {
@@ -2200,6 +2393,7 @@ async function processInputBatch(inputs) {
     batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
       excludeTraceIds: batchInput.batchTraceIds,
       limit: getConfigMemoryLimit(batchInput.config),
+      currentInput: batchInput,
     }) : { summary: '', history: [], facts: {}, state: null };
 
     await runAiCrmExtractor(batchInput);
@@ -2208,6 +2402,7 @@ async function processInputBatch(inputs) {
     batchInput.memoryContext = parseConfigBoolean(batchInput.config.memory_enabled, true) ? buildMemoryContext(batchInput.chatId, {
       excludeTraceIds: batchInput.batchTraceIds,
       limit: getConfigMemoryLimit(batchInput.config),
+      currentInput: batchInput,
     }) : { summary: '', history: [], facts: {}, state: null };
 
     preparedInputs.forEach((input) => logMessageDelivered(input));
@@ -4054,6 +4249,9 @@ async function requestAi(input) {
       memoryHistory: input.memoryContext?.history?.length || 0,
       memoryStage: input.memoryContext?.state?.stage ? 'set' : '',
       memoryFacts: Object.keys(input.memoryContext?.facts || {}),
+      closedSlots: input.memoryContext?.slotSnapshot?.closedSlots || [],
+      nextBlockingSlot: input.memoryContext?.slotSnapshot?.nextBlockingSlot || '',
+      shoeContext: !!input.memoryContext?.slotSnapshot?.shoeContext,
       appliedPrompts: getPromptLayerState(input.config, input.memoryContext),
       promptWarnings: getPromptConflictWarnings(input.config),
     tone: input.config.tone,
@@ -4728,6 +4926,7 @@ app.post('/config/test-ai', async (req, res) => {
     ? buildMemoryContext(chatId, {
       limit: getConfigMemoryLimit(config),
       excludeTraceIds: [traceId],
+      currentInput: input,
     })
     : { summary: '', history: [], facts: {}, state: null };
 
@@ -4738,6 +4937,7 @@ app.post('/config/test-ai', async (req, res) => {
     ? buildMemoryContext(chatId, {
       limit: getConfigMemoryLimit(config),
       excludeTraceIds: [traceId],
+      currentInput: input,
     })
     : { summary: '', history: [], facts: {}, state: null };
 
