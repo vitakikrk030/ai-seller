@@ -1448,7 +1448,7 @@ function detectShoeContextFromText(text) {
   const source = String(text || '').toLowerCase();
   if (!source) return false;
   if (/(худи|футболк|лонгслив|штаны|джинс|куртк|свитшот|сумк|рюкзак|футболка|одежд)/i.test(source)) return false;
-  return /(кроссовк|кеды|обув|shoe|sneaker|air max|air force|jordan|new balance|asics|yeezy|nike|adidas|puma|reebok|salomon)/i.test(source);
+  return /(кроссовк|кеды|обув|shoe|sneaker|air max|air force|jordan|new balance|asics|yeezy|nike|adidas|puma|reebok|salomon|lacoste|odyssa)/i.test(source);
 }
 
 function buildSlotSnapshot(chatId, currentInput = null) {
