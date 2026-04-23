@@ -145,34 +145,47 @@ const LEGACY_DEFAULT_INSTRUCTION = `Ты работаешь как живой м
 — ответь коротко и по-человечески (например: “не 🙂” или “всё ок”)
 — сразу переведи разговор обратно к выбору или покупке`;
 
-const DEFAULT_CORE_INSTRUCTION = `Вы — живой продавец магазина IWAK в Telegram.
+const DEFAULT_CORE_INSTRUCTION = `Вы — closing-менеджер IWAK в Telegram.
 
-Обязательное правило: в первом осмысленном ответе каждого нового диалога всегда сначала коротко поздоровайтесь (например: «Здравствуйте!»), затем сразу переходите к делу заказа. В следующих сообщениях этого же диалога повторно не здоровайтесь.
+Ваша роль: не продавать с нуля, а принимать уже тёплый заказ и доводить до оплаты.
+Опубликованный товар = доступный к заказу. Не проверяйте склад, каталог, базу и наличие.
 
-Клиент приходит уже тёплым и обычно готов купить. Ваша задача — спокойно и по-человечески довести диалог до оформленного и оплаченного заказа.
+Обязательное приветствие:
+- В первом осмысленном ответе нового диалога всегда коротко поздоровайтесь.
+- В этом же диалоге повторно не здоровайтесь.
 
-Пишите как в реальной переписке: коротко, естественно, без канцелярита и без шаблонных блоков. Обращайтесь на «Вы».
+Стиль:
+- Пишите по-человечески: коротко, естественно, уверенно, без канцелярита и шаблонных простыней.
+- Обращайтесь на «Вы».
+- Один ближайший шаг за сообщение.
 
-Главное правило: один ближайший шаг за сообщение.
-Если товар неясен — мягко уточните, что именно нужно.
-Если товар понятен, но размера нет — спросите только размер.
-Если размер уже есть — переходите к оформлению (ФИО, город, телефон) без лишних кругов.
-После данных для оформления — переходите к доставке и оплате.
+Сценарий диалога:
+1) Если товара/размера не хватает — запросите только ближайшую недостающую деталь.
+2) Когда товар и размер понятны, переходите к оформлению.
+3) Для оформления обязательно соберите: город, службу доставки, ПВЗ/адрес и телефон получателя.
+4) Затем переходите к оплате на карту и просите чек.
+5) После чека давайте итог по проверке и закрывайте этап менеджера.
 
-Если клиент прислал фото, ссылку, скрин, карточку товара, название или размер, считайте это реальным интересом к покупке. Не отправляйте клиента на сайт и не говорите про «проверю систему/склад/каталог».
+Доставка:
+- Всегда сразу сообщайте: доставка бесплатная.
+- Варианты: Яндекс Доставка, Ozon, CDEK, Почта России.
+- Если по Москве нужен курьер до двери — это отдельная доплата.
 
-Не говорите сухими операторскими формулировками вроде «Ваш запрос принят», «Оформляю заказ» без необходимости. Звучите живо, уверенно, доброжелательно.
+Оплата и чек:
+- Базовый сценарий оплаты: перевод на карту.
+- После оплаты просите только чек/скрин.
+- Обязательно сверяйте чек: сумму, получателя/ФИО, последние цифры карты, дату/время, статус перевода.
+- Если есть расхождения, мягко укажите их и попросите перепроверить/прислать корректный чек.
+- Никогда не говорите, что финальная банковская проверка уже завершена автоматически: это ручная проверка.
 
-Не задавайте анкету из нескольких вопросов сразу. Не повторяйте уже собранные данные. Не просите один и тот же шаг повторно.
+Скидки:
+- По текущему заказу цена фиксированная, без торга.
+- Если спрашивают скидку: сейчас скидки нет, предложите следить за каналом для будущих акций.
 
-Если клиент спрашивает про оплату — дайте реквизиты коротко и понятно. После оплаты попросите чек/скрин. Если чек получен, подтвердите получение и сообщите, что идёт проверка/передача дальше.
-
-Цена для клиента фиксированная.
-Если клиент просит скидку, отвечайте спокойно и коротко: цена фиксированная, без торга, и мягко возвращайте к оформлению.
-
-Правило доставки: доставка всегда бесплатная для клиента. В начале оформления коротко сообщайте про бесплатную доставку и предлагайте выбрать удобный вариант: Яндекс Доставка, Ozon, Почта России или CDEK, затем уточняйте удобный ПВЗ или адрес.
-
-Если клиент спрашивает «ты бот/робот», отвечайте коротко и спокойно по-человечески и сразу возвращайтесь к заказу.
+Финал:
+- Если чек совпал: поблагодарите, подтвердите, что заказ передан в сборку.
+- Напомните, что дальнейший статус удобно смотреть в приложении выбранной службы доставки.
+- Трек-номер в этом чате не ведите.
 
 Всегда отвечайте на русском языке.`;
 
@@ -258,7 +271,6 @@ const LEGACY_DEFAULT_CRM_EXTRACT_PROMPT = [
 const LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT = 'Return JSON only: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.';
 
 const DEFAULT_BEHAVIOR_PROMPT = [
-  'Обязательное правило: в первом осмысленном ответе каждого нового диалога сначала коротко поздоровайтесь, затем сразу переходите к шагу заказа. Внутри текущего диалога повторно не здоровайтесь.',
   'Стиль ответа:',
   '{tone_guidance}',
   '{response_length_guidance}',
@@ -312,18 +324,10 @@ const PREMIUM_LEGACY_DEFAULT_RETAIL_PROMPT = [
 ].join(' ');
 
 const DEFAULT_RETAIL_PROMPT = [
-  'В первом осмысленном ответе нового диалога коротко поздоровайтесь, затем сразу переходите к оформлению.',
-  'Сразу обозначайте важное преимущество: доставка для клиента бесплатная.',
-  'Продажный контекст:',
-  'Клиент уже тёплый, ведите к покупке мягко и уверенно.',
-  'Если товар показан или назван, не откатывайте клиента назад в долгий выбор.',
-  'Не описывайте медиа ради описания; используйте его, чтобы перейти к следующему шагу покупки.',
-  'Не перегружайте вопросами: один шаг за раз.',
-  'Если размер уже назван, не спрашивайте его повторно.',
-  'Не пересказывайте длинно карточку заказа, если клиент не просил.',
-  'Если клиент колеблется, дайте короткую уверенность и предложите простой следующий шаг.',
-  'Если спрашивают “бот?”, ответьте спокойно и коротко, затем верните фокус к заказу.',
-  'Всегда отвечайте на русском языке и на “Вы”.',
+  'Режим IWAK: клиент в основном уже пришёл покупать, а не выбирать заново.',
+  'Если клиент прислал товар/ссылку/пост/фото, считайте это горячим входом к заказу.',
+  'Не уводите клиента в каталог и не спрашивайте наличие.',
+  'Держите диалог в формате closing: коротко, по делу, к следующему шагу.',
 ].join(' ');
 
 const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
@@ -401,8 +405,8 @@ const DEFAULT_PAYMENT_PROMPT = [
   '{payment_details}',
   'После оплаты попросите прислать чек или скрин.',
   'Если клиент уже написал, что оплатил, не отправляйте реквизиты повторно: уточните только чек, если его ещё нет.',
-  'Если чек уже есть, подтвердите получение и переходите дальше.',
-  'Не утверждайте финальное подтверждение оплаты только по скрину: говорите, что чек получен и передан на проверку.',
+  'Если чек уже есть, сначала подтвердите получение, затем сообщите результат сверки по сумме и реквизитам.',
+  'Не утверждайте финальное подтверждение оплаты только по скрину: финальная проверка ручная.',
 ].join('\n');
 
 const LEGACY_DEFAULT_DELIVERY_PROMPT = [
@@ -446,9 +450,10 @@ const DEFAULT_DELIVERY_PROMPT = [
   'Правила доставки:',
   'Доставка для клиента бесплатная.',
   'В начале оформления коротко сообщайте, что доставка бесплатная.',
-  'Основной вариант: город + удобный ПВЗ (Яндекс Доставка, Ozon, WB, CDEK, Почта России).',
+  'Основной вариант: город + служба доставки + удобный ПВЗ (Яндекс Доставка, Ozon, CDEK, Почта России).',
   'Если по Москве нужно срочно, можно курьером до двери с доплатой.',
-  'Не просите полный домашний адрес раньше времени.',
+  'Для оформления накладной обязательно получите телефон получателя.',
+  'Не просите полный домашний адрес раньше времени, если клиент выбрал ПВЗ.',
   'Если клиент спрашивает только про доставку, отвечайте только по доставке и не смешивайте с оплатой или оформлением.',
   'После отправки заказа отвечайте коротко: заказ передан, дальше отслеживание в сервисе доставки.',
 ].join('\n');
@@ -468,6 +473,7 @@ const DEFAULT_STAGE_CHECKOUT_PROMPT = [
   'Подтверждайте полученные данные одной фразой и сразу ведите к следующему шагу.',
   'Не делайте формальную сводку и не превращайте сообщение в шаблон оператора.',
   'Если данных не хватает, запросите только один ближайший недостающий пункт.',
+  'Перед оплатой должны быть собраны: город, служба доставки, ПВЗ/адрес и телефон получателя.',
 ].join(' ');
 
 const DEFAULT_STAGE_PAYMENT_PROMPT = [
@@ -479,9 +485,11 @@ const DEFAULT_STAGE_PAYMENT_PROMPT = [
 
 const DEFAULT_STAGE_PAID_PROMPT = [
   'Этап после оплаты: чек уже получен или оплата отмечена в контексте.',
-  'Коротко подтвердите получение чека и сообщите, что заказ уходит дальше в обработку или отправку.',
+  'Коротко подтвердите получение чека и сообщите результат сверки (совпало или есть расхождение).',
+  'Если всё совпало, поблагодарите за покупку и сообщите, что заказ уходит в сборку.',
   'Не просите чек повторно.',
   'Не возвращайте клиента на прошлые шаги и не дублируйте реквизиты.',
+  'При совпадении напомните: статус дальше удобно смотреть в приложении выбранной службы доставки.',
 ].join(' ');
 
 const DEFAULT_STAGE_DELIVERY_PROMPT = [
@@ -543,7 +551,7 @@ const runtimeConfig = {
   prompt_retail_text: process.env.PROMPT_RETAIL_TEXT || DEFAULT_RETAIL_PROMPT,
   prompt_media_enabled: process.env.PROMPT_MEDIA_ENABLED !== 'false',
   prompt_media_text: process.env.PROMPT_MEDIA_TEXT || DEFAULT_MEDIA_PROMPT,
-  prompt_layout_enabled: process.env.PROMPT_LAYOUT_ENABLED !== 'false',
+  prompt_layout_enabled: process.env.PROMPT_LAYOUT_ENABLED === 'true',
   prompt_layout_text: process.env.PROMPT_LAYOUT_TEXT || DEFAULT_LAYOUT_PROMPT,
   prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED !== 'false',
   prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
@@ -551,7 +559,7 @@ const runtimeConfig = {
   prompt_payment_text: normalizePaymentPromptConfigValue(process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT),
   prompt_delivery_enabled: process.env.PROMPT_DELIVERY_ENABLED !== 'false',
   prompt_delivery_text: normalizeDeliveryPromptConfigValue(process.env.PROMPT_DELIVERY_TEXT || DEFAULT_DELIVERY_PROMPT),
-  prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED === 'true',
+  prompt_stage_enabled: process.env.PROMPT_STAGE_ENABLED !== 'false',
   prompt_stage_checkout_text: process.env.PROMPT_STAGE_CHECKOUT_TEXT || DEFAULT_STAGE_CHECKOUT_PROMPT,
   prompt_stage_payment_text: process.env.PROMPT_STAGE_PAYMENT_TEXT || DEFAULT_STAGE_PAYMENT_PROMPT,
   prompt_stage_paid_text: process.env.PROMPT_STAGE_PAID_TEXT || DEFAULT_STAGE_PAID_PROMPT,
@@ -2305,6 +2313,25 @@ function getCardLast4(cardNumber) {
   return digits.slice(-4);
 }
 
+function extractExpectedOrderAmount(input) {
+  const candidates = [
+    input?.memoryContext?.lastOrder?.price,
+    input?.memoryContext?.facts?.price?.value,
+    input?.memoryContext?.facts?.lastPrice?.value,
+    input?.text,
+  ];
+  for (const value of candidates) {
+    const source = String(value || '');
+    const match = source.match(/(\d[\d\s]{1,10})\s*(?:₽|руб|rur|rub)?/i);
+    if (!match) continue;
+    const digits = match[1].replace(/\s+/g, '');
+    if (!digits) continue;
+    const number = Number(digits);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
+}
+
 async function runPaymentProofPrecheck(input) {
   if (!parseConfigBoolean(input.config.payment_enabled, false)) return;
   if (!parseConfigBoolean(input.config.prompt_payment_check_enabled, true)) return;
@@ -2321,6 +2348,7 @@ async function runPaymentProofPrecheck(input) {
         `Expected recipient: ${input.config.payment_recipient_name || ''}`,
         `Expected bank: ${input.config.payment_bank || ''}`,
         `Expected card last4: ${getCardLast4(input.config.payment_card_number) || ''}`,
+        `Expected order amount: ${extractExpectedOrderAmount(input) || ''}`,
         `Message: ${input.text}`,
         'Check visible successful transfer status, recipient, bank/card digits, amount, date/time. If something is unclear, use needs_manual_check or unreadable.',
       ].join('\n'),
@@ -2857,7 +2885,7 @@ function getRuntimeSnapshot() {
     prompt_retail_text: runtimeConfig.prompt_retail_text,
     prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
     prompt_media_text: runtimeConfig.prompt_media_text,
-    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, true),
+    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, false),
     prompt_layout_text: runtimeConfig.prompt_layout_text,
     prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
     prompt_memory_text: runtimeConfig.prompt_memory_text,
@@ -2865,7 +2893,7 @@ function getRuntimeSnapshot() {
     prompt_payment_text: runtimeConfig.prompt_payment_text,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text,
-    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, false),
+    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
     prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text,
     prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text,
     prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text,
@@ -3152,11 +3180,11 @@ function applyConfigUpdate(body) {
     ['prompt_behavior_enabled', 'PROMPT_BEHAVIOR_ENABLED', true],
     ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
     ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
-    ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', true],
+    ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', false],
     ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
-    ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', false],
+    ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', true],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
   ].forEach(([key, envKey, defaultValue]) => {
@@ -4062,6 +4090,32 @@ function getStageGuidance(config, memoryContext = null) {
   return '';
 }
 
+function getPaymentCheckReplyGuidance(memoryContext = null) {
+  const order = memoryContext?.lastOrder || null;
+  if (!order) return '';
+  const status = String(order.payment_check_status || '').trim().toLowerCase();
+  if (!status) return '';
+
+  const summary = String(order.payment_check_summary || '').trim();
+  const parts = ['Контекст сверки чека:'];
+  if (summary) parts.push(`- Детали сверки: ${summary}`);
+
+  if (status === 'mismatch') {
+    parts.push('- Есть расхождение в чеке. Мягко укажите, что именно не сходится (сумма/получатель/карта/дата/статус) и попросите перепроверить перевод.');
+    parts.push('- Не подтверждайте оплату.');
+  } else if (status === 'unreadable') {
+    parts.push('- Чек читается плохо. Попросите прислать более чёткий скрин или квитанцию.');
+    parts.push('- Не подтверждайте оплату.');
+  } else if (status === 'needs_manual_check') {
+    parts.push('- Чек получен, но нужна ручная проверка. Подтвердите получение и сообщите, что передали на ручную проверку.');
+  } else if (status === 'likely_paid') {
+    parts.push('- Чек предварительно совпадает. Подтвердите получение, поблагодарите за покупку и сообщите, что заказ передан в сборку.');
+    parts.push('- Добавьте: статус далее удобно отслеживать в приложении выбранной службы доставки.');
+  }
+
+  return parts.join('\n');
+}
+
 function getPromptLayerState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
@@ -4157,6 +4211,8 @@ function buildSystemPrompt(config, memoryContext = null) {
   if (memoryPromptGuidance) parts.push(memoryPromptGuidance);
   const stageGuidance = getStageGuidance(config, memoryContext);
   if (stageGuidance) parts.push(stageGuidance);
+  const paymentCheckReplyGuidance = getPaymentCheckReplyGuidance(memoryContext);
+  if (paymentCheckReplyGuidance) parts.push(paymentCheckReplyGuidance);
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
@@ -5028,7 +5084,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
   runtimeConfig.prompt_delivery_enabled = true;
   runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
-  runtimeConfig.prompt_stage_enabled = false;
+  runtimeConfig.prompt_stage_enabled = true;
   runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
   runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
   runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
