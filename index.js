@@ -2158,8 +2158,53 @@ function hasRecentManagerOrAssistantReply(memoryContext = null) {
   return latestMessage.role === 'assistant' || /^Manager:/i.test(String(latestMessage.content || ''));
 }
 
+function buildClosingScaffoldReply(input, aiReply) {
+  const snapshot = input?.memoryContext?.slotSnapshot || null;
+  if (!snapshot) return '';
+
+  const currentText = String(input?.text || '');
+  const size = String(snapshot.size || extractSize(currentText) || '').trim();
+  const insoleFromClient = String(extractInsoleCm(currentText) || '').trim();
+  const isShoe = !!snapshot.shoeContext;
+  const next = String(snapshot.nextBlockingSlot || '').trim().toLowerCase();
+  const reply = String(aiReply || '').trim();
+
+  // Critical step 1: size known, insole missing -> fixed short scaffold.
+  if (isShoe && !snapshot.insoleCm && (next === 'insole_cm' || (size && !insoleFromClient))) {
+    const sizeLine = size ? `Отлично, записал размер ${size}.` : 'Отлично, размер записал.';
+    return `${sizeLine}\n\nПодскажите, пожалуйста, длину стельки в см?`;
+  }
+
+  // Critical step 2: insole just received -> fixed checkout scaffold.
+  if (
+    isShoe
+    && insoleFromClient
+    && ['full_name', 'phone', 'city', 'delivery_service', 'pickup_point'].includes(next)
+  ) {
+    return [
+      'Отлично!',
+      '',
+      'Для оформления пришлите, пожалуйста, данные для доставки:',
+      '- ФИО',
+      '- Номер телефона',
+      '- Адрес ближайшего ПВЗ',
+      '',
+      'Доставка у нас БЕСПЛАТНАЯ.',
+      'Мы отправляем:',
+      '• Яндекс Доставка',
+      '• Ozon',
+      '• CDEK',
+      '• Почта России',
+      '• Курьером по Москве (НЕ БЕСПЛАТНО)',
+    ].join('\n');
+  }
+
+  // Otherwise keep AI reply as-is.
+  return reply;
+}
+
 function finalizeAiReply(input, reply) {
-  let next = String(reply || '').trim();
+  let next = buildClosingScaffoldReply(input, reply) || String(reply || '').trim();
   if (!next) return '';
 
   const keepOpeningGreeting = (Boolean(input.clientHadGreeting) || clientTextHasGreeting(input.text))
