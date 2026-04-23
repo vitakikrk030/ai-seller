@@ -43,10 +43,9 @@ const MEMORY_MAX_MESSAGES = 5000;
 const MEMORY_HISTORY_CHAR_LIMIT = 3500;
 const BATCH_DEBOUNCE_MS = 3000;
 const BATCH_MAX_WINDOW_MS = 6500;
-const ORDER_PAYLOAD_BATCH_DEBOUNCE_MS = 5500;
-const SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS = 7000;
 const SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS = 900;
 const ORDER_CONTEXT_BATCH_MAX_WINDOW_MS = 9000;
+const ORDER_PENDING_REPLY_SETTLE_MS = 5000;
 const ORDER_CONTEXT_MERGE_GRACE_MS = 3000;
 const ORDER_CONTEXT_MERGE_POLL_MS = 120;
 const MIN_MEMORY_RECENT_LIMIT = 3;
@@ -1037,6 +1036,22 @@ function setDialogAiMode(chatId, mode, source = '') {
   return next;
 }
 
+function markLatestClientTrace(input) {
+  const cleanChatId = getMemoryChatId(input?.chatId || input);
+  const traceId = String(input?.traceId || '').trim();
+  if (!cleanChatId || !traceId) return null;
+  const previous = memoryStore.states[cleanChatId] || {};
+  const next = {
+    ...previous,
+    lastClientTraceId: traceId,
+    updatedAt: new Date().toISOString(),
+  };
+  memoryStore.states[cleanChatId] = next;
+  safeCustomerStoreCall('customer.state.last_client', (store) => store.setDialogState(cleanChatId, next));
+  persistMemoryStore();
+  return next;
+}
+
 function setManagerActive(chatId, input, source = '') {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return null;
@@ -1470,10 +1485,10 @@ function getBatchDebounceDelayMs(batch, input) {
     if (isSizeOnlyFollowupMessage(input.text)) {
       return Math.min(baseDelay, SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS);
     }
-    return Math.max(baseDelay, ORDER_PAYLOAD_BATCH_DEBOUNCE_MS);
+    return Math.max(baseDelay, ORDER_CONTEXT_BATCH_MAX_WINDOW_MS);
   }
   if (batchNeedsPendingPayloadContext(inputs)) {
-    return Math.max(baseDelay, SIZE_ONLY_PENDING_PAYLOAD_DEBOUNCE_MS);
+    return Math.max(baseDelay, ORDER_CONTEXT_BATCH_MAX_WINDOW_MS);
   }
   return baseDelay;
 }
@@ -1546,6 +1561,39 @@ function shouldMergePendingOrderInputs(currentInputs = [], pendingInputs = []) {
   return false;
 }
 
+function buildRecentStructuredOrderContextInput(inputs = []) {
+  if (!batchHasSizeOnlyFollowup(inputs) || batchHasStructuredOrderPayload(inputs)) return null;
+
+  const lastInput = inputs[inputs.length - 1];
+  const recentMessages = getRecentMemoryMessages(lastInput?.chatId, 12, inputs.map((input) => input.traceId));
+
+  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+    const message = recentMessages[index];
+    if (!message) continue;
+    if (message.role === 'manager') break;
+    if (message.role === 'assistant') continue;
+    if (message.role !== 'user' || !looksLikeStructuredOrderPayload(message.text)) continue;
+
+    return {
+      chatId: lastInput.chatId,
+      userId: lastInput.userId,
+      traceId: message.traceId || `memory:${message.telegramMessageId || message.createdAt || index}`,
+      messageId: '',
+      messageType: message.type || 'text',
+      text: message.text,
+      images: [],
+      hasMedia: false,
+      hasLinkInput: containsLink(message.text),
+      updateType: lastInput.updateType,
+      businessConnectionId: lastInput.businessConnectionId || '',
+      receivedAt: Date.parse(message.createdAt || '') || 0,
+      isContextOnly: true,
+    };
+  }
+
+  return null;
+}
+
 async function absorbPendingOrderContextInputs(inputs = []) {
   let merged = mergeBatchInputs([], inputs);
   if (!batchNeedsOrderContextMerge(merged)) return merged;
@@ -1570,7 +1618,21 @@ async function absorbPendingOrderContextInputs(inputs = []) {
     merged = mergeBatchInputs(merged, takePendingChatBatch(chatId));
   }
 
+  const recentStructuredOrderInput = buildRecentStructuredOrderContextInput(merged);
+  if (recentStructuredOrderInput) {
+    merged = mergeBatchInputs([recentStructuredOrderInput], merged);
+  }
+
   return merged;
+}
+
+function hasNewerClientFollowup(context) {
+  const batchTraceIds = Array.isArray(context?.batchTraceIds) ? context.batchTraceIds.map(String) : [];
+  if (!batchTraceIds.length) return false;
+  const dialogState = getDialogState(context?.chatId || '');
+  const lastClientTraceId = String(dialogState?.lastClientTraceId || '').trim();
+  if (!lastClientTraceId) return false;
+  return !batchTraceIds.includes(lastClientTraceId);
 }
 
 function clientTextHasGreeting(text) {
@@ -1618,6 +1680,16 @@ function finalizeAiReply(input, reply) {
   return next;
 }
 
+async function waitForPendingOrderReplySettle(context) {
+  if (!context?.pendingStructuredOrder) return true;
+  const deadline = Date.now() + ORDER_PENDING_REPLY_SETTLE_MS;
+  while (Date.now() < deadline) {
+    if (hasNewerClientFollowup(context)) return false;
+    await wait(Math.min(250, deadline - Date.now()));
+  }
+  return !hasNewerClientFollowup(context);
+}
+
 function pickReplyTargetMessageId(inputs, config = runtimeConfig) {
   const mode = normalizeReplyMode(config.reply_mode);
   if (mode === 'off') return '';
@@ -1651,6 +1723,7 @@ function buildBatchInput(inputs) {
     batchSize: inputs.length,
     batchTraceIds: inputs.map((input) => input.traceId),
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
+    pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: buildBatchText(inputs),
     images,
@@ -1929,10 +2002,23 @@ async function processInputBatch(inputs) {
           });
           return;
         }
+        const sent = await sendHumanizedTelegramReply(batchInput.config, batchInput, finalReply);
+        if (!sent) {
+          logEvent('MESSAGE_STATUS', {
+            traceId: batchInput.traceId,
+            userId: batchInput.userId,
+            chatId: batchInput.chatId,
+            updateType: batchInput.updateType || '',
+            businessConnectionId: batchInput.businessConnectionId || '',
+            messageType: batchInput.messageType,
+            messageStatus: 'ai_reply_skipped_newer_client_input',
+            status: 'ok',
+          });
+          return;
+        }
         if (parseConfigBoolean(batchInput.config.memory_enabled, true)) {
           appendMemoryMessage(batchInput, 'assistant', finalReply);
         }
-        await sendHumanizedTelegramReply(batchInput.config, batchInput, finalReply);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {
@@ -3953,10 +4039,14 @@ function startTypingLoop(config, context) {
 }
 
 async function sendHumanizedTelegramReply(config, context, reply) {
+  const settled = await waitForPendingOrderReplySettle(context);
+  if (!settled) return false;
   const parts = splitReplyForTelegram(reply);
   for (let index = 0; index < parts.length; index += 1) {
+    if (hasNewerClientFollowup(context)) return false;
     await sendTelegramChatAction(config, context, 'typing');
     await wait(getHumanTypingDelayMs(parts[index], config));
+    if (hasNewerClientFollowup(context)) return false;
     await sendTelegramMessage(config, {
       ...context,
       useReply: index === 0 && !!context.replyToMessageId,
@@ -3965,6 +4055,7 @@ async function sendHumanizedTelegramReply(config, context, reply) {
       await wait(randomBetween(700, 1500));
     }
   }
+  return true;
 }
 
 function isTruthyStatus(value, patterns) {
@@ -4662,6 +4753,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
         updateCustomerMemoryFromInput(input);
         appendMemoryMessage(input, 'user', memoryText);
       }
+      markLatestClientTrace(input);
 
       if (!parseConfigBoolean(config.auto_reply_enabled, true)) {
         logEvent('MESSAGE_STATUS', {
