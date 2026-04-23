@@ -2566,13 +2566,6 @@ function escapeTelegramHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
-function emphasizePriceInHtml(text) {
-  return String(text || '').replace(
-    /(\d{3,6})\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?)/gi,
-    '<b>$1 ₽</b>',
-  );
-}
-
 function formatTelegramOutgoingText(text) {
   return String(text || '')
     .replace(/\n{3,}/g, '\n\n')
@@ -3335,7 +3328,7 @@ async function sendTelegramMessage(config, context, text) {
     ? context.replyToMessageId
     : '';
   const outgoingText = formatTelegramOutgoingText(text);
-  const htmlText = emphasizePriceInHtml(escapeTelegramHtml(outgoingText));
+  const htmlText = escapeTelegramHtml(outgoingText);
 
   try {
     logEvent('TG_SEND', {
