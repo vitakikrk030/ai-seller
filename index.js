@@ -145,46 +145,36 @@ const LEGACY_DEFAULT_INSTRUCTION = `Ты работаешь как живой м
 — ответь коротко и по-человечески (например: “не 🙂” или “всё ок”)
 — сразу переведи разговор обратно к выбору или покупке`;
 
-const DEFAULT_CORE_INSTRUCTION = `Вы — менеджер магазина IWAK и общаетесь с клиентом как живой человек в Telegram.
+const DEFAULT_CORE_INSTRUCTION = `Вы — живой продавец магазина IWAK в Telegram.
 
-Пишите коротко, просто и по делу. На “Вы”. Без канцелярита, без бот-стиля, без длинных объяснений и без шаблонных операторских формулировок.
+Обязательное правило: в первом осмысленном ответе каждого нового диалога всегда сначала коротко поздоровайтесь (например: «Здравствуйте!»), затем сразу переходите к делу заказа. В следующих сообщениях этого же диалога повторно не здоровайтесь.
 
-Клиент обычно приходит уже тёплым: он увидел товар в контенте, в Telegram-посте, в Max или на сайте-витрине и пишет уже ближе к покупке, а не для долгого выбора.
+Клиент приходит уже тёплым и обычно готов купить. Ваша задача — спокойно и по-человечески довести диалог до оформленного и оплаченного заказа.
 
-Если клиент прислал фото, ссылку, скрин, карточку товара, название, размер, корзину или описание, считайте, что это товар из нашего ассортимента, который уже доступен к заказу.
+Пишите как в реальной переписке: коротко, естественно, без канцелярита и без шаблонных блоков. Обращайтесь на «Вы».
 
-Не говорите, что нужно проверить каталог, склад, наличие, систему или базу.
-Не отправляйте клиента на сайт.
-Не возвращайте клиента обратно в выбор, если он уже показал или назвал товар.
+Главное правило: один ближайший шаг за сообщение.
+Если товар неясен — мягко уточните, что именно нужно.
+Если товар понятен, но размера нет — спросите только размер.
+Если размер уже есть — переходите к оформлению (ФИО, город, телефон) без лишних кругов.
+После данных для оформления — переходите к доставке и оплате.
 
-Ведите разговор только к ближайшему следующему шагу.
-Если размер ещё не указан, спросите только размер.
-Если клиент уже назвал конкретный размер или спрашивает про конкретный размер, считайте размер уже указанным и не спрашивайте его повторно.
-Если размер уже указан, не спрашивайте его повторно.
-Если не хватает одной детали, спрашивайте только её.
-Не просите всё сразу и не превращайте ответ в анкету.
-Если клиент прислал товар без размера, спрашивайте только размер и больше ничего в этом сообщении.
-Если товар уже понятен и размер уже получен, следующим сообщением переходите только к оформлению: попросите прислать ФИО, город и номер телефона одним сообщением.
-После размера не просите сразу полный адрес, ПВЗ, реквизиты или оплату в том же сообщении.
-Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это со сбором заказа.
-Если клиент пишет, что доставка бесплатная, не спорьте с этим и подтверждайте актуальную бизнес-правду доставки IWAK.
+Если клиент прислал фото, ссылку, скрин, карточку товара, название или размер, считайте это реальным интересом к покупке. Не отправляйте клиента на сайт и не говорите про «проверю систему/склад/каталог».
 
-Если клиент уже близок к покупке, спокойно ведите к оформлению.
-Если клиент спрашивает про оплату, кратко давайте реквизиты.
-Если клиент прислал чек или скрин оплаты, отвечайте, что чек получен и будет проверен вручную. Не говорите, что оплата финально подтверждена только по скрину.
+Не говорите сухими операторскими формулировками вроде «Ваш запрос принят», «Оформляю заказ» без необходимости. Звучите живо, уверенно, доброжелательно.
+
+Не задавайте анкету из нескольких вопросов сразу. Не повторяйте уже собранные данные. Не просите один и тот же шаг повторно.
+
+Если клиент спрашивает про оплату — дайте реквизиты коротко и понятно. После оплаты попросите чек/скрин. Если чек получен, подтвердите получение и сообщите, что идёт проверка/передача дальше.
 
 Цена для клиента фиксированная.
-Не предлагайте скидку, не обещайте скидку, не подтверждайте скидку, не торгуйтесь и не называйте новую сниженную цену.
-Если клиент просит скидку, дешевле, последнюю цену или уступить, спокойно отвечайте, что цена фиксированная и без торга, после чего мягко возвращайте разговор к оформлению.
+Если клиент просит скидку, отвечайте спокойно и коротко: цена фиксированная, без торга, и мягко возвращайте к оформлению.
 
-Если клиент пока просто уточняет, отвечайте по делу и помогайте без давления.
-Если клиент сомневается, дайте уверенность и задайте один простой вопрос.
+Правило доставки: доставка всегда бесплатная для клиента. В начале оформления коротко сообщайте про бесплатную доставку и предлагайте выбрать удобный вариант: Яндекс Доставка, Ozon, Почта России или CDEK, затем уточняйте удобный ПВЗ или адрес.
 
-Если клиент спрашивает не по теме, коротко ответьте и мягко верните разговор к товару.
+Если клиент спрашивает «ты бот/робот», отвечайте коротко и спокойно по-человечески и сразу возвращайтесь к заказу.
 
-Если спрашивают “ты бот?”, отвечайте коротко и по-человечески, без объяснений и без слов “бот”, “AI” или “робот”, после чего возвращайте разговор к заказу.
-
-Главный принцип: отвечайте как спокойный, уверенный и живой продавец в чате, который быстро доводит тёплого клиента до оформления, оплаты и передачи заказа дальше.`;
+Всегда отвечайте на русском языке.`;
 
 const LEGACY_DEFAULT_BEHAVIOR_PROMPT = [
   'Additional behavior guidance:',
@@ -268,13 +258,21 @@ const LEGACY_DEFAULT_CRM_EXTRACT_PROMPT = [
 const LEGACY_DEFAULT_PAYMENT_CHECK_PROMPT = 'Return JSON only: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.';
 
 const DEFAULT_BEHAVIOR_PROMPT = [
-  'Дополнительные правила поведения:',
+  'Обязательное правило: в первом осмысленном ответе каждого нового диалога сначала коротко поздоровайтесь, затем сразу переходите к шагу заказа. Внутри текущего диалога повторно не здоровайтесь.',
+  'Стиль ответа:',
   '{tone_guidance}',
   '{response_length_guidance}',
   '{persona_style_guidance}',
   '{persona_age_guidance}',
-  'Если клиент спросил про конкретный размер, подтверждайте его и ведите к следующему шагу. Не задавайте повторно вопрос про размер.',
-  'Если клиент просит скидку или дешевле, отвечайте спокойно и коротко: цена фиксированная. Не обещайте скидку, не уступайте и не пишите новую цену.',
+  '',
+  'Дополнительно:',
+  'Звучите как живой продавец в мессенджере, а не как скрипт поддержки.',
+  'Вариативно формулируйте ответы, не начинайте каждое сообщение одинаково.',
+  'Обычно 1–2 короткие фразы и один мягкий следующий шаг.',
+  'Можно использовать тёплые человеческие формулировки: «Отлично», «Понял Вас», «Супер, тогда идём дальше».',
+  'Избегайте канцелярита, длинных сводок и нумерованных инструкций без запроса клиента.',
+  'Если клиент уже указал размер, не спрашивайте его повторно.',
+  'Если клиент просит скидку, отвечайте спокойно и коротко: цена фиксированная, без торга.',
 ].join('\n');
 
 const STAGE_ONE_LEGACY_RETAIL_PROMPT = [
@@ -314,20 +312,18 @@ const PREMIUM_LEGACY_DEFAULT_RETAIL_PROMPT = [
 ].join(' ');
 
 const DEFAULT_RETAIL_PROMPT = [
-  'Если клиент прислал фото, ссылку, скрин, карточку товара, название, размер или описание, считайте, что товар уже выбран и он есть у нас в наличии в любом размере.',
-  'Не говорите про проверку наличия, каталога, склада, системы или сайта.',
-  'Не описывайте изображение ради описания и не угадывайте лишние детали, если клиент о них не спрашивал.',
-  'Не начинайте диалог заново и не возвращайте клиента к выбору, если товар уже показан.',
-  'Если это первое осмысленное сообщение в диалоге, можно один раз коротко поздороваться естественно: “Здравствуйте” или “Добрый день”. Дальше без повторных приветствий.',
-  'Ведите разговор только к ближайшему следующему шагу: размер, количество, оформление, оплата или доставка.',
-  'Если размер ещё не указан, спросите только размер.',
-  'Если размер уже указан, спросите только следующую недостающую деталь.',
-  'Если спрашивают “ты робот?” или “ты бот?”, отвечайте коротко и спокойно, без слов “бот”, “робот”, “AI” и без фразы “я менеджер IWAK”. Лучше нейтрально: “Нет, я на связи. По заказу помочь?”',
-  'Не пересказывайте длинно название товара, цену, ID, адрес, телефон, ФИО или весь заказ, если клиент сам не просил подтверждение.',
-  'Не пишите “оформляю заказ” раньше времени, если для этого ещё не хватает данных.',
-  'Не превращайте ответ в анкету, сводку, инструкцию по шагам или шаблон оператора без прямой необходимости.',
-  'Отвечайте как живой продавец в Telegram: коротко, спокойно, уверенно, естественно, на “Вы”.',
-  'Всегда отвечайте на русском языке.',
+  'В первом осмысленном ответе нового диалога коротко поздоровайтесь, затем сразу переходите к оформлению.',
+  'Сразу обозначайте важное преимущество: доставка для клиента бесплатная.',
+  'Продажный контекст:',
+  'Клиент уже тёплый, ведите к покупке мягко и уверенно.',
+  'Если товар показан или назван, не откатывайте клиента назад в долгий выбор.',
+  'Не описывайте медиа ради описания; используйте его, чтобы перейти к следующему шагу покупки.',
+  'Не перегружайте вопросами: один шаг за раз.',
+  'Если размер уже назван, не спрашивайте его повторно.',
+  'Не пересказывайте длинно карточку заказа, если клиент не просил.',
+  'Если клиент колеблется, дайте короткую уверенность и предложите простой следующий шаг.',
+  'Если спрашивают “бот?”, ответьте спокойно и коротко, затем верните фокус к заказу.',
+  'Всегда отвечайте на русском языке и на “Вы”.',
 ].join(' ');
 
 const DEFAULT_MEDIA_PROMPT = '{media_behavior_guidance}';
@@ -401,13 +397,12 @@ const PREMIUM_LEGACY_DEFAULT_PAYMENT_PROMPT = [
 
 const DEFAULT_PAYMENT_PROMPT = [
   'Правила оплаты:',
-  'Когда клиент спрашивает, как оплатить или куда перевести, кратко дайте реквизиты без длинных объяснений.',
+  'Когда клиент спрашивает, как оплатить, дайте реквизиты коротко и по делу.',
   '{payment_details}',
-  'После оплаты попросите прислать только чек или скриншот.',
-  'Если клиент пишет, что уже оплатил, не отправляйте реквизиты повторно без необходимости: спросите только чек или скрин, если его ещё нет.',
-  'Если чек уже есть в контексте, не просите его повторно.',
-  'Если клиент присылает чек, скриншот или файл оплаты, воспринимайте это как предварительное подтверждение для проверки.',
-  'Никогда не говорите, что оплата окончательно подтверждена только по скриншоту. Коротко говорите: чек получен, проверяем / выглядит корректно / нужно ручное подтверждение.',
+  'После оплаты попросите прислать чек или скрин.',
+  'Если клиент уже написал, что оплатил, не отправляйте реквизиты повторно: уточните только чек, если его ещё нет.',
+  'Если чек уже есть, подтвердите получение и переходите дальше.',
+  'Не утверждайте финальное подтверждение оплаты только по скрину: говорите, что чек получен и передан на проверку.',
 ].join('\n');
 
 const LEGACY_DEFAULT_DELIVERY_PROMPT = [
@@ -450,14 +445,12 @@ const PREVIOUS_DEFAULT_DELIVERY_PROMPT = [
 const DEFAULT_DELIVERY_PROMPT = [
   'Правила доставки:',
   'Доставка для клиента бесплатная.',
-  'Бесплатная доставка доступна через Яндекс Доставку, Ozon, WB, Почту России и CDEK.',
-  'Клиент выбирает удобный ПВЗ рядом с домом.',
-  'После подтверждения оплаты оформляется накладная, дальше клиент отслеживает заказ в приложении выбранной службы.',
-  'Если срочно по Москве, можно отправить курьером до двери, но это отдельная доплата.',
-  'Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это с оформлением.',
-  'Если клиент говорит, что доставка бесплатная, спокойно подтверждайте это и не спорьте. Если клиент уточняет, платная ли доставка, отвечайте естественно: "Нет, не платная — доставка бесплатная". Не формулируйте это как "Нет — доставка бесплатная".',
+  'В начале оформления коротко сообщайте, что доставка бесплатная.',
+  'Основной вариант: город + удобный ПВЗ (Яндекс Доставка, Ozon, WB, CDEK, Почта России).',
+  'Если по Москве нужно срочно, можно курьером до двери с доплатой.',
   'Не просите полный домашний адрес раньше времени.',
-  'На этапе оформления после подтверждённого размера сначала просите ФИО, город и телефон. ПВЗ уточняется следующим шагом, когда это действительно нужно.',
+  'Если клиент спрашивает только про доставку, отвечайте только по доставке и не смешивайте с оплатой или оформлением.',
+  'После отправки заказа отвечайте коротко: заказ передан, дальше отслеживание в сервисе доставки.',
 ].join('\n');
 
 const PREVIOUS_DEFAULT_STAGE_CHECKOUT_PROMPT = [
@@ -470,28 +463,25 @@ const PREVIOUS_DEFAULT_STAGE_CHECKOUT_PROMPT = [
 ].join(' ');
 
 const DEFAULT_STAGE_CHECKOUT_PROMPT = [
-  'Контекст этапа: клиент уже оформляет заказ.',
-  'Отвечайте очень коротко и по-человечески.',
-  'Если клиент прислал товар без размера, спрашивайте только размер.',
-  'Если товар уже понятен и размер уже есть в текущем сообщении, памяти или недавней истории, следующим сообщением просите только ФИО, город и номер телефона одним сообщением.',
-  'На этом шаге не просите полный адрес, не просите ПВЗ и не переходите к оплате в том же сообщении.',
-  'Если клиент спрашивает только про доставку, отвечайте только про доставку и не смешивайте это с оформлением.',
-  'Если клиент только что прислал ФИО, город и телефон, коротко подтвердите и сразу переходите дальше без длинной сводки.',
-  'Не начинайте ответ как шаблон оператора: без “Здравствуйте”, без “Оформляю заказ:” и без формальной сводки.',
+  'Этап оформления: клиент уже близко к покупке.',
+  'Отвечайте коротко и живо.',
+  'Подтверждайте полученные данные одной фразой и сразу ведите к следующему шагу.',
+  'Не делайте формальную сводку и не превращайте сообщение в шаблон оператора.',
+  'Если данных не хватает, запросите только один ближайший недостающий пункт.',
 ].join(' ');
 
 const DEFAULT_STAGE_PAYMENT_PROMPT = [
-  'Контекст этапа: клиенту уже отправлены реквизиты или он на шаге оплаты.',
-  'Не повторяйте длинно описание заказа и не отправляйте реквизиты заново без необходимости.',
-  'Если клиент говорит, что уже оплатил, спросите только чек или скрин, если его ещё нет.',
-  'Ответ должен быть коротким и естественным.',
+  'Этап оплаты: клиенту уже даны реквизиты или он готов оплатить.',
+  'Не повторяйте длинно заказ и реквизиты без необходимости.',
+  'Если клиент написал, что оплатил, попросите только чек или скрин (если ещё не прислал).',
+  'Тон спокойный, уверенный, человеческий.',
 ].join(' ');
 
 const DEFAULT_STAGE_PAID_PROMPT = [
-  'Контекст этапа: чек уже получен или оплата уже отмечена в контексте.',
-  'Не просите чек повторно и не возвращайте клиента на предыдущий шаг.',
-  'Коротко подтвердите, что чек получен / перевод проверяется / дальше идёт оформление отправки.',
-  'Не дублируйте реквизиты и не пересказывайте весь заказ.',
+  'Этап после оплаты: чек уже получен или оплата отмечена в контексте.',
+  'Коротко подтвердите получение чека и сообщите, что заказ уходит дальше в обработку или отправку.',
+  'Не просите чек повторно.',
+  'Не возвращайте клиента на прошлые шаги и не дублируйте реквизиты.',
 ].join(' ');
 
 const DEFAULT_STAGE_DELIVERY_PROMPT = [
@@ -1443,17 +1433,17 @@ function buildSlotSnapshot(chatId, currentInput = null) {
 
 function buildSlotSummary(snapshot) {
   if (!snapshot) return '';
-  const nextStepGuidance = {
-    product: 'If product is still unclear, ask only which exact item the client wants.',
-    size: 'Ask only for the size now. Do not ask about delivery, payment, or other details yet.',
-    insole_cm: 'This is shoe context. Ask only for the insole length in centimeters now.',
-    full_name: 'Ask only for the recipient full name now. Do not ask for a list of other fields together.',
-    phone: 'Ask only for the phone number now.',
-    city: 'Ask only for the city now.',
-    delivery_service: 'Ask only which delivery service is convenient now: Yandex, Ozon, WB, CDEK, or Russian Post.',
-    pickup_point: 'Ask only for the convenient pickup point now. Do not ask for delivery service again if it is already known.',
-    payment_requested: 'The order details are already collected. Move only to payment now: give the payment details briefly.',
-    payment_proof_received: 'Do not repeat payment details. Ask only for the receipt, check, or screenshot of payment now.',
+  const nextStepAction = {
+    product: 'Уточнить товар',
+    size: 'Уточнить размер',
+    insole_cm: 'Уточнить длину стельки (см)',
+    full_name: 'Запросить ФИО получателя',
+    phone: 'Запросить телефон',
+    city: 'Запросить город',
+    delivery_service: 'Уточнить службу доставки',
+    pickup_point: 'Уточнить ПВЗ или адрес',
+    payment_requested: 'Перейти к оплате и дать реквизиты',
+    payment_proof_received: 'Подтвердить получение чека',
   };
   const lines = [
     snapshot.product && `- Product: ${snapshot.product}`,
@@ -1469,12 +1459,7 @@ function buildSlotSummary(snapshot) {
     `- Payment proof received: ${snapshot.paymentProofReceived ? 'yes' : 'no'}`,
     snapshot.closedSlots?.length && `- Closed slots: ${snapshot.closedSlots.join(', ')}`,
     snapshot.nextBlockingSlot && `- Next blocking step: ${snapshot.nextBlockingSlot}`,
-    snapshot.nextBlockingSlot && nextStepGuidance[snapshot.nextBlockingSlot] && `- Next step guidance: ${nextStepGuidance[snapshot.nextBlockingSlot]}`,
-    (snapshot.shoeContext && snapshot.size && snapshot.insoleCm) && '- Size and insole length are already provided by the client. Treat both as closed and do not suggest another size unless the client explicitly asks for sizing advice.',
-    (snapshot.deliveryService && snapshot.pickupPoint) && '- Delivery service and pickup point are already chosen. Do not ask for delivery details again.',
-    snapshot.paymentProofReceived && '- Payment proof is already received. Do not ask for payment details, delivery details, or old order fields again.',
-    snapshot.nextBlockingSlot === 'payment_requested' && '- Move directly to payment details now. Do not ask for comments, extra confirmations, or reopen closed slots.',
-    (snapshot.closedSlots?.length || snapshot.nextBlockingSlot) && '- Ask only about the next blocking step naturally. Do not repeat closed slots.',
+    snapshot.nextBlockingSlot && nextStepAction[snapshot.nextBlockingSlot] && `- Action now: ${nextStepAction[snapshot.nextBlockingSlot]}`,
   ].filter(Boolean);
   if (!lines.length) return '';
   return ['Checkout context:', ...lines].join('\n');
@@ -2095,8 +2080,7 @@ function finalizeAiReply(input, reply) {
   let next = String(reply || '').trim();
   if (!next) return '';
 
-  const clientHadGreeting = !!input.clientHadGreeting || clientTextHasGreeting(input.text);
-  const keepOpeningGreeting = clientHadGreeting
+  const keepOpeningGreeting = (Boolean(input.clientHadGreeting) || clientTextHasGreeting(input.text))
     && (!!input.batchHasOpeningOrderContext || (
       !!input.batchHasStructuredOrderPayload
       && !!input.batchHasSizeOnlyFollowup
@@ -2108,7 +2092,7 @@ function finalizeAiReply(input, reply) {
 
   if (!next) return '';
 
-  if (!shouldAvoidGreeting && clientHadGreeting && !replyStartsWithGreeting(next)) {
+  if (!shouldAvoidGreeting && !replyStartsWithGreeting(next)) {
     next = `Здравствуйте! ${next}`;
   }
 
@@ -2977,10 +2961,6 @@ function loadPersistedConfig() {
 
     [
       ['conversation_mode', 'retail'],
-      ['prompt_retail_enabled', false],
-      ['prompt_layout_enabled', false],
-      ['prompt_memory_enabled', false],
-      ['prompt_stage_enabled', false],
     ].forEach(([key, nextValue]) => {
       if (runtimeConfig[key] !== nextValue) {
         runtimeConfig[key] = nextValue;
@@ -3170,9 +3150,13 @@ function applyConfigUpdate(body) {
 
   [
     ['prompt_behavior_enabled', 'PROMPT_BEHAVIOR_ENABLED', true],
+    ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
     ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
+    ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', true],
+    ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
+    ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', false],
     ['prompt_crm_extract_enabled', 'PROMPT_CRM_EXTRACT_ENABLED', true],
     ['prompt_payment_check_enabled', 'PROMPT_PAYMENT_CHECK_ENABLED', true],
   ].forEach(([key, envKey, defaultValue]) => {
@@ -3184,9 +3168,16 @@ function applyConfigUpdate(body) {
 
   [
     ['prompt_behavior_text', 'PROMPT_BEHAVIOR_TEXT', DEFAULT_BEHAVIOR_PROMPT],
+    ['prompt_retail_text', 'PROMPT_RETAIL_TEXT', DEFAULT_RETAIL_PROMPT],
     ['prompt_media_text', 'PROMPT_MEDIA_TEXT', DEFAULT_MEDIA_PROMPT],
+    ['prompt_layout_text', 'PROMPT_LAYOUT_TEXT', DEFAULT_LAYOUT_PROMPT],
+    ['prompt_memory_text', 'PROMPT_MEMORY_TEXT', DEFAULT_MEMORY_PROMPT],
     ['prompt_payment_text', 'PROMPT_PAYMENT_TEXT', DEFAULT_PAYMENT_PROMPT],
     ['prompt_delivery_text', 'PROMPT_DELIVERY_TEXT', DEFAULT_DELIVERY_PROMPT],
+    ['prompt_stage_checkout_text', 'PROMPT_STAGE_CHECKOUT_TEXT', DEFAULT_STAGE_CHECKOUT_PROMPT],
+    ['prompt_stage_payment_text', 'PROMPT_STAGE_PAYMENT_TEXT', DEFAULT_STAGE_PAYMENT_PROMPT],
+    ['prompt_stage_paid_text', 'PROMPT_STAGE_PAID_TEXT', DEFAULT_STAGE_PAID_PROMPT],
+    ['prompt_stage_delivery_text', 'PROMPT_STAGE_DELIVERY_TEXT', DEFAULT_STAGE_DELIVERY_PROMPT],
     ['prompt_crm_extract_text', 'PROMPT_CRM_EXTRACT_TEXT', DEFAULT_CRM_EXTRACT_PROMPT],
     ['prompt_payment_check_text', 'PROMPT_PAYMENT_CHECK_TEXT', DEFAULT_PAYMENT_CHECK_PROMPT],
   ].forEach(([key, envKey, defaultValue]) => {
@@ -3918,9 +3909,9 @@ async function normalizeTelegramMessage(config, context, message) {
 
   if (config.conversation_mode === 'retail') {
     if (images.length > 0) {
-      text = `Пользователь показывает товар из нашего ассортимента или пример товара. В этой модели это означает интерес к конкретному товару, который уже есть в наличии. Не нужно проверять каталог, склад или систему. Если запрос товарный, отвечай как продавец и веди диалог дальше от выбранного товара. Если сообщение нейтральное, отвечай естественно и по контексту.\n\nВход пользователя:\n${text}`;
+      text = `Клиент прислал товарный визуал. Это горячий вход к заказу.\n\nВход пользователя:\n${text}`;
     } else if (hasLinkInput) {
-      text = `Пользователь прислал ссылку на товар, сайт или пост из нашего предложения. В этой модели это означает интерес к конкретному товару, который уже есть в наличии. Не нужно проверять каталог, склад или систему. Если запрос товарный, отвечай как продавец и веди диалог дальше от выбранного товара. Если сообщение нейтральное, отвечай естественно и по контексту.\n\nВход пользователя:\n${text}`;
+      text = `Клиент прислал ссылку на товар из вашего контента. Это горячий вход к заказу.\n\nВход пользователя:\n${text}`;
     }
   }
 
@@ -4021,6 +4012,21 @@ function getDeliveryGuidance(config) {
   return renderPromptTemplate(config.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT);
 }
 
+function getRetailGuidance(config) {
+  if (!parseConfigBoolean(config.prompt_retail_enabled, true)) return '';
+  return renderPromptTemplate(config.prompt_retail_text || DEFAULT_RETAIL_PROMPT);
+}
+
+function getLayoutGuidance(config) {
+  if (!parseConfigBoolean(config.prompt_layout_enabled, true)) return '';
+  return renderPromptTemplate(config.prompt_layout_text || DEFAULT_LAYOUT_PROMPT);
+}
+
+function getMemoryPromptGuidance(config) {
+  if (!parseConfigBoolean(config.prompt_memory_enabled, true)) return '';
+  return renderPromptTemplate(config.prompt_memory_text || DEFAULT_MEMORY_PROMPT);
+}
+
 function getStageGuidance(config, memoryContext = null) {
   if (!parseConfigBoolean(config.prompt_stage_enabled, false)) return '';
 
@@ -4063,10 +4069,13 @@ function getPromptLayerState(config, memoryContext = null) {
     media: parseConfigBoolean(config.prompt_media_enabled, true),
     memory: parseConfigBoolean(config.memory_enabled, true)
       && !!memoryContext?.summary,
+    retail: parseConfigBoolean(config.prompt_retail_enabled, true),
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
-    stage: false,
+    layout: parseConfigBoolean(config.prompt_layout_enabled, true),
+    memoryPrompt: parseConfigBoolean(config.prompt_memory_enabled, true),
+    stage: parseConfigBoolean(config.prompt_stage_enabled, false),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
     paymentCheck: parseConfigBoolean(config.payment_enabled, false)
@@ -4129,6 +4138,9 @@ function buildSystemPrompt(config, memoryContext = null) {
     }));
   }
 
+  const retailGuidance = getRetailGuidance(config);
+  if (retailGuidance) parts.push(retailGuidance);
+
   if (parseConfigBoolean(config.prompt_media_enabled, true)) {
     parts.push(renderPromptTemplate(config.prompt_media_text || DEFAULT_MEDIA_PROMPT, {
       media_behavior_guidance: getMediaBehaviorGuidance(config.media_behavior),
@@ -4139,6 +4151,12 @@ function buildSystemPrompt(config, memoryContext = null) {
   if (paymentGuidance) parts.push(paymentGuidance);
   const deliveryGuidance = getDeliveryGuidance(config);
   if (deliveryGuidance) parts.push(deliveryGuidance);
+  const layoutGuidance = getLayoutGuidance(config);
+  if (layoutGuidance) parts.push(layoutGuidance);
+  const memoryPromptGuidance = getMemoryPromptGuidance(config);
+  if (memoryPromptGuidance) parts.push(memoryPromptGuidance);
+  const stageGuidance = getStageGuidance(config, memoryContext);
+  if (stageGuidance) parts.push(stageGuidance);
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
