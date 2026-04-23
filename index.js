@@ -527,6 +527,7 @@ const DEFAULT_CRM_EXTRACT_PROMPT = [
 ].join(' ');
 
 const DEFAULT_PAYMENT_CHECK_PROMPT = 'Верните только JSON: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.';
+const ACTIVE_PROMPT_PROFILE_VERSION = 'closing-v5-2026-04-23';
 
 if ((process.env.TRUST_PROXY || '').trim() === 'true') {
   app.set('trust proxy', 1);
@@ -586,6 +587,7 @@ const runtimeConfig = {
   prompt_crm_extract_text: process.env.PROMPT_CRM_EXTRACT_TEXT || DEFAULT_CRM_EXTRACT_PROMPT,
   prompt_payment_check_enabled: process.env.PROMPT_PAYMENT_CHECK_ENABLED !== 'false',
   prompt_payment_check_text: process.env.PROMPT_PAYMENT_CHECK_TEXT || DEFAULT_PAYMENT_CHECK_PROMPT,
+  prompt_profile_version: process.env.PROMPT_PROFILE_VERSION || ACTIVE_PROMPT_PROFILE_VERSION,
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -2978,6 +2980,7 @@ function getRuntimeSnapshot() {
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text,
+    prompt_profile_version: runtimeConfig.prompt_profile_version || ACTIVE_PROMPT_PROFILE_VERSION,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -3060,6 +3063,29 @@ function loadPersistedConfig() {
     const normalizedDeliveryPrompt = normalizeDeliveryPromptConfigValue(runtimeConfig.prompt_delivery_text);
     if (normalizedDeliveryPrompt !== runtimeConfig.prompt_delivery_text) {
       runtimeConfig.prompt_delivery_text = normalizedDeliveryPrompt;
+      shouldRewrite = true;
+    }
+
+    if (String(runtimeConfig.prompt_profile_version || '') !== ACTIVE_PROMPT_PROFILE_VERSION) {
+      runtimeConfig.instruction = DEFAULT_CORE_INSTRUCTION;
+      runtimeConfig.prompt_behavior_enabled = true;
+      runtimeConfig.prompt_behavior_text = DEFAULT_BEHAVIOR_PROMPT;
+      runtimeConfig.prompt_retail_enabled = true;
+      runtimeConfig.prompt_retail_text = DEFAULT_RETAIL_PROMPT;
+      runtimeConfig.prompt_layout_enabled = false;
+      runtimeConfig.prompt_layout_text = DEFAULT_LAYOUT_PROMPT;
+      runtimeConfig.prompt_memory_enabled = false;
+      runtimeConfig.prompt_memory_text = DEFAULT_MEMORY_PROMPT;
+      runtimeConfig.prompt_payment_enabled = true;
+      runtimeConfig.prompt_payment_text = DEFAULT_PAYMENT_PROMPT;
+      runtimeConfig.prompt_delivery_enabled = true;
+      runtimeConfig.prompt_delivery_text = DEFAULT_DELIVERY_PROMPT;
+      runtimeConfig.prompt_stage_enabled = true;
+      runtimeConfig.prompt_stage_checkout_text = DEFAULT_STAGE_CHECKOUT_PROMPT;
+      runtimeConfig.prompt_stage_payment_text = DEFAULT_STAGE_PAYMENT_PROMPT;
+      runtimeConfig.prompt_stage_paid_text = DEFAULT_STAGE_PAID_PROMPT;
+      runtimeConfig.prompt_stage_delivery_text = DEFAULT_STAGE_DELIVERY_PROMPT;
+      runtimeConfig.prompt_profile_version = ACTIVE_PROMPT_PROFILE_VERSION;
       shouldRewrite = true;
     }
 
@@ -5210,6 +5236,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.prompt_crm_extract_text = DEFAULT_CRM_EXTRACT_PROMPT;
   runtimeConfig.prompt_payment_check_enabled = true;
   runtimeConfig.prompt_payment_check_text = DEFAULT_PAYMENT_CHECK_PROMPT;
+  runtimeConfig.prompt_profile_version = ACTIVE_PROMPT_PROFILE_VERSION;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -5244,7 +5271,7 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_COMMENT = '';
   process.env.PROMPT_BEHAVIOR_ENABLED = 'true';
   process.env.PROMPT_BEHAVIOR_TEXT = DEFAULT_BEHAVIOR_PROMPT;
-  process.env.PROMPT_RETAIL_ENABLED = 'false';
+  process.env.PROMPT_RETAIL_ENABLED = 'true';
   process.env.PROMPT_RETAIL_TEXT = DEFAULT_RETAIL_PROMPT;
   process.env.PROMPT_MEDIA_ENABLED = 'true';
   process.env.PROMPT_MEDIA_TEXT = DEFAULT_MEDIA_PROMPT;
@@ -5256,7 +5283,7 @@ app.delete('/config', (req, res) => {
   process.env.PROMPT_PAYMENT_TEXT = DEFAULT_PAYMENT_PROMPT;
   process.env.PROMPT_DELIVERY_ENABLED = 'true';
   process.env.PROMPT_DELIVERY_TEXT = DEFAULT_DELIVERY_PROMPT;
-  process.env.PROMPT_STAGE_ENABLED = 'false';
+  process.env.PROMPT_STAGE_ENABLED = 'true';
   process.env.PROMPT_STAGE_CHECKOUT_TEXT = DEFAULT_STAGE_CHECKOUT_PROMPT;
   process.env.PROMPT_STAGE_PAYMENT_TEXT = DEFAULT_STAGE_PAYMENT_PROMPT;
   process.env.PROMPT_STAGE_PAID_TEXT = DEFAULT_STAGE_PAID_PROMPT;
@@ -5265,6 +5292,7 @@ app.delete('/config', (req, res) => {
   process.env.PROMPT_CRM_EXTRACT_TEXT = DEFAULT_CRM_EXTRACT_PROMPT;
   process.env.PROMPT_PAYMENT_CHECK_ENABLED = 'true';
   process.env.PROMPT_PAYMENT_CHECK_TEXT = DEFAULT_PAYMENT_CHECK_PROMPT;
+  process.env.PROMPT_PROFILE_VERSION = ACTIVE_PROMPT_PROFILE_VERSION;
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
