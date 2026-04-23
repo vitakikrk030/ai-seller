@@ -170,11 +170,10 @@ const DEFAULT_CORE_INSTRUCTION = `Вы — closing-менеджер IWAK в Tele
 5) После чека давайте итог по проверке и закрывайте этап менеджера.
 
 Доставка:
-- Всегда сразу сообщайте: доставка бесплатная.
+- Доставка бесплатная, сообщайте об этом естественно по ходу оформления.
 - Варианты: Яндекс Доставка, Ozon, CDEK, Почта России.
 - Если по Москве нужен курьер до двери — это отдельная доплата.
-- Когда клиент пишет «можно заказать [размер]», в этом же первом ответе после приветствия сразу дайте короткий блок про бесплатную доставку и варианты служб, затем задайте только один следующий вопрос по оформлению.
-- Если просите данные для отправки, используйте аккуратный пунктный формат (ФИО, телефон, город/ПВЗ) и отдельно перечисляйте службы доставки.
+- Не вставляйте один и тот же шаблон доставки в каждое сообщение.
 
 Оплата и чек:
 - Базовый сценарий оплаты: перевод на карту.
@@ -485,15 +484,10 @@ const DEFAULT_STAGE_CHECKOUT_PROMPT = [
   'Не делайте формальную сводку и не превращайте сообщение в шаблон оператора.',
   'Не пересказывайте товар, цену, размер и доставку большим блоком без запроса клиента.',
   'Если ещё не указана стелька для обуви, спросите только стельку.',
-  'После стельки на этапе оформления можно запросить данные одним аккуратным блоком.',
+  'После стельки переходите к оформлению естественным разговором.',
   'Перед оплатой должны быть собраны: город, служба доставки, ПВЗ/адрес и телефон получателя.',
   'Избегайте повторяемых канцелярских конструкций; формулируйте как в обычной переписке.',
-  'Если нужно запросить несколько данных разом, используйте аккуратный формат:',
-  'Для оформления пришлите, пожалуйста:',
-  '- ФИО',
-  '- Номер телефона',
-  '- Город и адрес удобного ПВЗ',
-  'Ниже отдельным блоком укажите службы доставки: Яндекс Доставка, Ozon, CDEK, Почта России, курьер по Москве (платно).',
+  'Никаких фиксированных заготовок; формулировки должны быть вариативными.',
 ].join(' ');
 
 const DEFAULT_STAGE_PAYMENT_PROMPT = [
@@ -529,7 +523,7 @@ const DEFAULT_CRM_EXTRACT_PROMPT = [
 ].join(' ');
 
 const DEFAULT_PAYMENT_CHECK_PROMPT = 'Верните только JSON: {"status":"","summary":"","amount":"","recipient":"","cardLast4":"","date":"","manualCheckRequired":true}.';
-const ACTIVE_PROMPT_PROFILE_VERSION = 'closing-v5-2026-04-23';
+const ACTIVE_PROMPT_PROFILE_VERSION = 'closing-v6-2026-04-23';
 
 if ((process.env.TRUST_PROXY || '').trim() === 'true') {
   app.set('trust proxy', 1);
@@ -4179,21 +4173,6 @@ function getMemoryPromptGuidance(config) {
   return renderPromptTemplate(config.prompt_memory_text || DEFAULT_MEMORY_PROMPT);
 }
 
-function getCheckoutFormattingGuidance() {
-  return [
-    'Важный формат на этапе оформления:',
-    '- Используйте короткие абзацы и переносы строк.',
-    '- Если запрашиваете данные, дайте аккуратный список в таком стиле:',
-    'Для оформления пришлите, пожалуйста:',
-    '- ФИО',
-    '- Номер телефона',
-    '- Город и адрес удобного ПВЗ',
-    'Доставка у нас бесплатная.',
-    'Отправляем: Яндекс Доставка, Ozon, CDEK, Почта России.',
-    'Курьер по Москве до двери — платно.',
-  ].join('\n');
-}
-
 function getStageGuidance(config, memoryContext = null) {
   if (!parseConfigBoolean(config.prompt_stage_enabled, false)) return '';
 
@@ -4223,10 +4202,7 @@ function getStageGuidance(config, memoryContext = null) {
   }
 
   if (hasProductContext || ['interested', 'choosing', 'ready_to_buy', 'collecting_order_info'].includes(stage)) {
-    return [
-      renderPromptTemplate(config.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT),
-      getCheckoutFormattingGuidance(),
-    ].filter(Boolean).join('\n');
+    return renderPromptTemplate(config.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT);
   }
 
   return '';
