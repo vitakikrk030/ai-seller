@@ -1962,20 +1962,20 @@
                 <summary class="list-summary">
                   <div class="list-summary-main">
                     <div class="list-title">Доставка</div>
-                    <div class="list-subtitle">Короткие правила доставки, которые добавляются в system prompt и задают правильный ответ AI.</div>
+                    <div class="list-subtitle">Короткие правила доставки из AI Control, которые передаются AI вместе с инструкцией.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
                     <label class="toggle-line">
-                      <input id="promptDeliveryEnabled" type="checkbox" />
-                      Использовать правила доставки в system prompt
+                      <input id="deliveryRulesEnabled" type="checkbox" />
+                      Использовать правила доставки в AI Control
                     </label>
                     <div class="field">
-                      <div class="field-label">Prompt доставки</div>
-                      <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про самовывоз, офлайн-магазин, курьера, возврат и передачу в доставку.</div>
-                      <textarea id="promptDeliveryText"></textarea>
+                      <div class="field-label">Правила доставки</div>
+                      <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про доставку, ПВЗ, курьера и статус после отправки.</div>
+                      <textarea id="deliveryRulesText"></textarea>
                     </div>
                     <div class="actions">
                       <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
@@ -2291,8 +2291,8 @@
       const paymentRecipientName = document.getElementById('paymentRecipientName');
       const paymentBank = document.getElementById('paymentBank');
       const paymentComment = document.getElementById('paymentComment');
-      const promptDeliveryEnabled = document.getElementById('promptDeliveryEnabled');
-      const promptDeliveryText = document.getElementById('promptDeliveryText');
+      const deliveryRulesEnabled = document.getElementById('deliveryRulesEnabled');
+      const deliveryRulesText = document.getElementById('deliveryRulesText');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
       const testMessage = document.getElementById('testMessage');
       const testOutput = document.getElementById('testOutput');
@@ -2557,7 +2557,7 @@
           ['Источник', chat.updateType || '—'],
           ['Business ID', chat.businessConnectionId || '—'],
           ['Batch', batch ? `${batch.batchSize || 1} сообщений · reply ${batch.replyToMessageId || '—'}` : '—'],
-          ['Applied prompts', aiRequest?.appliedPrompts ? Object.entries(aiRequest.appliedPrompts).map(([key, value]) => `${key}:${value ? 'on' : 'off'}`).join(', ') : '—'],
+          ['AI Control', aiRequest?.appliedControls ? Object.entries(aiRequest.appliedControls).map(([key, value]) => `${key}:${value ? 'on' : 'off'}`).join(', ') : '—'],
           ['Последняя отправка', sent ? `TG_SEND ok · ${sent.replyToMessageId ? `reply ${sent.replyToMessageId}` : 'без reply'}` : '—'],
           ['Почему AI мог не ответить', errors.length ? errors.map((item) => item.error || item.message || item.scope || 'ошибка').join(' · ') : 'нет явной причины'],
         ];
@@ -2983,14 +2983,14 @@
           parts.push('Работа с медиа: ' + mapMediaBehavior(item.mediaBehavior));
           parts.push('Медиа во входе: ' + (item.hasMedia ? 'да' : 'нет'));
           parts.push('Ссылка во входе: ' + (item.hasLinkInput ? 'да' : 'нет'));
-          if (item.appliedPrompts) {
-            const applied = Object.entries(item.appliedPrompts)
+          if (item.appliedControls) {
+            const applied = Object.entries(item.appliedControls)
               .map(([key, value]) => `${key}: ${value ? 'on' : 'off'}`)
               .join(', ');
-            parts.push('Applied prompts: ' + applied);
+            parts.push('AI Control: ' + applied);
           }
-          if (Array.isArray(item.promptWarnings) && item.promptWarnings.length) {
-            parts.push('Prompt warnings:\n' + item.promptWarnings.map((warning) => `- ${warning}`).join('\n'));
+          if (Array.isArray(item.controlWarnings) && item.controlWarnings.length) {
+            parts.push('Control warnings:\n' + item.controlWarnings.map((warning) => `- ${warning}`).join('\n'));
           }
           if (item.memoryStage) parts.push('Memory stage: ' + item.memoryStage);
           if (Array.isArray(item.memoryFacts) && item.memoryFacts.length) parts.push('Memory facts: ' + item.memoryFacts.join(', '));
@@ -3079,8 +3079,8 @@
         paymentRecipientName.value = data.payment_recipient_name || '';
         paymentBank.value = data.payment_bank || '';
         paymentComment.value = data.payment_comment || '';
-        promptDeliveryEnabled.checked = data.delivery_rules_enabled !== false;
-        promptDeliveryText.value = data.delivery_rules_text || '';
+        deliveryRulesEnabled.checked = data.delivery_rules_enabled !== false;
+        deliveryRulesText.value = data.delivery_rules_text || '';
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -3255,8 +3255,8 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              delivery_rules_enabled: promptDeliveryEnabled.checked,
-              delivery_rules_text: promptDeliveryText.value,
+              delivery_rules_enabled: deliveryRulesEnabled.checked,
+              delivery_rules_text: deliveryRulesText.value,
             }),
           });
           await loadStatus();
@@ -3634,8 +3634,8 @@
         paymentComment,
       ]);
       bindDirtyState(saveDeliveryButton, [
-        promptDeliveryEnabled,
-        promptDeliveryText,
+        deliveryRulesEnabled,
+        deliveryRulesText,
       ]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);

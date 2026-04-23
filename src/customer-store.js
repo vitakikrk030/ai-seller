@@ -656,20 +656,9 @@ function buildProfileSummary(customer, facts, state, lastOrder, options = {}) {
   if (lastOrder?.payment_check_summary) lines.push(`- Payment check note: ${lastOrder.payment_check_summary}`);
 
   if (!lines.length) return '';
-  const memoryGuidance = options.memoryPromptEnabled === false
-    ? ''
-    : String(options.memoryPromptText || [
-      'Use this naturally when relevant.',
-      'Do not mention internal memory directly.',
-      'Do not mention saved phone or delivery address before checkout.',
-      'Confirm saved phone or delivery address only when the client is clearly placing an order and product size/quantity are already clear.',
-      'Prefer one natural next question instead of forms or numbered checklists.',
-      'Do not invent missing facts.',
-    ].join(' ')).trim();
   return [
     'Customer profile:',
     ...lines,
-    memoryGuidance,
   ].filter(Boolean).join('\n');
 }
 

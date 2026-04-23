@@ -1182,12 +1182,6 @@ function formatMemoryFacts(facts = {}) {
     .map(([key, label]) => `${label}: ${facts[key].value}`);
 }
 
-function renderPromptTemplate(template, variables = {}) {
-  return String(template || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
-    Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? '') : match
-  )).trim();
-}
-
 function buildMemoryContext(chatId, options = {}) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
@@ -1195,8 +1189,6 @@ function buildMemoryContext(chatId, options = {}) {
   const dbContext = safeCustomerStoreCall('customer.context.get', (store) => store.getCustomerContext(cleanChatId, {
     limit: options.limit || MEMORY_RECENT_LIMIT,
     excludeTraceIds: options.excludeTraceIds || [],
-    memoryPromptEnabled: false,
-    memoryPromptText: '',
   }));
   if (dbContext) {
     const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
@@ -3329,11 +3321,10 @@ function buildSystemPrompt(config, memoryContext = null) {
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
 
-function buildFinalPromptPreview(config = runtimeConfig) {
+function buildAiControlPreview(config = runtimeConfig) {
   return {
     systemPrompt: buildSystemPrompt(config),
-    appliedPrompts: getVisibleControlState(config),
-    conflictWarnings: [],
+    appliedControls: getVisibleControlState(config),
     capabilities: getCapabilitySnapshot(config),
   };
 }
@@ -3439,8 +3430,7 @@ async function requestAi(input) {
       closedSlots: input.memoryContext?.slotSnapshot?.closedSlots || [],
       nextBlockingSlot: input.memoryContext?.slotSnapshot?.nextBlockingSlot || '',
       shoeContext: !!input.memoryContext?.slotSnapshot?.shoeContext,
-      appliedPrompts: getVisibleControlState(input.config, input.memoryContext),
-      promptWarnings: [],
+      appliedControls: getVisibleControlState(input.config, input.memoryContext),
     tone: input.config.tone,
     responseLength: input.config.response_length,
     creativity: input.config.creativity,
@@ -3780,7 +3770,7 @@ app.use(requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/config/status', async (req, res) => {
-  const promptPreview = buildFinalPromptPreview(runtimeConfig);
+  const aiControlPreview = buildAiControlPreview(runtimeConfig);
   const status = {
     telegram: runtimeConfig.telegram_token ? 'подключен' : 'нет',
     ai: runtimeConfig.ai_key ? 'подключен' : 'нет',
@@ -3812,8 +3802,8 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
-    final_system_prompt: promptPreview.systemPrompt,
-    applied_prompts: promptPreview.appliedPrompts,
+    ai_control_context: aiControlPreview.systemPrompt,
+    applied_controls: aiControlPreview.appliedControls,
     capabilities: getCapabilitySnapshot(runtimeConfig),
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
     delivery_rules_text: runtimeConfig.delivery_rules_text || DEFAULT_DELIVERY_TEXT,
@@ -3913,8 +3903,8 @@ app.get('/config/status', async (req, res) => {
   res.json(status);
 });
 
-app.get('/config/final-prompt', (req, res) => {
-  res.json(buildFinalPromptPreview(getRuntimeSnapshot()));
+app.get('/config/ai-control-preview', (req, res) => {
+  res.json(buildAiControlPreview(getRuntimeSnapshot()));
 });
 
 app.get('/logs', (req, res) => {
