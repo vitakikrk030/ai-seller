@@ -1463,10 +1463,6 @@ function hasNewerClientFollowup(context) {
   return !batchTraceIds.includes(lastClientTraceId);
 }
 
-function clientTextHasGreeting(text) {
-  return /(?:^|[\s,!.?:;"'«»()\-])(здравствуй(?:те)?|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет(?:ствую)?)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
-}
-
 function isOrderLikeClientText(text) {
   const source = String(text || '');
   if (!source.trim()) return false;
@@ -1483,68 +1479,8 @@ function batchHasOrderLikeContext(inputs = []) {
     || inputs.some((input) => isOrderLikeClientText(input.text));
 }
 
-function recentOrderContextHadGreeting(inputs = []) {
-  if (!batchHasOrderLikeContext(inputs)) return false;
-  const lastInput = inputs[inputs.length - 1];
-  const recentMessages = getRecentMemoryMessages(lastInput?.chatId, 12, inputs.map((input) => input.traceId));
-  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
-    const message = recentMessages[index];
-    if (!message) continue;
-    if (message.role === 'manager' || message.role === 'assistant') break;
-    if (message.role === 'user' && clientTextHasGreeting(message.text) && isOrderLikeClientText(message.text)) return true;
-  }
-  return false;
-}
-
-function batchClientHadGreeting(inputs = []) {
-  return inputs.some((input) => clientTextHasGreeting(input.text))
-    || recentOrderContextHadGreeting(inputs);
-}
-
-function replyStartsWithGreeting(text) {
-  return /^\s*(здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s,!.?:;"'«»()\-])/i.test(String(text || ''));
-}
-
-function stripLeadingGreeting(text) {
-  const next = String(text || '')
-    .replace(/^\s*(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\s*[!,.:\-]*/i, '')
-    .trim();
-  if (!next) return '';
-  return next.charAt(0).toUpperCase() + next.slice(1);
-}
-
-function hasRecentManagerOrAssistantReply(memoryContext = null) {
-  const history = Array.isArray(memoryContext?.history) ? memoryContext.history : [];
-  const latestMessage = history[history.length - 1];
-  if (!latestMessage) return false;
-  const latestTs = Date.parse(latestMessage.createdAt || '');
-  if (Number.isFinite(latestTs) && (Date.now() - latestTs) >= GREETING_DIALOG_TIMEOUT_MS) {
-    return false;
-  }
-  return latestMessage.role === 'assistant' || /^Manager:/i.test(String(latestMessage.content || ''));
-}
-
 function finalizeAiReply(input, reply) {
-  let next = String(reply || '').trim();
-  if (!next) return '';
-
-  const keepOpeningGreeting = (Boolean(input.clientHadGreeting) || clientTextHasGreeting(input.text))
-    && (!!input.batchHasOpeningOrderContext || (
-      !!input.batchHasStructuredOrderPayload
-      && !!input.batchHasSizeOnlyFollowup
-    ));
-  const shouldAvoidGreeting = !keepOpeningGreeting && hasRecentManagerOrAssistantReply(input.memoryContext);
-  if (shouldAvoidGreeting && replyStartsWithGreeting(next)) {
-    next = stripLeadingGreeting(next);
-  }
-
-  if (!next) return '';
-
-  if (!shouldAvoidGreeting && !replyStartsWithGreeting(next)) {
-    next = `Здравствуйте! ${next}`;
-  }
-
-  return next;
+  return String(reply || '').trim();
 }
 
 async function waitForPendingOrderReplySettle(context) {
@@ -1584,7 +1520,6 @@ function buildBatchInput(inputs) {
   const hasLinkInput = inputs.some((input) => input.hasLinkInput);
   const hasStructuredOrderPayload = batchHasStructuredOrderPayload(inputs);
   const hasSizeOnlyFollowup = batchHasSizeOnlyFollowup(inputs);
-  const clientHadGreeting = batchClientHadGreeting(inputs);
 
   return {
     ...lastInput,
@@ -1595,8 +1530,6 @@ function buildBatchInput(inputs) {
     batchMessageIds: inputs.map((input) => input.messageId).filter(Boolean),
     batchHasStructuredOrderPayload: hasStructuredOrderPayload,
     batchHasSizeOnlyFollowup: hasSizeOnlyFollowup,
-    batchHasOpeningOrderContext: clientHadGreeting && batchHasOrderLikeContext(inputs),
-    clientHadGreeting,
     pendingStructuredOrder: batchHasPendingStructuredOrder(inputs),
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: appendDetectedOrderPrice(buildBatchText(inputs)),
@@ -3086,34 +3019,6 @@ function extractAiReply(content) {
   return '';
 }
 
-function getToneGuidance(tone) {
-  const map = {
-    neutral: 'Используйте нейтральный, ясный и профессиональный тон.',
-    friendly: 'Используйте тёплый, дружелюбный и располагающий тон.',
-    sales: 'Используйте уверенный и продающий тон, но без давления.',
-    concise: 'Используйте очень короткий и прямой тон.',
-  };
-  return map[tone] || map.neutral;
-}
-
-function getResponseLengthGuidance(responseLength) {
-  const map = {
-    short: 'Держите ответ коротким и компактным.',
-    medium: 'Держите ответ сбалансированным по длине.',
-    long: 'Можно отвечать чуть подробнее, если это действительно помогает диалогу.',
-  };
-  return map[responseLength] || map.medium;
-}
-
-function getMediaBehaviorGuidance(mediaBehavior) {
-  const map = {
-    describe_media: 'Если пользователь прислал медиа, сначала интерпретируйте его и при необходимости опирайтесь на него в ответе.',
-    answer_from_media: 'Если пользователь прислал медиа, используйте его как основной источник контекста для ответа.',
-    text_first: 'Сначала опирайтесь на текст пользователя, а медиа используйте как дополнительный контекст.',
-  };
-  return map[mediaBehavior] || map.describe_media;
-}
-
 function getCreativityTemperature(creativity) {
   const map = {
     precise: 0.2,
@@ -3121,20 +3026,6 @@ function getCreativityTemperature(creativity) {
     creative: 0.8,
   };
   return map[creativity] ?? map.balanced;
-}
-
-function getPersonaStyleGuidance(personaStyle) {
-  const map = {
-    calm: 'Пишите как спокойный и естественный человек в чате. Формулировки должны быть ровными, ясными и без лишней эмоциональности.',
-    conversational: 'Пишите как живой разговорный человек в мессенджере. Допускается лёгкая вариативность фраз и ритма без небрежности.',
-    reserved: 'Пишите как сдержанный и аккуратный человек в чате. Тон должен быть собранным, коротким и без давления.',
-  };
-  return map[personaStyle] || map.calm;
-}
-
-function getPersonaAgeGuidance(personaAge) {
-  const age = String(personaAge || '27').trim();
-  return `Пишите с естественным ритмом взрослого человека примерно ${age} лет в переписке. Не упоминайте возраст и не отыгрывайте его напрямую.`;
 }
 
 function getVisiblePaymentGuidance(config) {
@@ -3159,9 +3050,9 @@ function getVisibleDeliveryGuidance(config) {
 function getVisibleControlState(config, memoryContext = null) {
   return {
     instruction: !!String(config.instruction || '').trim(),
-    behavior: true,
-    media: true,
-    persona: true,
+    behavior: false,
+    media: false,
+    persona: false,
     memory: parseConfigBoolean(config.memory_enabled, true) && !!memoryContext?.summary,
     payment: parseConfigBoolean(config.payment_enabled, false),
     delivery: parseConfigBoolean(config.delivery_rules_enabled, true)
@@ -3190,15 +3081,6 @@ function buildSystemPrompt(config, memoryContext = null) {
   if (String(config.instruction || '').trim()) {
     parts.push(String(config.instruction).trim());
   }
-
-  parts.push([
-    'Настройки AI Control:',
-    getToneGuidance(config.tone),
-    getResponseLengthGuidance(config.response_length),
-    getPersonaStyleGuidance(config.persona_style),
-    getPersonaAgeGuidance(config.persona_age),
-    getMediaBehaviorGuidance(config.media_behavior),
-  ].filter(Boolean).join('\n'));
 
   const paymentGuidance = getVisiblePaymentGuidance(config);
   if (paymentGuidance) parts.push(paymentGuidance);
