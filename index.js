@@ -568,7 +568,7 @@ const runtimeConfig = {
   prompt_media_text: process.env.PROMPT_MEDIA_TEXT || DEFAULT_MEDIA_PROMPT,
   prompt_layout_enabled: process.env.PROMPT_LAYOUT_ENABLED === 'true',
   prompt_layout_text: process.env.PROMPT_LAYOUT_TEXT || DEFAULT_LAYOUT_PROMPT,
-  prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED !== 'false',
+  prompt_memory_enabled: process.env.PROMPT_MEMORY_ENABLED === 'true',
   prompt_memory_text: process.env.PROMPT_MEMORY_TEXT || DEFAULT_MEMORY_PROMPT,
   prompt_payment_enabled: process.env.PROMPT_PAYMENT_ENABLED !== 'false',
   prompt_payment_text: normalizePaymentPromptConfigValue(process.env.PROMPT_PAYMENT_TEXT || DEFAULT_PAYMENT_PROMPT),
@@ -3007,7 +3007,7 @@ function getRuntimeSnapshot() {
     prompt_media_text: runtimeConfig.prompt_media_text,
     prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, false),
     prompt_layout_text: runtimeConfig.prompt_layout_text,
-    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, true),
+    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, false),
     prompt_memory_text: runtimeConfig.prompt_memory_text,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
     prompt_payment_text: runtimeConfig.prompt_payment_text,
@@ -3325,7 +3325,7 @@ function applyConfigUpdate(body) {
     ['prompt_retail_enabled', 'PROMPT_RETAIL_ENABLED', true],
     ['prompt_media_enabled', 'PROMPT_MEDIA_ENABLED', true],
     ['prompt_layout_enabled', 'PROMPT_LAYOUT_ENABLED', false],
-    ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', true],
+    ['prompt_memory_enabled', 'PROMPT_MEMORY_ENABLED', false],
     ['prompt_payment_enabled', 'PROMPT_PAYMENT_ENABLED', true],
     ['prompt_delivery_enabled', 'PROMPT_DELIVERY_ENABLED', true],
     ['prompt_stage_enabled', 'PROMPT_STAGE_ENABLED', true],
@@ -4291,8 +4291,8 @@ function getPromptLayerState(config, memoryContext = null) {
     payment: parseConfigBoolean(config.payment_enabled, false)
       && parseConfigBoolean(config.prompt_payment_enabled, true),
     delivery: parseConfigBoolean(config.prompt_delivery_enabled, true),
-    layout: parseConfigBoolean(config.prompt_layout_enabled, true),
-    memoryPrompt: parseConfigBoolean(config.prompt_memory_enabled, true),
+    layout: parseConfigBoolean(config.prompt_layout_enabled, false),
+    memoryPrompt: parseConfigBoolean(config.prompt_memory_enabled, false),
     stage: parseConfigBoolean(config.prompt_stage_enabled, false),
     crmExtract: parseConfigBoolean(config.ai_crm_extractor_enabled, true)
       && parseConfigBoolean(config.prompt_crm_extract_enabled, true),
@@ -4832,6 +4832,7 @@ app.use(requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/config/status', async (req, res) => {
+  const promptPreview = buildFinalPromptPreview(runtimeConfig);
   const status = {
     telegram: runtimeConfig.telegram_token ? 'подключен' : 'нет',
     ai: runtimeConfig.ai_key ? 'подключен' : 'нет',
@@ -4864,21 +4865,39 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
-    final_system_prompt: buildFinalPromptPreview(runtimeConfig).systemPrompt,
+    final_system_prompt: promptPreview.systemPrompt,
+    applied_prompts: promptPreview.appliedPrompts,
     prompt_conflict_warnings: getPromptConflictWarnings(runtimeConfig),
     capabilities: getCapabilitySnapshot(runtimeConfig),
     prompt_behavior_enabled: parseConfigBoolean(runtimeConfig.prompt_behavior_enabled, true),
     prompt_behavior_text: runtimeConfig.prompt_behavior_text || DEFAULT_BEHAVIOR_PROMPT,
+    prompt_retail_enabled: parseConfigBoolean(runtimeConfig.prompt_retail_enabled, true),
+    prompt_retail_text: runtimeConfig.prompt_retail_text || DEFAULT_RETAIL_PROMPT,
     prompt_media_enabled: parseConfigBoolean(runtimeConfig.prompt_media_enabled, true),
     prompt_media_text: runtimeConfig.prompt_media_text || DEFAULT_MEDIA_PROMPT,
+    prompt_layout_enabled: parseConfigBoolean(runtimeConfig.prompt_layout_enabled, false),
+    prompt_layout_text: runtimeConfig.prompt_layout_text || DEFAULT_LAYOUT_PROMPT,
+    prompt_memory_enabled: parseConfigBoolean(runtimeConfig.prompt_memory_enabled, false),
+    prompt_memory_text: runtimeConfig.prompt_memory_text || DEFAULT_MEMORY_PROMPT,
     prompt_payment_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_enabled, true),
     prompt_payment_text: runtimeConfig.prompt_payment_text || DEFAULT_PAYMENT_PROMPT,
     prompt_delivery_enabled: parseConfigBoolean(runtimeConfig.prompt_delivery_enabled, true),
     prompt_delivery_text: runtimeConfig.prompt_delivery_text || DEFAULT_DELIVERY_PROMPT,
+    prompt_stage_enabled: parseConfigBoolean(runtimeConfig.prompt_stage_enabled, true),
+    prompt_stage_checkout_text: runtimeConfig.prompt_stage_checkout_text || DEFAULT_STAGE_CHECKOUT_PROMPT,
+    prompt_stage_payment_text: runtimeConfig.prompt_stage_payment_text || DEFAULT_STAGE_PAYMENT_PROMPT,
+    prompt_stage_paid_text: runtimeConfig.prompt_stage_paid_text || DEFAULT_STAGE_PAID_PROMPT,
+    prompt_stage_delivery_text: runtimeConfig.prompt_stage_delivery_text || DEFAULT_STAGE_DELIVERY_PROMPT,
     prompt_crm_extract_enabled: parseConfigBoolean(runtimeConfig.prompt_crm_extract_enabled, true),
     prompt_crm_extract_text: runtimeConfig.prompt_crm_extract_text || DEFAULT_CRM_EXTRACT_PROMPT,
     prompt_payment_check_enabled: parseConfigBoolean(runtimeConfig.prompt_payment_check_enabled, true),
     prompt_payment_check_text: runtimeConfig.prompt_payment_check_text || DEFAULT_PAYMENT_CHECK_PROMPT,
+    prompt_profile_version: runtimeConfig.prompt_profile_version || ACTIVE_PROMPT_PROFILE_VERSION,
+    closing_scaffold: {
+      enabled: true,
+      steps: ['size_to_insole', 'insole_to_delivery_data'],
+      note: 'Critical order scaffolds are applied after the AI reply, so they can override tone/layout prompt changes on those exact steps.',
+    },
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -5240,7 +5259,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_comment = '';
   runtimeConfig.prompt_behavior_enabled = true;
   runtimeConfig.prompt_behavior_text = DEFAULT_BEHAVIOR_PROMPT;
-  runtimeConfig.prompt_retail_enabled = false;
+  runtimeConfig.prompt_retail_enabled = true;
   runtimeConfig.prompt_retail_text = DEFAULT_RETAIL_PROMPT;
   runtimeConfig.prompt_media_enabled = true;
   runtimeConfig.prompt_media_text = DEFAULT_MEDIA_PROMPT;
