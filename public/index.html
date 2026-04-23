@@ -1721,7 +1721,7 @@
                 <summary class="list-summary">
                   <div class="list-summary-main">
                     <div class="list-title">Инструкция</div>
-                    <div class="list-subtitle">Главное ядро поведения AI. Критичные шаги заказа дополнительно защищены каркасом оформления.</div>
+                    <div class="list-subtitle">Единственный способ управлять поведением AI. Без сценариев и логики в коде.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
@@ -1857,10 +1857,6 @@
                     <label class="toggle-line">
                       <input id="managerTakeoverEnabled" type="checkbox" />
                       Менеджер может перехватить диалог
-                    </label>
-                    <label class="toggle-line">
-                      <input id="aiCrmExtractorEnabled" type="checkbox" />
-                      AI сам обновляет CRM и заказ
                     </label>
                     <div class="settings-grid">
                       <div class="field">
@@ -2284,7 +2280,6 @@
       const autoReplyEnabled = document.getElementById('autoReplyEnabled');
       const memoryEnabled = document.getElementById('memoryEnabled');
       const managerTakeoverEnabled = document.getElementById('managerTakeoverEnabled');
-      const aiCrmExtractorEnabled = document.getElementById('aiCrmExtractorEnabled');
       const memoryRecentLimitSelect = document.getElementById('memoryRecentLimitSelect');
       const batchDebounceSelect = document.getElementById('batchDebounceSelect');
       const replyModeSelect = document.getElementById('replyModeSelect');
@@ -3073,7 +3068,6 @@
         autoReplyEnabled.checked = data.auto_reply_enabled !== false;
         memoryEnabled.checked = data.memory_enabled !== false;
         managerTakeoverEnabled.checked = data.manager_takeover_enabled !== false;
-        aiCrmExtractorEnabled.checked = data.ai_crm_extractor_enabled !== false;
         memoryRecentLimitSelect.value = String(data.memory_recent_limit || 10);
         batchDebounceSelect.value = String(data.batch_debounce_ms ?? 3000);
         replyModeSelect.value = data.reply_mode || 'smart';
@@ -3085,8 +3079,8 @@
         paymentRecipientName.value = data.payment_recipient_name || '';
         paymentBank.value = data.payment_bank || '';
         paymentComment.value = data.payment_comment || '';
-        promptDeliveryEnabled.checked = data.prompt_delivery_enabled !== false;
-        promptDeliveryText.value = data.prompt_delivery_text || '';
+        promptDeliveryEnabled.checked = data.delivery_rules_enabled !== false;
+        promptDeliveryText.value = data.delivery_rules_text || '';
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -3226,7 +3220,6 @@
               auto_reply_enabled: autoReplyEnabled.checked,
               memory_enabled: memoryEnabled.checked,
               manager_takeover_enabled: managerTakeoverEnabled.checked,
-              ai_crm_extractor_enabled: aiCrmExtractorEnabled.checked,
               memory_recent_limit: memoryRecentLimitSelect.value,
               batch_debounce_ms: batchDebounceSelect.value,
               reply_mode: replyModeSelect.value,
@@ -3262,8 +3255,8 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              prompt_delivery_enabled: promptDeliveryEnabled.checked,
-              prompt_delivery_text: promptDeliveryText.value,
+              delivery_rules_enabled: promptDeliveryEnabled.checked,
+              delivery_rules_text: promptDeliveryText.value,
             }),
           });
           await loadStatus();
@@ -3626,7 +3619,6 @@
         autoReplyEnabled,
         memoryEnabled,
         managerTakeoverEnabled,
-        aiCrmExtractorEnabled,
         memoryRecentLimitSelect,
         batchDebounceSelect,
         replyModeSelect,
