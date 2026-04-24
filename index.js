@@ -136,6 +136,23 @@ const runtimeConfig = {
   order_collect_receipt_enabled: process.env.ORDER_COLLECT_RECEIPT_ENABLED !== 'false',
   order_step_mode: process.env.ORDER_STEP_MODE || 'natural',
   order_rules_text: process.env.ORDER_RULES_TEXT || '',
+  response_guard_enabled: process.env.RESPONSE_GUARD_ENABLED !== 'false',
+  response_guard_no_fake_payment_enabled: process.env.RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED !== 'false',
+  response_guard_no_repeat_known_enabled: process.env.RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED !== 'false',
+  response_guard_human_tone_enabled: process.env.RESPONSE_GUARD_HUMAN_TONE_ENABLED !== 'false',
+  response_guard_next_step_enabled: process.env.RESPONSE_GUARD_NEXT_STEP_ENABLED !== 'false',
+  response_guard_no_final_payment_enabled: process.env.RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED !== 'false',
+  response_guard_rules_text: process.env.RESPONSE_GUARD_RULES_TEXT || '',
+  receipt_check_enabled: process.env.RECEIPT_CHECK_ENABLED !== 'false',
+  receipt_check_amount_enabled: process.env.RECEIPT_CHECK_AMOUNT_ENABLED !== 'false',
+  receipt_check_bank_enabled: process.env.RECEIPT_CHECK_BANK_ENABLED !== 'false',
+  receipt_check_recipient_enabled: process.env.RECEIPT_CHECK_RECIPIENT_ENABLED !== 'false',
+  receipt_check_datetime_enabled: process.env.RECEIPT_CHECK_DATETIME_ENABLED !== 'false',
+  receipt_check_mismatch_enabled: process.env.RECEIPT_CHECK_MISMATCH_ENABLED !== 'false',
+  receipt_check_no_final_confirm_enabled: process.env.RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED !== 'false',
+  receipt_check_success_text: process.env.RECEIPT_CHECK_SUCCESS_TEXT || 'Чек получил, спасибо. Статус доставки сможете отслеживать в приложении выбранной службы доставки. Если будут вопросы — напишите.',
+  receipt_check_mismatch_text: process.env.RECEIPT_CHECK_MISMATCH_TEXT || 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.',
+  receipt_check_rules_text: process.env.RECEIPT_CHECK_RULES_TEXT || '',
   quality_replica_honesty_enabled: process.env.QUALITY_REPLICA_HONESTY_ENABLED !== 'false',
   quality_no_original_claims_enabled: process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED !== 'false',
   quality_calm_explanation_enabled: process.env.QUALITY_CALM_EXPLANATION_ENABLED !== 'false',
@@ -2091,6 +2108,23 @@ function getRuntimeSnapshot() {
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
     order_step_mode: runtimeConfig.order_step_mode,
     order_rules_text: runtimeConfig.order_rules_text,
+    response_guard_enabled: parseConfigBoolean(runtimeConfig.response_guard_enabled, true),
+    response_guard_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_fake_payment_enabled, true),
+    response_guard_no_repeat_known_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_repeat_known_enabled, true),
+    response_guard_human_tone_enabled: parseConfigBoolean(runtimeConfig.response_guard_human_tone_enabled, true),
+    response_guard_next_step_enabled: parseConfigBoolean(runtimeConfig.response_guard_next_step_enabled, true),
+    response_guard_no_final_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_final_payment_enabled, true),
+    response_guard_rules_text: runtimeConfig.response_guard_rules_text,
+    receipt_check_enabled: parseConfigBoolean(runtimeConfig.receipt_check_enabled, true),
+    receipt_check_amount_enabled: parseConfigBoolean(runtimeConfig.receipt_check_amount_enabled, true),
+    receipt_check_bank_enabled: parseConfigBoolean(runtimeConfig.receipt_check_bank_enabled, true),
+    receipt_check_recipient_enabled: parseConfigBoolean(runtimeConfig.receipt_check_recipient_enabled, true),
+    receipt_check_datetime_enabled: parseConfigBoolean(runtimeConfig.receipt_check_datetime_enabled, true),
+    receipt_check_mismatch_enabled: parseConfigBoolean(runtimeConfig.receipt_check_mismatch_enabled, true),
+    receipt_check_no_final_confirm_enabled: parseConfigBoolean(runtimeConfig.receipt_check_no_final_confirm_enabled, true),
+    receipt_check_success_text: runtimeConfig.receipt_check_success_text,
+    receipt_check_mismatch_text: runtimeConfig.receipt_check_mismatch_text,
+    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text,
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
@@ -2279,6 +2313,19 @@ function applyConfigUpdate(body) {
     ['order_collect_pickup_enabled', 'ORDER_COLLECT_PICKUP_ENABLED'],
     ['order_collect_payment_enabled', 'ORDER_COLLECT_PAYMENT_ENABLED'],
     ['order_collect_receipt_enabled', 'ORDER_COLLECT_RECEIPT_ENABLED'],
+    ['response_guard_enabled', 'RESPONSE_GUARD_ENABLED'],
+    ['response_guard_no_fake_payment_enabled', 'RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED'],
+    ['response_guard_no_repeat_known_enabled', 'RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED'],
+    ['response_guard_human_tone_enabled', 'RESPONSE_GUARD_HUMAN_TONE_ENABLED'],
+    ['response_guard_next_step_enabled', 'RESPONSE_GUARD_NEXT_STEP_ENABLED'],
+    ['response_guard_no_final_payment_enabled', 'RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED'],
+    ['receipt_check_enabled', 'RECEIPT_CHECK_ENABLED'],
+    ['receipt_check_amount_enabled', 'RECEIPT_CHECK_AMOUNT_ENABLED'],
+    ['receipt_check_bank_enabled', 'RECEIPT_CHECK_BANK_ENABLED'],
+    ['receipt_check_recipient_enabled', 'RECEIPT_CHECK_RECIPIENT_ENABLED'],
+    ['receipt_check_datetime_enabled', 'RECEIPT_CHECK_DATETIME_ENABLED'],
+    ['receipt_check_mismatch_enabled', 'RECEIPT_CHECK_MISMATCH_ENABLED'],
+    ['receipt_check_no_final_confirm_enabled', 'RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED'],
     ['quality_replica_honesty_enabled', 'QUALITY_REPLICA_HONESTY_ENABLED'],
     ['quality_no_original_claims_enabled', 'QUALITY_NO_ORIGINAL_CLAIMS_ENABLED'],
     ['quality_calm_explanation_enabled', 'QUALITY_CALM_EXPLANATION_ENABLED'],
@@ -2289,6 +2336,10 @@ function applyConfigUpdate(body) {
     ['facts_rules_text', 'FACTS_RULES_TEXT'],
     ['smalltalk_rules_text', 'SMALLTALK_RULES_TEXT'],
     ['order_rules_text', 'ORDER_RULES_TEXT'],
+    ['response_guard_rules_text', 'RESPONSE_GUARD_RULES_TEXT'],
+    ['receipt_check_success_text', 'RECEIPT_CHECK_SUCCESS_TEXT'],
+    ['receipt_check_mismatch_text', 'RECEIPT_CHECK_MISMATCH_TEXT'],
+    ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT'],
     ['quality_rules_text', 'QUALITY_RULES_TEXT'],
   ].forEach(([key, envKey]) => applyStringConfig(body, key, envKey));
 
@@ -3282,6 +3333,46 @@ function getOrderPathGuidance(config) {
   ], config.order_rules_text);
 }
 
+function getResponseGuardGuidance(config) {
+  if (!parseConfigBoolean(config.response_guard_enabled, true)) return '';
+  return buildGuidanceSection('Проверка ответа:', [
+    'Перед финальным ответом клиенту молча проверь черновик по этим пунктам. Не показывай клиенту сам чек-лист.',
+    parseConfigBoolean(config.response_guard_no_fake_payment_enabled, true)
+      && 'Не выдуманы ли реквизиты, банк, получатель или способ оплаты.',
+    parseConfigBoolean(config.response_guard_no_repeat_known_enabled, true)
+      && 'Не спрашиваются ли повторно данные, которые уже есть в памяти, текущем сообщении или контексте заказа.',
+    parseConfigBoolean(config.response_guard_human_tone_enabled, true)
+      && 'Не звучит ли ответ как робот, анкета, CRM или сухой сценарий.',
+    parseConfigBoolean(config.response_guard_next_step_enabled, true)
+      && 'Есть ли в ответе понятный следующий шаг для клиента, если диалог ещё не завершён.',
+    parseConfigBoolean(config.response_guard_no_final_payment_enabled, true)
+      && 'Нет ли финального подтверждения оплаты, поступления денег или отправки без ручной проверки.',
+  ], config.response_guard_rules_text);
+}
+
+function getReceiptCheckGuidance(config) {
+  if (!parseConfigBoolean(config.receipt_check_enabled, true)) return '';
+  return buildGuidanceSection('Проверка чека:', [
+    'Если клиент прислал чек, квитанцию, скрин оплаты или фото оплаты, сначала извлеки видимые данные из изображения/текста и сравни с контекстом заказа.',
+    parseConfigBoolean(config.receipt_check_amount_enabled, true)
+      && 'Сверить сумму с ценой заказа, если сумма видна.',
+    parseConfigBoolean(config.receipt_check_bank_enabled, true)
+      && 'Сверить банк, если он виден и банк указан в разделе Оплата.',
+    parseConfigBoolean(config.receipt_check_recipient_enabled, true)
+      && 'Сверить получателя, карту или последние цифры реквизитов, если они видны.',
+    parseConfigBoolean(config.receipt_check_datetime_enabled, true)
+      && 'Посмотреть дату и время перевода, если они видны.',
+    parseConfigBoolean(config.receipt_check_mismatch_enabled, true)
+      && 'Если сумма, реквизиты, банк или получатель не сходятся, мягко попросить клиента проверить и прислать корректный чек, без обвинений.',
+    parseConfigBoolean(config.receipt_check_no_final_confirm_enabled, true)
+      && 'Даже если визуально всё выглядит нормально, не писать, что оплата подтверждена финально или деньги поступили. Финальная проверка вручную.',
+    String(config.receipt_check_success_text || '').trim()
+      && `Ориентир ответа, если видимых расхождений нет: ${String(config.receipt_check_success_text).trim()}`,
+    String(config.receipt_check_mismatch_text || '').trim()
+      && `Ориентир ответа, если есть расхождение: ${String(config.receipt_check_mismatch_text).trim()}`,
+  ], config.receipt_check_rules_text);
+}
+
 function getQualityGuidance(config) {
   return buildGuidanceSection('Товар и качество:', [
     parseConfigBoolean(config.quality_replica_honesty_enabled, true)
@@ -3338,6 +3429,8 @@ function getVisibleControlState(config, memoryContext = null) {
     facts: Boolean(getFactBoundaryGuidance(config)),
     smalltalk: Boolean(getSmalltalkGuidance(config)),
     orderPath: Boolean(getOrderPathGuidance(config)),
+    responseGuard: Boolean(getResponseGuardGuidance(config)),
+    receiptCheck: Boolean(getReceiptCheckGuidance(config)),
     quality: Boolean(getQualityGuidance(config)),
     examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
@@ -3381,6 +3474,8 @@ function buildSystemPrompt(config, memoryContext = null) {
     getFactBoundaryGuidance(config),
     getSmalltalkGuidance(config),
     getOrderPathGuidance(config),
+    getResponseGuardGuidance(config),
+    getReceiptCheckGuidance(config),
     getQualityGuidance(config),
   ].forEach((section) => {
     if (section) control.push(section);
@@ -3891,6 +3986,23 @@ app.get('/config/status', async (req, res) => {
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
     order_step_mode: runtimeConfig.order_step_mode || 'natural',
     order_rules_text: runtimeConfig.order_rules_text || '',
+    response_guard_enabled: parseConfigBoolean(runtimeConfig.response_guard_enabled, true),
+    response_guard_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_fake_payment_enabled, true),
+    response_guard_no_repeat_known_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_repeat_known_enabled, true),
+    response_guard_human_tone_enabled: parseConfigBoolean(runtimeConfig.response_guard_human_tone_enabled, true),
+    response_guard_next_step_enabled: parseConfigBoolean(runtimeConfig.response_guard_next_step_enabled, true),
+    response_guard_no_final_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_final_payment_enabled, true),
+    response_guard_rules_text: runtimeConfig.response_guard_rules_text || '',
+    receipt_check_enabled: parseConfigBoolean(runtimeConfig.receipt_check_enabled, true),
+    receipt_check_amount_enabled: parseConfigBoolean(runtimeConfig.receipt_check_amount_enabled, true),
+    receipt_check_bank_enabled: parseConfigBoolean(runtimeConfig.receipt_check_bank_enabled, true),
+    receipt_check_recipient_enabled: parseConfigBoolean(runtimeConfig.receipt_check_recipient_enabled, true),
+    receipt_check_datetime_enabled: parseConfigBoolean(runtimeConfig.receipt_check_datetime_enabled, true),
+    receipt_check_mismatch_enabled: parseConfigBoolean(runtimeConfig.receipt_check_mismatch_enabled, true),
+    receipt_check_no_final_confirm_enabled: parseConfigBoolean(runtimeConfig.receipt_check_no_final_confirm_enabled, true),
+    receipt_check_success_text: runtimeConfig.receipt_check_success_text || '',
+    receipt_check_mismatch_text: runtimeConfig.receipt_check_mismatch_text || '',
+    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text || '',
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
@@ -4289,6 +4401,23 @@ app.delete('/config', (req, res) => {
   runtimeConfig.order_collect_receipt_enabled = true;
   runtimeConfig.order_step_mode = 'natural';
   runtimeConfig.order_rules_text = '';
+  runtimeConfig.response_guard_enabled = true;
+  runtimeConfig.response_guard_no_fake_payment_enabled = true;
+  runtimeConfig.response_guard_no_repeat_known_enabled = true;
+  runtimeConfig.response_guard_human_tone_enabled = true;
+  runtimeConfig.response_guard_next_step_enabled = true;
+  runtimeConfig.response_guard_no_final_payment_enabled = true;
+  runtimeConfig.response_guard_rules_text = '';
+  runtimeConfig.receipt_check_enabled = true;
+  runtimeConfig.receipt_check_amount_enabled = true;
+  runtimeConfig.receipt_check_bank_enabled = true;
+  runtimeConfig.receipt_check_recipient_enabled = true;
+  runtimeConfig.receipt_check_datetime_enabled = true;
+  runtimeConfig.receipt_check_mismatch_enabled = true;
+  runtimeConfig.receipt_check_no_final_confirm_enabled = true;
+  runtimeConfig.receipt_check_success_text = 'Чек получил, спасибо. Статус доставки сможете отслеживать в приложении выбранной службы доставки. Если будут вопросы — напишите.';
+  runtimeConfig.receipt_check_mismatch_text = 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.';
+  runtimeConfig.receipt_check_rules_text = '';
   runtimeConfig.quality_replica_honesty_enabled = true;
   runtimeConfig.quality_no_original_claims_enabled = true;
   runtimeConfig.quality_calm_explanation_enabled = true;
@@ -4359,6 +4488,23 @@ app.delete('/config', (req, res) => {
   process.env.ORDER_COLLECT_RECEIPT_ENABLED = 'true';
   process.env.ORDER_STEP_MODE = 'natural';
   process.env.ORDER_RULES_TEXT = '';
+  process.env.RESPONSE_GUARD_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_HUMAN_TONE_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_NEXT_STEP_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED = 'true';
+  process.env.RESPONSE_GUARD_RULES_TEXT = '';
+  process.env.RECEIPT_CHECK_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_AMOUNT_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_BANK_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_RECIPIENT_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_DATETIME_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_MISMATCH_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED = 'true';
+  process.env.RECEIPT_CHECK_SUCCESS_TEXT = runtimeConfig.receipt_check_success_text;
+  process.env.RECEIPT_CHECK_MISMATCH_TEXT = runtimeConfig.receipt_check_mismatch_text;
+  process.env.RECEIPT_CHECK_RULES_TEXT = '';
   process.env.QUALITY_REPLICA_HONESTY_ENABLED = 'true';
   process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED = 'true';
   process.env.QUALITY_CALM_EXPLANATION_ENABLED = 'true';

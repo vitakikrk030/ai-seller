@@ -1823,6 +1823,65 @@
 <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
+                    <div class="list-title">Проверка ответа</div>
+                    <div class="list-subtitle">Внутренний quality-gate перед отправкой: факты, тон, повторы и следующий шаг.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="responseGuardEnabled" type="checkbox" /> Включить проверку ответа перед отправкой</label>
+                    <label class="toggle-line"><input id="responseGuardNoFakePaymentEnabled" type="checkbox" /> Не выдумывать реквизиты, банк и получателя</label>
+                    <label class="toggle-line"><input id="responseGuardNoRepeatKnownEnabled" type="checkbox" /> Не спрашивать уже полученные данные</label>
+                    <label class="toggle-line"><input id="responseGuardHumanToneEnabled" type="checkbox" /> Убирать роботные, анкетные и CRM-формулировки</label>
+                    <label class="toggle-line"><input id="responseGuardNextStepEnabled" type="checkbox" /> В ответе должен быть понятный следующий шаг</label>
+                    <label class="toggle-line"><input id="responseGuardNoFinalPaymentEnabled" type="checkbox" /> Не подтверждать оплату финально</label>
+                    <div class="field">
+                      <div class="field-label">Дополнительные правила проверки ответа</div>
+                      <textarea id="responseGuardRulesText" placeholder="Например: если ответ звучит сухо, переписать его проще и человечнее."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveResponseGuard" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Проверка чека</div>
+                    <div class="list-subtitle">AI читает чек, сверяет видимые данные и мягко просит проверить при расхождении.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="receiptCheckEnabled" type="checkbox" /> Включить проверку чеков и скринов оплаты</label>
+                    <label class="toggle-line"><input id="receiptCheckAmountEnabled" type="checkbox" /> Сверять сумму с заказом</label>
+                    <label class="toggle-line"><input id="receiptCheckBankEnabled" type="checkbox" /> Сверять банк, если видно</label>
+                    <label class="toggle-line"><input id="receiptCheckRecipientEnabled" type="checkbox" /> Сверять получателя / карту, если видно</label>
+                    <label class="toggle-line"><input id="receiptCheckDatetimeEnabled" type="checkbox" /> Смотреть дату и время, если видно</label>
+                    <label class="toggle-line"><input id="receiptCheckMismatchEnabled" type="checkbox" /> При расхождении мягко попросить проверить</label>
+                    <label class="toggle-line"><input id="receiptCheckNoFinalConfirmEnabled" type="checkbox" /> Не писать, что оплата подтверждена финально</label>
+                    <div class="field">
+                      <div class="field-label">Ориентир ответа, если всё выглядит нормально</div>
+                      <textarea id="receiptCheckSuccessText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Ориентир ответа при расхождении</div>
+                      <textarea id="receiptCheckMismatchText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Дополнительные правила проверки чека</div>
+                      <textarea id="receiptCheckRulesText" placeholder="Например: если чек плохо читается, попросить прислать крупнее."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveReceiptCheck" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
                     <div class="list-title">Оплата</div>
                     <div class="list-subtitle">Реквизиты и предварительная AI-проверка чеков без финального подтверждения.</div>
                   </div>
@@ -2462,6 +2521,23 @@
       const orderCollectPaymentEnabled = document.getElementById('orderCollectPaymentEnabled');
       const orderCollectReceiptEnabled = document.getElementById('orderCollectReceiptEnabled');
       const orderRulesText = document.getElementById('orderRulesText');
+      const responseGuardEnabled = document.getElementById('responseGuardEnabled');
+      const responseGuardNoFakePaymentEnabled = document.getElementById('responseGuardNoFakePaymentEnabled');
+      const responseGuardNoRepeatKnownEnabled = document.getElementById('responseGuardNoRepeatKnownEnabled');
+      const responseGuardHumanToneEnabled = document.getElementById('responseGuardHumanToneEnabled');
+      const responseGuardNextStepEnabled = document.getElementById('responseGuardNextStepEnabled');
+      const responseGuardNoFinalPaymentEnabled = document.getElementById('responseGuardNoFinalPaymentEnabled');
+      const responseGuardRulesText = document.getElementById('responseGuardRulesText');
+      const receiptCheckEnabled = document.getElementById('receiptCheckEnabled');
+      const receiptCheckAmountEnabled = document.getElementById('receiptCheckAmountEnabled');
+      const receiptCheckBankEnabled = document.getElementById('receiptCheckBankEnabled');
+      const receiptCheckRecipientEnabled = document.getElementById('receiptCheckRecipientEnabled');
+      const receiptCheckDatetimeEnabled = document.getElementById('receiptCheckDatetimeEnabled');
+      const receiptCheckMismatchEnabled = document.getElementById('receiptCheckMismatchEnabled');
+      const receiptCheckNoFinalConfirmEnabled = document.getElementById('receiptCheckNoFinalConfirmEnabled');
+      const receiptCheckSuccessText = document.getElementById('receiptCheckSuccessText');
+      const receiptCheckMismatchText = document.getElementById('receiptCheckMismatchText');
+      const receiptCheckRulesText = document.getElementById('receiptCheckRulesText');
       const toneSelect = document.getElementById('toneSelect');
       const responseLengthSelect = document.getElementById('responseLengthSelect');
       const creativitySelect = document.getElementById('creativitySelect');
@@ -2531,6 +2607,8 @@
       const saveFactRulesButton = document.getElementById('saveFactRules');
       const saveSmalltalkRulesButton = document.getElementById('saveSmalltalkRules');
       const saveOrderPathButton = document.getElementById('saveOrderPath');
+      const saveResponseGuardButton = document.getElementById('saveResponseGuard');
+      const saveReceiptCheckButton = document.getElementById('saveReceiptCheck');
       const saveBehaviorButton = document.getElementById('saveBehavior');
       const saveInputHandlingButton = document.getElementById('saveInputHandling');
       const savePersonaButton = document.getElementById('savePersona');
@@ -3294,6 +3372,23 @@
         orderCollectPaymentEnabled.checked = data.order_collect_payment_enabled !== false;
         orderCollectReceiptEnabled.checked = data.order_collect_receipt_enabled !== false;
         orderRulesText.value = data.order_rules_text || '';
+        responseGuardEnabled.checked = data.response_guard_enabled !== false;
+        responseGuardNoFakePaymentEnabled.checked = data.response_guard_no_fake_payment_enabled !== false;
+        responseGuardNoRepeatKnownEnabled.checked = data.response_guard_no_repeat_known_enabled !== false;
+        responseGuardHumanToneEnabled.checked = data.response_guard_human_tone_enabled !== false;
+        responseGuardNextStepEnabled.checked = data.response_guard_next_step_enabled !== false;
+        responseGuardNoFinalPaymentEnabled.checked = data.response_guard_no_final_payment_enabled !== false;
+        responseGuardRulesText.value = data.response_guard_rules_text || '';
+        receiptCheckEnabled.checked = data.receipt_check_enabled !== false;
+        receiptCheckAmountEnabled.checked = data.receipt_check_amount_enabled !== false;
+        receiptCheckBankEnabled.checked = data.receipt_check_bank_enabled !== false;
+        receiptCheckRecipientEnabled.checked = data.receipt_check_recipient_enabled !== false;
+        receiptCheckDatetimeEnabled.checked = data.receipt_check_datetime_enabled !== false;
+        receiptCheckMismatchEnabled.checked = data.receipt_check_mismatch_enabled !== false;
+        receiptCheckNoFinalConfirmEnabled.checked = data.receipt_check_no_final_confirm_enabled !== false;
+        receiptCheckSuccessText.value = data.receipt_check_success_text || '';
+        receiptCheckMismatchText.value = data.receipt_check_mismatch_text || '';
+        receiptCheckRulesText.value = data.receipt_check_rules_text || '';
         toneSelect.value = data.tone || 'neutral';
         responseLengthSelect.value = data.response_length || 'medium';
         creativitySelect.value = data.creativity || 'balanced';
@@ -3484,6 +3579,47 @@
               order_collect_payment_enabled: orderCollectPaymentEnabled.checked,
               order_collect_receipt_enabled: orderCollectReceiptEnabled.checked,
               order_rules_text: orderRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveResponseGuard() {
+        await performSave(saveResponseGuardButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              response_guard_enabled: responseGuardEnabled.checked,
+              response_guard_no_fake_payment_enabled: responseGuardNoFakePaymentEnabled.checked,
+              response_guard_no_repeat_known_enabled: responseGuardNoRepeatKnownEnabled.checked,
+              response_guard_human_tone_enabled: responseGuardHumanToneEnabled.checked,
+              response_guard_next_step_enabled: responseGuardNextStepEnabled.checked,
+              response_guard_no_final_payment_enabled: responseGuardNoFinalPaymentEnabled.checked,
+              response_guard_rules_text: responseGuardRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveReceiptCheck() {
+        await performSave(saveReceiptCheckButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              receipt_check_enabled: receiptCheckEnabled.checked,
+              receipt_check_amount_enabled: receiptCheckAmountEnabled.checked,
+              receipt_check_bank_enabled: receiptCheckBankEnabled.checked,
+              receipt_check_recipient_enabled: receiptCheckRecipientEnabled.checked,
+              receipt_check_datetime_enabled: receiptCheckDatetimeEnabled.checked,
+              receipt_check_mismatch_enabled: receiptCheckMismatchEnabled.checked,
+              receipt_check_no_final_confirm_enabled: receiptCheckNoFinalConfirmEnabled.checked,
+              receipt_check_success_text: receiptCheckSuccessText.value,
+              receipt_check_mismatch_text: receiptCheckMismatchText.value,
+              receipt_check_rules_text: receiptCheckRulesText.value,
             }),
           });
           await loadStatus();
@@ -3967,6 +4103,8 @@
       bindDirtyState(saveFactRulesButton, [factsNoInventEnabled, factsNoFakePaymentEnabled, factsNoFakeDeliveryEnabled, factsNoFakeDiscountsEnabled, factsNoFinalPaymentConfirmEnabled, factsNoFakeDeliveryTimeEnabled, factsRulesText]);
       bindDirtyState(saveSmalltalkRulesButton, [smalltalkEnabled, smalltalkStyleEnabled, smalltalkOutfitAdviceEnabled, smalltalkWeatherEnabled, smalltalkSoftProductLinkEnabled, smalltalkRulesText]);
       bindDirtyState(saveOrderPathButton, [orderPathEnabled, orderStepMode, orderCollectSizeEnabled, orderCollectInsoleEnabled, orderCollectFullNameEnabled, orderCollectPhoneEnabled, orderCollectCityEnabled, orderCollectDeliveryServiceEnabled, orderCollectPickupEnabled, orderCollectPaymentEnabled, orderCollectReceiptEnabled, orderRulesText]);
+      bindDirtyState(saveResponseGuardButton, [responseGuardEnabled, responseGuardNoFakePaymentEnabled, responseGuardNoRepeatKnownEnabled, responseGuardHumanToneEnabled, responseGuardNextStepEnabled, responseGuardNoFinalPaymentEnabled, responseGuardRulesText]);
+      bindDirtyState(saveReceiptCheckButton, [receiptCheckEnabled, receiptCheckAmountEnabled, receiptCheckBankEnabled, receiptCheckRecipientEnabled, receiptCheckDatetimeEnabled, receiptCheckMismatchEnabled, receiptCheckNoFinalConfirmEnabled, receiptCheckSuccessText, receiptCheckMismatchText, receiptCheckRulesText]);
       bindDirtyState(saveBehaviorButton, [toneSelect, responseLengthSelect, creativitySelect]);
       bindDirtyState(saveInputHandlingButton, [mediaBehaviorSelect]);
       bindDirtyState(savePersonaButton, [personaStyleSelect, personaAgeSelect]);
@@ -4004,6 +4142,8 @@
       document.getElementById('saveFactRules').addEventListener('click', saveFactRules);
       document.getElementById('saveSmalltalkRules').addEventListener('click', saveSmalltalkRules);
       document.getElementById('saveOrderPath').addEventListener('click', saveOrderPath);
+      document.getElementById('saveResponseGuard').addEventListener('click', saveResponseGuard);
+      document.getElementById('saveReceiptCheck').addEventListener('click', saveReceiptCheck);
       document.getElementById('saveBehavior').addEventListener('click', saveBehavior);
       document.getElementById('saveInputHandling').addEventListener('click', saveInputHandling);
       document.getElementById('savePersona').addEventListener('click', savePersona);
