@@ -1919,6 +1919,27 @@
                       <label class="field-label" for="paymentComment">Комментарий для клиента</label>
                       <input id="paymentComment" placeholder="После оплаты пришлите чек или скриншот" />
                     </div>
+                    <div class="field">
+                      <div class="field-label">Стиль сообщения оплаты</div>
+                      <textarea id="paymentStyleText" placeholder="Например: коротко, спокойно, сначала сумма, потом реквизиты, потом просьба прислать чек."></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Расположение оплаты</div>
+                      <textarea id="paymentLayoutText" placeholder="Например: отдельные абзацы: заголовок, сумма, реквизиты, что сделать после оплаты."></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="paymentBoldMode">Жирный текст в оплате</label>
+                      <select id="paymentBoldMode">
+                        <option value="off">Выключен</option>
+                        <option value="headings">Только заголовки</option>
+                        <option value="details">Реквизиты и важные данные</option>
+                        <option value="free">Свободно, без перебора</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Пример оформления оплаты</div>
+                      <textarea id="paymentExampleText" placeholder="Оплата на карту:\n\nСумма: 5190 ₽\nКарта: ...\nПолучатель: ...\n\nПосле оплаты пришлите, пожалуйста, чек или скрин."></textarea>
+                    </div>
                     <div class="actions">
                       <button id="savePayment" class="button-primary" type="button">Сохранить</button>
                     </div>
@@ -1944,6 +1965,27 @@
                       <div class="field-label">Правила доставки</div>
                       <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про доставку, ПВЗ, курьера и статус после отправки.</div>
                       <textarea id="deliveryRulesText"></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Стиль сообщения доставки</div>
+                      <textarea id="deliveryStyleText" placeholder="Например: дружелюбно, без канцелярита, сразу сказать что доставка бесплатная."></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Расположение доставки</div>
+                      <textarea id="deliveryLayoutText" placeholder="Например: сначала бесплатная доставка, затем список служб, затем какие данные нужны."></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="deliveryBoldMode">Жирный текст в доставке</label>
+                      <select id="deliveryBoldMode">
+                        <option value="off">Выключен</option>
+                        <option value="headings">Только заголовки</option>
+                        <option value="details">Службы и важные условия</option>
+                        <option value="free">Свободно, без перебора</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Пример оформления доставки</div>
+                      <textarea id="deliveryExampleText" placeholder="Доставка у нас бесплатная.\n\nОтправляем:\n- Яндекс Доставка\n- Ozon\n- CDEK\n- Почта России\n\nДля оформления пришлите ФИО, телефон и удобный ПВЗ."></textarea>
                     </div>
                     <div class="actions">
                       <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
@@ -2558,8 +2600,16 @@
       const paymentRecipientName = document.getElementById('paymentRecipientName');
       const paymentBank = document.getElementById('paymentBank');
       const paymentComment = document.getElementById('paymentComment');
+      const paymentStyleText = document.getElementById('paymentStyleText');
+      const paymentLayoutText = document.getElementById('paymentLayoutText');
+      const paymentBoldMode = document.getElementById('paymentBoldMode');
+      const paymentExampleText = document.getElementById('paymentExampleText');
       const deliveryRulesEnabled = document.getElementById('deliveryRulesEnabled');
       const deliveryRulesText = document.getElementById('deliveryRulesText');
+      const deliveryStyleText = document.getElementById('deliveryStyleText');
+      const deliveryLayoutText = document.getElementById('deliveryLayoutText');
+      const deliveryBoldMode = document.getElementById('deliveryBoldMode');
+      const deliveryExampleText = document.getElementById('deliveryExampleText');
       const qualityReplicaHonestyEnabled = document.getElementById('qualityReplicaHonestyEnabled');
       const qualityNoOriginalClaimsEnabled = document.getElementById('qualityNoOriginalClaimsEnabled');
       const qualityCalmExplanationEnabled = document.getElementById('qualityCalmExplanationEnabled');
@@ -3409,8 +3459,16 @@
         paymentRecipientName.value = data.payment_recipient_name || '';
         paymentBank.value = data.payment_bank || '';
         paymentComment.value = data.payment_comment || '';
+        paymentStyleText.value = data.payment_style_text || '';
+        paymentLayoutText.value = data.payment_layout_text || '';
+        paymentBoldMode.value = data.payment_bold_mode || 'off';
+        paymentExampleText.value = data.payment_example_text || '';
         deliveryRulesEnabled.checked = data.delivery_rules_enabled !== false;
         deliveryRulesText.value = data.delivery_rules_text || '';
+        deliveryStyleText.value = data.delivery_style_text || '';
+        deliveryLayoutText.value = data.delivery_layout_text || '';
+        deliveryBoldMode.value = data.delivery_bold_mode || 'off';
+        deliveryExampleText.value = data.delivery_example_text || '';
         qualityReplicaHonestyEnabled.checked = data.quality_replica_honesty_enabled !== false;
         qualityNoOriginalClaimsEnabled.checked = data.quality_no_original_claims_enabled !== false;
         qualityCalmExplanationEnabled.checked = data.quality_calm_explanation_enabled !== false;
@@ -3700,6 +3758,10 @@
               payment_recipient_name: paymentRecipientName.value,
               payment_bank: paymentBank.value,
               payment_comment: paymentComment.value,
+              payment_style_text: paymentStyleText.value,
+              payment_layout_text: paymentLayoutText.value,
+              payment_bold_mode: paymentBoldMode.value,
+              payment_example_text: paymentExampleText.value,
             }),
           });
           await loadStatus();
@@ -3714,6 +3776,10 @@
             body: JSON.stringify({
               delivery_rules_enabled: deliveryRulesEnabled.checked,
               delivery_rules_text: deliveryRulesText.value,
+              delivery_style_text: deliveryStyleText.value,
+              delivery_layout_text: deliveryLayoutText.value,
+              delivery_bold_mode: deliveryBoldMode.value,
+              delivery_example_text: deliveryExampleText.value,
             }),
           });
           await loadStatus();
@@ -4125,10 +4191,18 @@
         paymentRecipientName,
         paymentBank,
         paymentComment,
+        paymentStyleText,
+        paymentLayoutText,
+        paymentBoldMode,
+        paymentExampleText,
       ]);
       bindDirtyState(saveDeliveryButton, [
         deliveryRulesEnabled,
         deliveryRulesText,
+        deliveryStyleText,
+        deliveryLayoutText,
+        deliveryBoldMode,
+        deliveryExampleText,
       ]);
       bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityRulesText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);

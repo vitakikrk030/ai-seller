@@ -180,8 +180,16 @@ const runtimeConfig = {
   payment_recipient_name: process.env.PAYMENT_RECIPIENT_NAME || '',
   payment_bank: process.env.PAYMENT_BANK || '',
   payment_comment: process.env.PAYMENT_COMMENT || '',
+  payment_style_text: process.env.PAYMENT_STYLE_TEXT || '',
+  payment_layout_text: process.env.PAYMENT_LAYOUT_TEXT || '',
+  payment_bold_mode: process.env.PAYMENT_BOLD_MODE || 'off',
+  payment_example_text: process.env.PAYMENT_EXAMPLE_TEXT || '',
   delivery_rules_enabled: process.env.DELIVERY_RULES_ENABLED === 'true',
   delivery_rules_text: process.env.DELIVERY_RULES_TEXT || '',
+  delivery_style_text: process.env.DELIVERY_STYLE_TEXT || '',
+  delivery_layout_text: process.env.DELIVERY_LAYOUT_TEXT || '',
+  delivery_bold_mode: process.env.DELIVERY_BOLD_MODE || 'off',
+  delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || '',
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -2152,8 +2160,16 @@ function getRuntimeSnapshot() {
     payment_recipient_name: runtimeConfig.payment_recipient_name,
     payment_bank: runtimeConfig.payment_bank,
     payment_comment: runtimeConfig.payment_comment,
+    payment_style_text: runtimeConfig.payment_style_text,
+    payment_layout_text: runtimeConfig.payment_layout_text,
+    payment_bold_mode: runtimeConfig.payment_bold_mode,
+    payment_example_text: runtimeConfig.payment_example_text,
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
     delivery_rules_text: runtimeConfig.delivery_rules_text,
+    delivery_style_text: runtimeConfig.delivery_style_text,
+    delivery_layout_text: runtimeConfig.delivery_layout_text,
+    delivery_bold_mode: runtimeConfig.delivery_bold_mode,
+    delivery_example_text: runtimeConfig.delivery_example_text,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -2341,6 +2357,12 @@ function applyConfigUpdate(body) {
     ['receipt_check_mismatch_text', 'RECEIPT_CHECK_MISMATCH_TEXT'],
     ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT'],
     ['quality_rules_text', 'QUALITY_RULES_TEXT'],
+    ['payment_style_text', 'PAYMENT_STYLE_TEXT'],
+    ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT'],
+    ['payment_example_text', 'PAYMENT_EXAMPLE_TEXT'],
+    ['delivery_style_text', 'DELIVERY_STYLE_TEXT'],
+    ['delivery_layout_text', 'DELIVERY_LAYOUT_TEXT'],
+    ['delivery_example_text', 'DELIVERY_EXAMPLE_TEXT'],
   ].forEach(([key, envKey]) => applyStringConfig(body, key, envKey));
 
   applyBooleanConfig(body, 'dialog_examples_enabled', 'DIALOG_EXAMPLES_ENABLED', false);
@@ -2349,6 +2371,16 @@ function applyConfigUpdate(body) {
   if (Object.prototype.hasOwnProperty.call(body, 'order_step_mode')) {
     runtimeConfig.order_step_mode = body.order_step_mode || 'natural';
     process.env.ORDER_STEP_MODE = runtimeConfig.order_step_mode;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'payment_bold_mode')) {
+    runtimeConfig.payment_bold_mode = body.payment_bold_mode || 'off';
+    process.env.PAYMENT_BOLD_MODE = runtimeConfig.payment_bold_mode;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'delivery_bold_mode')) {
+    runtimeConfig.delivery_bold_mode = body.delivery_bold_mode || 'off';
+    process.env.DELIVERY_BOLD_MODE = runtimeConfig.delivery_bold_mode;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'tone')) {
@@ -2783,6 +2815,31 @@ function escapeTelegramHtml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function isTelegramBoldEnabled(config = runtimeConfig) {
+  const paymentBold = parseConfigBoolean(config.payment_enabled, false)
+    && config.payment_bold_mode
+    && config.payment_bold_mode !== 'off';
+  const deliveryBold = parseConfigBoolean(config.delivery_rules_enabled, true)
+    && config.delivery_bold_mode
+    && config.delivery_bold_mode !== 'off';
+  return Boolean(paymentBold || deliveryBold);
+}
+
+function renderTelegramHtml(text, config = runtimeConfig) {
+  const raw = String(text || '');
+  if (!isTelegramBoldEnabled(config)) return escapeTelegramHtml(raw);
+
+  return raw
+    .split(/(\*\*[\s\S]+?\*\*)/g)
+    .map((part) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+        return `<b>${escapeTelegramHtml(part.slice(2, -2))}</b>`;
+      }
+      return escapeTelegramHtml(part);
+    })
+    .join('');
 }
 
 function formatTelegramOutgoingText(text) {
@@ -3411,7 +3468,21 @@ function getVisiblePaymentGuidance(config) {
     'Оплата в AI Control включена.',
     'Используйте только эти реквизиты. Не изменяйте и не придумывайте номер, банк или получателя.',
     ...details,
-  ].join('\n');
+    String(config.payment_style_text || '').trim() && `Стиль сообщения оплаты: ${String(config.payment_style_text).trim()}`,
+    String(config.payment_layout_text || '').trim() && `Расположение оплаты: ${String(config.payment_layout_text).trim()}`,
+    getBoldModeGuidance('Жирный текст в оплате', config.payment_bold_mode),
+    String(config.payment_example_text || '').trim() && `Пример оформления оплаты. Не копировать дословно, использовать как формат:\n${String(config.payment_example_text).trim()}`,
+  ].filter(Boolean).join('\n');
+}
+
+function getBoldModeGuidance(title, mode) {
+  const map = {
+    off: `${title}: выключен. Не используй жирный текст.`,
+    headings: `${title}: можно выделять только короткие заголовки через **текст**.`,
+    details: `${title}: можно выделять важные реквизиты/ключевые данные через **текст**.`,
+    free: `${title}: можно использовать через **текст** там, где это улучшает читаемость, без перебора.`,
+  };
+  return map[mode] || map.off;
 }
 
 function getVisibleDeliveryGuidance(config) {
@@ -3420,7 +3491,14 @@ function getVisibleDeliveryGuidance(config) {
   }
   const text = String(config.delivery_rules_text || '').trim();
   if (!text) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
-  return ['Доставка из AI Control:', text].join('\n');
+  return [
+    'Доставка из AI Control:',
+    text,
+    String(config.delivery_style_text || '').trim() && `Стиль сообщения доставки: ${String(config.delivery_style_text).trim()}`,
+    String(config.delivery_layout_text || '').trim() && `Расположение доставки: ${String(config.delivery_layout_text).trim()}`,
+    getBoldModeGuidance('Жирный текст в доставке', config.delivery_bold_mode),
+    String(config.delivery_example_text || '').trim() && `Пример оформления доставки. Не копировать дословно, использовать как формат:\n${String(config.delivery_example_text).trim()}`,
+  ].filter(Boolean).join('\n');
 }
 
 function getVisibleControlState(config, memoryContext = null) {
@@ -3710,7 +3788,7 @@ async function sendTelegramMessage(config, context, text) {
     ? context.replyToMessageId
     : '';
   const outgoingText = formatTelegramOutgoingText(text);
-  const htmlText = escapeTelegramHtml(outgoingText);
+  const htmlText = renderTelegramHtml(outgoingText, config);
 
   try {
     logEvent('TG_SEND', {
@@ -4030,11 +4108,19 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
+    payment_style_text: runtimeConfig.payment_style_text || '',
+    payment_layout_text: runtimeConfig.payment_layout_text || '',
+    payment_bold_mode: runtimeConfig.payment_bold_mode || 'off',
+    payment_example_text: runtimeConfig.payment_example_text || '',
     ai_control_context: aiControlPreview.systemPrompt,
     applied_controls: aiControlPreview.appliedControls,
     capabilities: getCapabilitySnapshot(runtimeConfig),
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
     delivery_rules_text: runtimeConfig.delivery_rules_text || '',
+    delivery_style_text: runtimeConfig.delivery_style_text || '',
+    delivery_layout_text: runtimeConfig.delivery_layout_text || '',
+    delivery_bold_mode: runtimeConfig.delivery_bold_mode || 'off',
+    delivery_example_text: runtimeConfig.delivery_example_text || '',
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -4445,8 +4531,16 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_recipient_name = '';
   runtimeConfig.payment_bank = '';
   runtimeConfig.payment_comment = '';
+  runtimeConfig.payment_style_text = '';
+  runtimeConfig.payment_layout_text = '';
+  runtimeConfig.payment_bold_mode = 'off';
+  runtimeConfig.payment_example_text = '';
   runtimeConfig.delivery_rules_enabled = false;
   runtimeConfig.delivery_rules_text = '';
+  runtimeConfig.delivery_style_text = '';
+  runtimeConfig.delivery_layout_text = '';
+  runtimeConfig.delivery_bold_mode = 'off';
+  runtimeConfig.delivery_example_text = '';
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -4532,7 +4626,15 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_RECIPIENT_NAME = '';
   process.env.PAYMENT_BANK = '';
   process.env.PAYMENT_COMMENT = '';
+  process.env.PAYMENT_STYLE_TEXT = '';
+  process.env.PAYMENT_LAYOUT_TEXT = '';
+  process.env.PAYMENT_BOLD_MODE = 'off';
+  process.env.PAYMENT_EXAMPLE_TEXT = '';
   process.env.DELIVERY_RULES_ENABLED = 'false';
+  process.env.DELIVERY_STYLE_TEXT = '';
+  process.env.DELIVERY_LAYOUT_TEXT = '';
+  process.env.DELIVERY_BOLD_MODE = 'off';
+  process.env.DELIVERY_EXAMPLE_TEXT = '';
   process.env.DELIVERY_RULES_TEXT = '';
   process.env.WEBHOOK_URL = '';
 
