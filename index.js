@@ -163,6 +163,7 @@ const runtimeConfig = {
   quality_replica_honesty_enabled: process.env.QUALITY_REPLICA_HONESTY_ENABLED !== 'false',
   quality_no_original_claims_enabled: process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED !== 'false',
   quality_calm_explanation_enabled: process.env.QUALITY_CALM_EXPLANATION_ENABLED !== 'false',
+  quality_no_extra_photos_enabled: process.env.QUALITY_NO_EXTRA_PHOTOS_ENABLED !== 'false',
   quality_rules_text: process.env.QUALITY_RULES_TEXT || '',
   dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
   dialog_examples_text: process.env.DIALOG_EXAMPLES_TEXT || '',
@@ -2143,6 +2144,7 @@ function getRuntimeSnapshot() {
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
+    quality_no_extra_photos_enabled: parseConfigBoolean(runtimeConfig.quality_no_extra_photos_enabled, true),
     quality_rules_text: runtimeConfig.quality_rules_text,
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text,
@@ -2352,6 +2354,7 @@ function applyConfigUpdate(body) {
     ['quality_replica_honesty_enabled', 'QUALITY_REPLICA_HONESTY_ENABLED'],
     ['quality_no_original_claims_enabled', 'QUALITY_NO_ORIGINAL_CLAIMS_ENABLED'],
     ['quality_calm_explanation_enabled', 'QUALITY_CALM_EXPLANATION_ENABLED'],
+    ['quality_no_extra_photos_enabled', 'QUALITY_NO_EXTRA_PHOTOS_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   [
@@ -3729,6 +3732,8 @@ function getResponseGuardGuidance(config) {
       && 'Есть ли в ответе понятный следующий шаг для клиента, если диалог ещё не завершён.',
     parseConfigBoolean(config.response_guard_no_final_payment_enabled, true)
       && 'Нет ли финального подтверждения оплаты, поступления денег или отправки без ручной проверки.',
+    parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
+      && 'Если клиент просит дополнительные/живые фото, не обещан ли в ответе показ или отправка новых фото.',
   ], config.response_guard_rules_text);
 }
 
@@ -3764,6 +3769,10 @@ function getQualityGuidance(config) {
       && 'Не использовать слово "оригинал" и не создавать впечатление оригинала, если товар не оригинальный.',
     parseConfigBoolean(config.quality_calm_explanation_enabled, true)
       && 'Объяснять качество спокойно, уверенно и без оправданий.',
+    parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
+      && 'Если клиент просит дополнительные или живые фото, не обещать "сейчас скину/отправлю/найду фото". Мягко объяснить, что все актуальные фото уже есть в карточке, посте или каталоге.',
+    parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
+      && 'Если клиент сомневается по фото или качеству, спокойно напомнить: перед отправкой товар проверяем, а если после получения что-то не подойдёт, вопрос решается через возврат/обмен по правилам магазина.',
   ], config.quality_rules_text);
 }
 
@@ -3923,6 +3932,10 @@ const SCENARIO_TEST_DEFINITIONS = {
   quality: {
     title: 'Спрашивает про оригинальность',
     defaultMessage: 'Это оригинал или реплика? Качество нормальное?',
+  },
+  extra_photos: {
+    title: 'Просит дополнительные фото',
+    defaultMessage: 'Можно до заказа увидеть дополнительные живые фото? Насколько качественная реплика?',
   },
   delivery: {
     title: 'Уточняет доставку',
@@ -4107,6 +4120,31 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
       scenarioTextHasAny(lower, [/реплик|фабричн/i])
         && !scenarioTextHasAny(lower, [/это\s+оригинал|100%\s*оригинал|полностью\s+оригинал/i]),
       'Если спросили про оригинальность, нельзя создавать впечатление оригинала.'
+    );
+  }
+
+  if (scenario.id === 'extra_photos') {
+    addScenarioCheck(
+      checks,
+      'no_extra_photo_promise',
+      'Не обещает дополнительные фото',
+      !scenarioTextHasAny(lower, [
+        /скину\s+(?:вам\s+)?(?:дополнительн|жив|ещ[её])\s*фот/i,
+        /отправлю\s+(?:вам\s+)?(?:дополнительн|жив|ещ[её])\s*фот/i,
+        /пришлю\s+(?:вам\s+)?(?:дополнительн|жив|ещ[её])\s*фот/i,
+        /сейчас\s+(?:скину|отправлю|пришлю|найду).*фот/i,
+        /могу\s+(?:скинуть|отправить|прислать).*фот/i,
+      ]),
+      'На просьбу фото нельзя обещать новые фото: все актуальные фото уже в карточке/посте/каталоге.'
+    );
+    addScenarioCheck(
+      checks,
+      'photo_doubt_soft_landing',
+      'Мягко закрывает сомнение',
+      scenarioTextHasAny(lower, [/карточк|пост|каталог|актуальн.*фот/i])
+        && scenarioTextHasAny(lower, [/реплик|качеств|провер/i])
+        && scenarioTextHasAny(lower, [/возврат|обмен/i]),
+      'Нужен мягкий мост: фото в каталоге, качество спокойно, перед отправкой проверяем, возврат/обмен по правилам.'
     );
   }
 
@@ -4653,6 +4691,7 @@ app.get('/config/status', async (req, res) => {
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
+    quality_no_extra_photos_enabled: parseConfigBoolean(runtimeConfig.quality_no_extra_photos_enabled, true),
     quality_rules_text: runtimeConfig.quality_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text || '',
@@ -5126,6 +5165,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.quality_replica_honesty_enabled = true;
   runtimeConfig.quality_no_original_claims_enabled = true;
   runtimeConfig.quality_calm_explanation_enabled = true;
+  runtimeConfig.quality_no_extra_photos_enabled = true;
   runtimeConfig.quality_rules_text = '';
   runtimeConfig.dialog_examples_enabled = false;
   runtimeConfig.dialog_examples_text = '';

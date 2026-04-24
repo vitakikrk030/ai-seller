@@ -2007,6 +2007,7 @@
                     <label class="toggle-line"><input id="qualityReplicaHonestyEnabled" type="checkbox" /> Честно говорить, что товар — фабричная реплика</label>
                     <label class="toggle-line"><input id="qualityNoOriginalClaimsEnabled" type="checkbox" /> Не использовать слово «оригинал», если это не оригинал</label>
                     <label class="toggle-line"><input id="qualityCalmExplanationEnabled" type="checkbox" /> Объяснять качество спокойно, без оправданий</label>
+                    <label class="toggle-line"><input id="qualityNoExtraPhotosEnabled" type="checkbox" /> Не обещать дополнительные фото, мягко вести к фото в каталоге и возврату/обмену</label>
                     <div class="field">
                       <div class="field-label">Дополнительные правила качества</div>
                       <textarea id="qualityRulesText" placeholder="Например: хорошая фабричная реплика, материалы и посадку объяснять спокойно."></textarea>
@@ -2262,6 +2263,7 @@
                         <option value="order_all_data">Все данные одним сообщением</option>
                         <option value="discount">Просит скидку</option>
                         <option value="quality">Спрашивает про оригинальность</option>
+                        <option value="extra_photos">Просит дополнительные фото</option>
                         <option value="delivery">Уточняет доставку</option>
                         <option value="payment">Готов оплатить</option>
                         <option value="receipt_ok">Чек без явных расхождений</option>
@@ -2662,6 +2664,7 @@
       const qualityReplicaHonestyEnabled = document.getElementById('qualityReplicaHonestyEnabled');
       const qualityNoOriginalClaimsEnabled = document.getElementById('qualityNoOriginalClaimsEnabled');
       const qualityCalmExplanationEnabled = document.getElementById('qualityCalmExplanationEnabled');
+      const qualityNoExtraPhotosEnabled = document.getElementById('qualityNoExtraPhotosEnabled');
       const qualityRulesText = document.getElementById('qualityRulesText');
       const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
       const dialogExamplesText = document.getElementById('dialogExamplesText');
@@ -3344,6 +3347,15 @@
           insole: '',
           delivery: '',
         },
+        extra_photos: {
+          message: 'Можно до заказа увидеть дополнительные живые фото? Насколько качественная реплика?',
+          receipt: '',
+          product: 'New Balance 1906R',
+          price: '5490 ₽',
+          size: '42',
+          insole: '',
+          delivery: '',
+        },
         delivery: {
           message: 'А как доставка будет и сколько стоит?',
           receipt: '',
@@ -3661,6 +3673,7 @@
         qualityReplicaHonestyEnabled.checked = data.quality_replica_honesty_enabled !== false;
         qualityNoOriginalClaimsEnabled.checked = data.quality_no_original_claims_enabled !== false;
         qualityCalmExplanationEnabled.checked = data.quality_calm_explanation_enabled !== false;
+        qualityNoExtraPhotosEnabled.checked = data.quality_no_extra_photos_enabled !== false;
         qualityRulesText.value = data.quality_rules_text || '';
         dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
         dialogExamplesText.value = data.dialog_examples_text || '';
@@ -3984,6 +3997,7 @@
               quality_replica_honesty_enabled: qualityReplicaHonestyEnabled.checked,
               quality_no_original_claims_enabled: qualityNoOriginalClaimsEnabled.checked,
               quality_calm_explanation_enabled: qualityCalmExplanationEnabled.checked,
+              quality_no_extra_photos_enabled: qualityNoExtraPhotosEnabled.checked,
               quality_rules_text: qualityRulesText.value,
             }),
           });
@@ -4407,7 +4421,7 @@
         deliveryBoldMode,
         deliveryExampleText,
       ]);
-      bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityRulesText]);
+      bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityRulesText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
