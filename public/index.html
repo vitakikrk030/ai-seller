@@ -1717,130 +1717,209 @@
         <main class="main">
           <section id="view-ai-control" class="view active">
             <div class="list-shell">
-              <details class="list-item">
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Инструкция</div>
-                    <div class="list-subtitle">Единственный способ управлять поведением AI. Без сценариев и логики в коде.</div>
-                  </div>
-                  <div class="list-caret">⌄</div>
-                </summary>
-                <div class="list-panel">
-                  <textarea id="instruction" placeholder="Вы — менеджер магазина IWAK. Пишите коротко, по делу и как живой человек в Telegram."></textarea>
-                  <div class="instruction-actions">
-                    <button id="saveInstruction" class="button-primary" type="button">Сохранить</button>
-                    <div class="instruction-resize-bar">
-                      <div id="instructionResizeHandle" class="instruction-resize-handle" title="Потянуть вниз" aria-label="Изменить высоту инструкции"></div>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              <details class="list-item">
-                <summary class="list-summary">
-                  <div class="list-summary-main">
-                    <div class="list-title">Поведение</div>
-                    <div class="list-subtitle">Тон, длина и степень свободы ответа.</div>
+                    <div class="list-title">Ядро IWAK</div>
+                    <div class="list-subtitle">Бизнес-логика closing-менеджера без проверки остатков и лишней воронки.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
+                    <label class="toggle-line"><input id="coreHotLeadEnabled" type="checkbox" /> Клиент чаще всего уже тёплый и пришёл покупать</label>
+                    <label class="toggle-line"><input id="corePublishedAvailableEnabled" type="checkbox" /> Опубликованный товар считается доступным к заказу</label>
+                    <label class="toggle-line"><input id="coreNoStockCheckEnabled" type="checkbox" /> Не проверять склад, остатки и базу товаров</label>
+                    <label class="toggle-line"><input id="coreNoCatalogReturnEnabled" type="checkbox" /> Не возвращать клиента в каталог, если товар уже прислан</label>
+                    <label class="toggle-line"><input id="coreNoResellEnabled" type="checkbox" /> Работать как closing-менеджер: принять и довести до оплаты</label>
                     <div class="field">
-                      <label class="field-label" for="toneSelect">Тон</label>
-                      <select id="toneSelect">
-                        <option value="neutral">Нейтральный</option>
-                        <option value="friendly">Дружелюбный</option>
-                        <option value="sales">Продающий</option>
-                        <option value="concise">Краткий</option>
-                      </select>
+                      <div class="field-label">Дополнительные правила ядра</div>
+                      <textarea id="coreRulesText" placeholder="Например: если клиент прислал пост и размер, не спорить и не проверять наличие."></textarea>
                     </div>
-                    <div class="field">
-                      <label class="field-label" for="responseLengthSelect">Длина ответа</label>
-                      <select id="responseLengthSelect">
-                        <option value="short">Короткий</option>
-                        <option value="medium">Средний</option>
-                        <option value="long">Длинный</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="creativitySelect">Креативность</label>
-                      <select id="creativitySelect">
-                        <option value="precise">Точный</option>
-                        <option value="balanced">Сбалансированный</option>
-                        <option value="creative">Креативный</option>
-                      </select>
-                    </div>
-                    <div class="actions">
-                      <button id="saveBehavior" class="button-primary" type="button">Сохранить</button>
-                    </div>
+                    <div class="actions"><button id="saveCoreRules" class="button-primary" type="button">Сохранить</button></div>
                   </div>
                 </div>
               </details>
 
-              <details class="list-item">
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Обработка входа</div>
-                    <div class="list-subtitle">Как AI трактует фото, ссылки и скрины в товарном диалоге IWAK.</div>
-                </div>
-                <div class="list-caret">⌄</div>
-              </summary>
-              <div class="list-panel">
-                <div class="stack">
-                  <div class="field">
-                    <label class="field-label" for="mediaBehaviorSelect">Работа с медиа</label>
-                    <select id="mediaBehaviorSelect">
-                        <option value="describe_media">Описывать медиа</option>
-                        <option value="answer_from_media">Отвечать по медиа</option>
-                        <option value="text_first">Сначала текст</option>
-                      </select>
-                    </div>
-                    <div class="actions">
-                      <button id="saveInputHandling" class="button-primary" type="button">Сохранить</button>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              <details class="list-item">
-                <summary class="list-summary">
-                  <div class="list-summary-main">
-                    <div class="list-title">Персона</div>
-                    <div class="list-subtitle">Базовая человеческая манера речи без игры в роль.</div>
+                    <div class="list-title">Границы фактов</div>
+                    <div class="list-subtitle">AI свободно формулирует, но не свободно выдумывает факты.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
+                    <label class="toggle-line"><input id="factsNoInventEnabled" type="checkbox" /> Не выдумывать факты, цены, сроки, службы, реквизиты и скидки</label>
+                    <label class="toggle-line"><input id="factsNoFakePaymentEnabled" type="checkbox" /> Реквизиты брать только из раздела Оплата</label>
+                    <label class="toggle-line"><input id="factsNoFakeDeliveryEnabled" type="checkbox" /> Условия доставки брать только из раздела Доставка</label>
+                    <label class="toggle-line"><input id="factsNoFakeDiscountsEnabled" type="checkbox" /> Не обещать скидки от себя</label>
+                    <label class="toggle-line"><input id="factsNoFinalPaymentConfirmEnabled" type="checkbox" /> Не подтверждать оплату финально, чек проверяется вручную</label>
+                    <label class="toggle-line"><input id="factsNoFakeDeliveryTimeEnabled" type="checkbox" /> Не обещать точные сроки, если они не указаны</label>
                     <div class="field">
-                      <label class="field-label" for="personaStyleSelect">Базовый стиль</label>
-                      <select id="personaStyleSelect">
-                        <option value="calm">Спокойный</option>
-                        <option value="conversational">Разговорный</option>
-                        <option value="reserved">Сдержанный</option>
-                      </select>
+                      <div class="field-label">Дополнительные границы</div>
+                      <textarea id="factsRulesText" placeholder="Например: если данных не хватает, спокойно попросить уточнить."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveFactRules" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Живость общения</div>
+                    <div class="list-subtitle">Человеческая речь, small talk, стиль и мягкая связь с товаром.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="smalltalkEnabled" type="checkbox" /> Разрешить живой разговор вне заказа</label>
+                    <label class="toggle-line"><input id="smalltalkStyleEnabled" type="checkbox" /> Можно просто поболтать, если клиенту так комфортнее</label>
+                    <label class="toggle-line"><input id="smalltalkOutfitAdviceEnabled" type="checkbox" /> Можно советовать, что надеть и с чем сочетать</label>
+                    <label class="toggle-line"><input id="smalltalkWeatherEnabled" type="checkbox" /> Можно отвечать на вопросы про погоду без выдумывания онлайн-данных</label>
+                    <label class="toggle-line"><input id="smalltalkSoftProductLinkEnabled" type="checkbox" /> Можно мягко связывать разговор со стилем IWAK без давления</label>
+                    <div class="field">
+                      <div class="field-label">Дополнительная манера</div>
+                      <textarea id="smalltalkRulesText" placeholder="Например: коротко, тепло, без официоза и без ощущения анкеты."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveSmalltalkRules" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Путь заказа</div>
+                    <div class="list-subtitle">Что собрать для оформления, не превращая диалог в сухую анкету.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="orderPathEnabled" type="checkbox" /> Включить путь заказа</label>
+                    <div class="field"><label class="field-label" for="orderStepMode">Ритм сбора данных</label><select id="orderStepMode"><option value="natural">Естественно, можно объединять близкие вопросы</option><option value="single">По одному шагу</option></select></div>
+                    <label class="toggle-line"><input id="orderCollectSizeEnabled" type="checkbox" /> Размер</label>
+                    <label class="toggle-line"><input id="orderCollectInsoleEnabled" type="checkbox" /> Длина стельки для обуви</label>
+                    <label class="toggle-line"><input id="orderCollectFullNameEnabled" type="checkbox" /> ФИО получателя</label>
+                    <label class="toggle-line"><input id="orderCollectPhoneEnabled" type="checkbox" /> Телефон для накладной</label>
+                    <label class="toggle-line"><input id="orderCollectCityEnabled" type="checkbox" /> Город</label>
+                    <label class="toggle-line"><input id="orderCollectDeliveryServiceEnabled" type="checkbox" /> Служба доставки</label>
+                    <label class="toggle-line"><input id="orderCollectPickupEnabled" type="checkbox" /> ПВЗ или адрес</label>
+                    <label class="toggle-line"><input id="orderCollectPaymentEnabled" type="checkbox" /> Реквизиты после данных</label>
+                    <label class="toggle-line"><input id="orderCollectReceiptEnabled" type="checkbox" /> Чек или скрин после оплаты</label>
+                    <div class="field">
+                      <div class="field-label">Дополнительные правила оформления</div>
+                      <textarea id="orderRulesText" placeholder="Например: если клиент прислал все данные одним сообщением, не переспрашивать их."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveOrderPath" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Оплата</div>
+                    <div class="list-subtitle">Реквизиты и предварительная AI-проверка чеков без финального подтверждения.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="paymentEnabled" type="checkbox" />
+                      Использовать оплату в диалоге
+                    </label>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <label class="field-label" for="paymentMethod">Способ оплаты</label>
+                        <select id="paymentMethod">
+                          <option value="card">Карта</option>
+                          <option value="sbp">СБП</option>
+                          <option value="other">Другое</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentCardNumber">Номер карты / реквизиты</label>
+                        <input id="paymentCardNumber" placeholder="2200 **** **** 1234" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentRecipientName">Получатель</label>
+                        <input id="paymentRecipientName" placeholder="Имя Фамилия" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="paymentBank">Банк</label>
+                        <input id="paymentBank" placeholder="Например: Т-Банк" />
+                      </div>
                     </div>
                     <div class="field">
-                      <label class="field-label" for="personaAgeSelect">Возраст</label>
-                      <select id="personaAgeSelect">
-                        <option value="23">23</option>
-                        <option value="27">27</option>
-                        <option value="35">35</option>
-                      </select>
+                      <label class="field-label" for="paymentComment">Комментарий для клиента</label>
+                      <input id="paymentComment" placeholder="После оплаты пришлите чек или скриншот" />
                     </div>
                     <div class="actions">
-                      <button id="savePersona" class="button-primary" type="button">Сохранить</button>
+                      <button id="savePayment" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
               </details>
 
-              <details class="list-item">
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Автоматизация диалога</div>
-                    <div class="list-subtitle">Память, быстрые сообщения, reply и естественная задержка ответа.</div>
+                    <div class="list-title">Доставка</div>
+                    <div class="list-subtitle">Короткие правила доставки из AI Control, которые передаются AI вместе с инструкцией.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line">
+                      <input id="deliveryRulesEnabled" type="checkbox" />
+                      Использовать правила доставки в AI Control
+                    </label>
+                    <div class="field">
+                      <div class="field-label">Правила доставки</div>
+                      <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про доставку, ПВЗ, курьера и статус после отправки.</div>
+                      <textarea id="deliveryRulesText"></textarea>
+                    </div>
+                    <div class="actions">
+                      <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Товар и качество</div>
+                    <div class="list-subtitle">Честный ответ про фабричную реплику без оправданий и фальшивых обещаний.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="qualityReplicaHonestyEnabled" type="checkbox" /> Честно говорить, что товар — фабричная реплика</label>
+                    <label class="toggle-line"><input id="qualityNoOriginalClaimsEnabled" type="checkbox" /> Не использовать слово «оригинал», если это не оригинал</label>
+                    <label class="toggle-line"><input id="qualityCalmExplanationEnabled" type="checkbox" /> Объяснять качество спокойно, без оправданий</label>
+                    <div class="field">
+                      <div class="field-label">Дополнительные правила качества</div>
+                      <textarea id="qualityRulesText" placeholder="Например: хорошая фабричная реплика, материалы и посадку объяснять спокойно."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveQualityRules" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Память</div>
+                    <div class="list-subtitle">Глубина контекста, быстрые сообщения, reply и естественная задержка ответа.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
@@ -1911,80 +1990,161 @@
                 </div>
               </details>
 
-              <details class="list-item">
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Оплата</div>
-                    <div class="list-subtitle">Реквизиты и предварительная AI-проверка чеков без финального подтверждения.</div>
+                    <div class="list-title">Примеры диалогов</div>
+                    <div class="list-subtitle">Ориентиры стиля: AI смотрит на них, но не копирует дословно.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
-                    <label class="toggle-line">
-                      <input id="paymentEnabled" type="checkbox" />
-                      Использовать оплату в диалоге
-                    </label>
-                    <div class="settings-grid">
-                      <div class="field">
-                        <label class="field-label" for="paymentMethod">Способ оплаты</label>
-                        <select id="paymentMethod">
-                          <option value="card">Карта</option>
-                          <option value="sbp">СБП</option>
-                          <option value="other">Другое</option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label class="field-label" for="paymentCardNumber">Номер карты / реквизиты</label>
-                        <input id="paymentCardNumber" placeholder="2200 **** **** 1234" />
-                      </div>
-                      <div class="field">
-                        <label class="field-label" for="paymentRecipientName">Получатель</label>
-                        <input id="paymentRecipientName" placeholder="Имя Фамилия" />
-                      </div>
-                      <div class="field">
-                        <label class="field-label" for="paymentBank">Банк</label>
-                        <input id="paymentBank" placeholder="Например: Т-Банк" />
-                      </div>
-                    </div>
+                    <label class="toggle-line"><input id="dialogExamplesEnabled" type="checkbox" /> Использовать примеры как ориентир</label>
                     <div class="field">
-                      <label class="field-label" for="paymentComment">Комментарий для клиента</label>
-                      <input id="paymentComment" placeholder="После оплаты пришлите чек или скриншот" />
+                      <div class="field-label">Примеры</div>
+                      <textarea id="dialogExamplesText" placeholder="Клиент: 42 размер можно?
+Менеджер: Здравствуйте! Отлично, записал размер 42.
+Подскажите, пожалуйста, длину стельки в см?"></textarea>
                     </div>
-                    <div class="actions">
-                      <button id="savePayment" class="button-primary" type="button">Сохранить</button>
+                    <div class="actions"><button id="saveDialogExamples" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Preview</div>
+                    <div class="list-subtitle">Точный единый контекст AI Control, который уходит в модель.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <textarea id="aiControlPreview" readonly></textarea>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Инструкция</div>
+                    <div class="list-subtitle">Свободная дополнительная инструкция поверх видимых правил AI Control.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <textarea id="instruction" placeholder="Вы — менеджер магазина IWAK. Пишите коротко, по делу и как живой человек в Telegram."></textarea>
+                  <div class="instruction-actions">
+                    <button id="saveInstruction" class="button-primary" type="button">Сохранить</button>
+                    <div class="instruction-resize-bar">
+                      <div id="instructionResizeHandle" class="instruction-resize-handle" title="Потянуть вниз" aria-label="Изменить высоту инструкции"></div>
                     </div>
                   </div>
                 </div>
               </details>
 
-              <details class="list-item">
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Доставка</div>
-                    <div class="list-subtitle">Короткие правила доставки из AI Control, которые передаются AI вместе с инструкцией.</div>
+                    <div class="list-title">Поведение</div>
+                    <div class="list-subtitle">Тон, длина и степень свободы ответа.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
-                    <label class="toggle-line">
-                      <input id="deliveryRulesEnabled" type="checkbox" />
-                      Использовать правила доставки в AI Control
-                    </label>
                     <div class="field">
-                      <div class="field-label">Правила доставки</div>
-                      <div class="field-hint">Этот блок объясняет AI, как отвечать на вопросы про доставку, ПВЗ, курьера и статус после отправки.</div>
-                      <textarea id="deliveryRulesText"></textarea>
+                      <label class="field-label" for="toneSelect">Тон</label>
+                      <select id="toneSelect">
+                        <option value="neutral">Нейтральный</option>
+                        <option value="friendly">Дружелюбный</option>
+                        <option value="sales">Продающий</option>
+                        <option value="concise">Краткий</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="responseLengthSelect">Длина ответа</label>
+                      <select id="responseLengthSelect">
+                        <option value="short">Короткий</option>
+                        <option value="medium">Средний</option>
+                        <option value="long">Длинный</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="creativitySelect">Креативность</label>
+                      <select id="creativitySelect">
+                        <option value="precise">Точный</option>
+                        <option value="balanced">Сбалансированный</option>
+                        <option value="creative">Креативный</option>
+                      </select>
                     </div>
                     <div class="actions">
-                      <button id="saveDelivery" class="button-primary" type="button">Сохранить</button>
+                      <button id="saveBehavior" class="button-primary" type="button">Сохранить</button>
                     </div>
                   </div>
                 </div>
               </details>
 
-              <details class="list-item">
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Обработка входа</div>
+                    <div class="list-subtitle">Как AI трактует фото, ссылки и скрины в товарном диалоге IWAK.</div>
+                </div>
+                <div class="list-caret">⌄</div>
+              </summary>
+              <div class="list-panel">
+                <div class="stack">
+                  <div class="field">
+                    <label class="field-label" for="mediaBehaviorSelect">Работа с медиа</label>
+                    <select id="mediaBehaviorSelect">
+                        <option value="describe_media">Описывать медиа</option>
+                        <option value="answer_from_media">Отвечать по медиа</option>
+                        <option value="text_first">Сначала текст</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="saveInputHandling" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Персона</div>
+                    <div class="list-subtitle">Базовая человеческая манера речи без игры в роль.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <div class="field">
+                      <label class="field-label" for="personaStyleSelect">Базовый стиль</label>
+                      <select id="personaStyleSelect">
+                        <option value="calm">Спокойный</option>
+                        <option value="conversational">Разговорный</option>
+                        <option value="reserved">Сдержанный</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="personaAgeSelect">Возраст</label>
+                      <select id="personaAgeSelect">
+                        <option value="23">23</option>
+                        <option value="27">27</option>
+                        <option value="35">35</option>
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button id="savePersona" class="button-primary" type="button">Сохранить</button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
                     <div class="list-title">Тест AI</div>
@@ -2008,7 +2168,7 @@
                   </div>
                 </div>
               </details>
-            </div>
+</div>
           </section>
 
           <section id="view-integrations" class="view">
@@ -2271,6 +2431,37 @@
       const logoutButton = document.getElementById('logoutButton');
       const instruction = document.getElementById('instruction');
       const instructionResizeHandle = document.getElementById('instructionResizeHandle');
+      const coreHotLeadEnabled = document.getElementById('coreHotLeadEnabled');
+      const corePublishedAvailableEnabled = document.getElementById('corePublishedAvailableEnabled');
+      const coreNoStockCheckEnabled = document.getElementById('coreNoStockCheckEnabled');
+      const coreNoCatalogReturnEnabled = document.getElementById('coreNoCatalogReturnEnabled');
+      const coreNoResellEnabled = document.getElementById('coreNoResellEnabled');
+      const coreRulesText = document.getElementById('coreRulesText');
+      const factsNoInventEnabled = document.getElementById('factsNoInventEnabled');
+      const factsNoFakePaymentEnabled = document.getElementById('factsNoFakePaymentEnabled');
+      const factsNoFakeDeliveryEnabled = document.getElementById('factsNoFakeDeliveryEnabled');
+      const factsNoFakeDiscountsEnabled = document.getElementById('factsNoFakeDiscountsEnabled');
+      const factsNoFinalPaymentConfirmEnabled = document.getElementById('factsNoFinalPaymentConfirmEnabled');
+      const factsNoFakeDeliveryTimeEnabled = document.getElementById('factsNoFakeDeliveryTimeEnabled');
+      const factsRulesText = document.getElementById('factsRulesText');
+      const smalltalkEnabled = document.getElementById('smalltalkEnabled');
+      const smalltalkStyleEnabled = document.getElementById('smalltalkStyleEnabled');
+      const smalltalkOutfitAdviceEnabled = document.getElementById('smalltalkOutfitAdviceEnabled');
+      const smalltalkWeatherEnabled = document.getElementById('smalltalkWeatherEnabled');
+      const smalltalkSoftProductLinkEnabled = document.getElementById('smalltalkSoftProductLinkEnabled');
+      const smalltalkRulesText = document.getElementById('smalltalkRulesText');
+      const orderPathEnabled = document.getElementById('orderPathEnabled');
+      const orderStepMode = document.getElementById('orderStepMode');
+      const orderCollectSizeEnabled = document.getElementById('orderCollectSizeEnabled');
+      const orderCollectInsoleEnabled = document.getElementById('orderCollectInsoleEnabled');
+      const orderCollectFullNameEnabled = document.getElementById('orderCollectFullNameEnabled');
+      const orderCollectPhoneEnabled = document.getElementById('orderCollectPhoneEnabled');
+      const orderCollectCityEnabled = document.getElementById('orderCollectCityEnabled');
+      const orderCollectDeliveryServiceEnabled = document.getElementById('orderCollectDeliveryServiceEnabled');
+      const orderCollectPickupEnabled = document.getElementById('orderCollectPickupEnabled');
+      const orderCollectPaymentEnabled = document.getElementById('orderCollectPaymentEnabled');
+      const orderCollectReceiptEnabled = document.getElementById('orderCollectReceiptEnabled');
+      const orderRulesText = document.getElementById('orderRulesText');
       const toneSelect = document.getElementById('toneSelect');
       const responseLengthSelect = document.getElementById('responseLengthSelect');
       const creativitySelect = document.getElementById('creativitySelect');
@@ -2293,6 +2484,13 @@
       const paymentComment = document.getElementById('paymentComment');
       const deliveryRulesEnabled = document.getElementById('deliveryRulesEnabled');
       const deliveryRulesText = document.getElementById('deliveryRulesText');
+      const qualityReplicaHonestyEnabled = document.getElementById('qualityReplicaHonestyEnabled');
+      const qualityNoOriginalClaimsEnabled = document.getElementById('qualityNoOriginalClaimsEnabled');
+      const qualityCalmExplanationEnabled = document.getElementById('qualityCalmExplanationEnabled');
+      const qualityRulesText = document.getElementById('qualityRulesText');
+      const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
+      const dialogExamplesText = document.getElementById('dialogExamplesText');
+      const aiControlPreview = document.getElementById('aiControlPreview');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
       const testMessage = document.getElementById('testMessage');
       const testOutput = document.getElementById('testOutput');
@@ -2329,12 +2527,18 @@
       const logAutoRefresh = document.getElementById('logAutoRefresh');
       const refreshInboxButton = document.getElementById('refreshInbox');
       const saveInstructionButton = document.getElementById('saveInstruction');
+      const saveCoreRulesButton = document.getElementById('saveCoreRules');
+      const saveFactRulesButton = document.getElementById('saveFactRules');
+      const saveSmalltalkRulesButton = document.getElementById('saveSmalltalkRules');
+      const saveOrderPathButton = document.getElementById('saveOrderPath');
       const saveBehaviorButton = document.getElementById('saveBehavior');
       const saveInputHandlingButton = document.getElementById('saveInputHandling');
       const savePersonaButton = document.getElementById('savePersona');
       const saveDialogueAutomationButton = document.getElementById('saveDialogueAutomation');
       const savePaymentButton = document.getElementById('savePayment');
       const saveDeliveryButton = document.getElementById('saveDelivery');
+      const saveQualityRulesButton = document.getElementById('saveQualityRules');
+      const saveDialogExamplesButton = document.getElementById('saveDialogExamples');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
       const saveSttProviderButton = document.getElementById('saveSttProvider');
@@ -3059,6 +3263,37 @@
         setCompactStatus(sttDetailStatus, data.stt_label || (data.stt === 'подключен' ? 'STT подключен' : 'STT не настроен'), data.stt_status || (data.stt === 'подключен' ? 'ok' : 'warning'));
 
         instruction.value = data.instruction || '';
+        coreHotLeadEnabled.checked = data.core_hot_lead_enabled !== false;
+        corePublishedAvailableEnabled.checked = data.core_published_available_enabled !== false;
+        coreNoStockCheckEnabled.checked = data.core_no_stock_check_enabled !== false;
+        coreNoCatalogReturnEnabled.checked = data.core_no_catalog_return_enabled !== false;
+        coreNoResellEnabled.checked = data.core_no_resell_enabled !== false;
+        coreRulesText.value = data.core_rules_text || '';
+        factsNoInventEnabled.checked = data.facts_no_invent_enabled !== false;
+        factsNoFakePaymentEnabled.checked = data.facts_no_fake_payment_enabled !== false;
+        factsNoFakeDeliveryEnabled.checked = data.facts_no_fake_delivery_enabled !== false;
+        factsNoFakeDiscountsEnabled.checked = data.facts_no_fake_discounts_enabled !== false;
+        factsNoFinalPaymentConfirmEnabled.checked = data.facts_no_final_payment_confirm_enabled !== false;
+        factsNoFakeDeliveryTimeEnabled.checked = data.facts_no_fake_delivery_time_enabled !== false;
+        factsRulesText.value = data.facts_rules_text || '';
+        smalltalkEnabled.checked = data.smalltalk_enabled !== false;
+        smalltalkStyleEnabled.checked = data.smalltalk_style_enabled !== false;
+        smalltalkOutfitAdviceEnabled.checked = data.smalltalk_outfit_advice_enabled !== false;
+        smalltalkWeatherEnabled.checked = data.smalltalk_weather_enabled !== false;
+        smalltalkSoftProductLinkEnabled.checked = data.smalltalk_soft_product_link_enabled !== false;
+        smalltalkRulesText.value = data.smalltalk_rules_text || '';
+        orderPathEnabled.checked = data.order_path_enabled !== false;
+        orderStepMode.value = data.order_step_mode || 'natural';
+        orderCollectSizeEnabled.checked = data.order_collect_size_enabled !== false;
+        orderCollectInsoleEnabled.checked = data.order_collect_insole_enabled !== false;
+        orderCollectFullNameEnabled.checked = data.order_collect_full_name_enabled !== false;
+        orderCollectPhoneEnabled.checked = data.order_collect_phone_enabled !== false;
+        orderCollectCityEnabled.checked = data.order_collect_city_enabled !== false;
+        orderCollectDeliveryServiceEnabled.checked = data.order_collect_delivery_service_enabled !== false;
+        orderCollectPickupEnabled.checked = data.order_collect_pickup_enabled !== false;
+        orderCollectPaymentEnabled.checked = data.order_collect_payment_enabled !== false;
+        orderCollectReceiptEnabled.checked = data.order_collect_receipt_enabled !== false;
+        orderRulesText.value = data.order_rules_text || '';
         toneSelect.value = data.tone || 'neutral';
         responseLengthSelect.value = data.response_length || 'medium';
         creativitySelect.value = data.creativity || 'balanced';
@@ -3081,6 +3316,13 @@
         paymentComment.value = data.payment_comment || '';
         deliveryRulesEnabled.checked = data.delivery_rules_enabled !== false;
         deliveryRulesText.value = data.delivery_rules_text || '';
+        qualityReplicaHonestyEnabled.checked = data.quality_replica_honesty_enabled !== false;
+        qualityNoOriginalClaimsEnabled.checked = data.quality_no_original_claims_enabled !== false;
+        qualityCalmExplanationEnabled.checked = data.quality_calm_explanation_enabled !== false;
+        qualityRulesText.value = data.quality_rules_text || '';
+        dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
+        dialogExamplesText.value = data.dialog_examples_text || '';
+        aiControlPreview.value = data.ai_control_context || '';
         telegramToken.value = telegramToken.value || '';
         webhookUrl.value = data.webhook_url || '';
         syncProviderFields(data);
@@ -3163,6 +3405,85 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               instruction: instruction.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveCoreRules() {
+        await performSave(saveCoreRulesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              core_hot_lead_enabled: coreHotLeadEnabled.checked,
+              core_published_available_enabled: corePublishedAvailableEnabled.checked,
+              core_no_stock_check_enabled: coreNoStockCheckEnabled.checked,
+              core_no_catalog_return_enabled: coreNoCatalogReturnEnabled.checked,
+              core_no_resell_enabled: coreNoResellEnabled.checked,
+              core_rules_text: coreRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveFactRules() {
+        await performSave(saveFactRulesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              facts_no_invent_enabled: factsNoInventEnabled.checked,
+              facts_no_fake_payment_enabled: factsNoFakePaymentEnabled.checked,
+              facts_no_fake_delivery_enabled: factsNoFakeDeliveryEnabled.checked,
+              facts_no_fake_discounts_enabled: factsNoFakeDiscountsEnabled.checked,
+              facts_no_final_payment_confirm_enabled: factsNoFinalPaymentConfirmEnabled.checked,
+              facts_no_fake_delivery_time_enabled: factsNoFakeDeliveryTimeEnabled.checked,
+              facts_rules_text: factsRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveSmalltalkRules() {
+        await performSave(saveSmalltalkRulesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              smalltalk_enabled: smalltalkEnabled.checked,
+              smalltalk_style_enabled: smalltalkStyleEnabled.checked,
+              smalltalk_outfit_advice_enabled: smalltalkOutfitAdviceEnabled.checked,
+              smalltalk_weather_enabled: smalltalkWeatherEnabled.checked,
+              smalltalk_soft_product_link_enabled: smalltalkSoftProductLinkEnabled.checked,
+              smalltalk_rules_text: smalltalkRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveOrderPath() {
+        await performSave(saveOrderPathButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              order_path_enabled: orderPathEnabled.checked,
+              order_step_mode: orderStepMode.value,
+              order_collect_size_enabled: orderCollectSizeEnabled.checked,
+              order_collect_insole_enabled: orderCollectInsoleEnabled.checked,
+              order_collect_full_name_enabled: orderCollectFullNameEnabled.checked,
+              order_collect_phone_enabled: orderCollectPhoneEnabled.checked,
+              order_collect_city_enabled: orderCollectCityEnabled.checked,
+              order_collect_delivery_service_enabled: orderCollectDeliveryServiceEnabled.checked,
+              order_collect_pickup_enabled: orderCollectPickupEnabled.checked,
+              order_collect_payment_enabled: orderCollectPaymentEnabled.checked,
+              order_collect_receipt_enabled: orderCollectReceiptEnabled.checked,
+              order_rules_text: orderRulesText.value,
             }),
           });
           await loadStatus();
@@ -3257,6 +3578,36 @@
             body: JSON.stringify({
               delivery_rules_enabled: deliveryRulesEnabled.checked,
               delivery_rules_text: deliveryRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveQualityRules() {
+        await performSave(saveQualityRulesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              quality_replica_honesty_enabled: qualityReplicaHonestyEnabled.checked,
+              quality_no_original_claims_enabled: qualityNoOriginalClaimsEnabled.checked,
+              quality_calm_explanation_enabled: qualityCalmExplanationEnabled.checked,
+              quality_rules_text: qualityRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveDialogExamples() {
+        await performSave(saveDialogExamplesButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dialog_examples_enabled: dialogExamplesEnabled.checked,
+              dialog_examples_text: dialogExamplesText.value,
             }),
           });
           await loadStatus();
@@ -3612,6 +3963,10 @@
       });
 
       bindDirtyState(saveInstructionButton, [instruction]);
+      bindDirtyState(saveCoreRulesButton, [coreHotLeadEnabled, corePublishedAvailableEnabled, coreNoStockCheckEnabled, coreNoCatalogReturnEnabled, coreNoResellEnabled, coreRulesText]);
+      bindDirtyState(saveFactRulesButton, [factsNoInventEnabled, factsNoFakePaymentEnabled, factsNoFakeDeliveryEnabled, factsNoFakeDiscountsEnabled, factsNoFinalPaymentConfirmEnabled, factsNoFakeDeliveryTimeEnabled, factsRulesText]);
+      bindDirtyState(saveSmalltalkRulesButton, [smalltalkEnabled, smalltalkStyleEnabled, smalltalkOutfitAdviceEnabled, smalltalkWeatherEnabled, smalltalkSoftProductLinkEnabled, smalltalkRulesText]);
+      bindDirtyState(saveOrderPathButton, [orderPathEnabled, orderStepMode, orderCollectSizeEnabled, orderCollectInsoleEnabled, orderCollectFullNameEnabled, orderCollectPhoneEnabled, orderCollectCityEnabled, orderCollectDeliveryServiceEnabled, orderCollectPickupEnabled, orderCollectPaymentEnabled, orderCollectReceiptEnabled, orderRulesText]);
       bindDirtyState(saveBehaviorButton, [toneSelect, responseLengthSelect, creativitySelect]);
       bindDirtyState(saveInputHandlingButton, [mediaBehaviorSelect]);
       bindDirtyState(savePersonaButton, [personaStyleSelect, personaAgeSelect]);
@@ -3637,18 +3992,26 @@
         deliveryRulesEnabled,
         deliveryRulesText,
       ]);
+      bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityRulesText]);
+      bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
       bindDirtyState(saveSttProviderButton, [sttBaseUrl, sttApiKey, sttModel]);
       bindDirtyState(saveIntegrationsModelButton, [integrationsModelSelect]);
 
       document.getElementById('saveInstruction').addEventListener('click', saveInstruction);
+      document.getElementById('saveCoreRules').addEventListener('click', saveCoreRules);
+      document.getElementById('saveFactRules').addEventListener('click', saveFactRules);
+      document.getElementById('saveSmalltalkRules').addEventListener('click', saveSmalltalkRules);
+      document.getElementById('saveOrderPath').addEventListener('click', saveOrderPath);
       document.getElementById('saveBehavior').addEventListener('click', saveBehavior);
       document.getElementById('saveInputHandling').addEventListener('click', saveInputHandling);
       document.getElementById('savePersona').addEventListener('click', savePersona);
       document.getElementById('saveDialogueAutomation').addEventListener('click', saveDialogueAutomation);
       document.getElementById('savePayment').addEventListener('click', savePayment);
       document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
+      document.getElementById('saveQualityRules').addEventListener('click', saveQualityRules);
+      document.getElementById('saveDialogExamples').addEventListener('click', saveDialogExamples);
       document.getElementById('runTest').addEventListener('click', runTest);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
       document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);

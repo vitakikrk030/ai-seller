@@ -105,6 +105,43 @@ const runtimeConfig = {
   stt_base_url: process.env.STT_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   stt_model: process.env.STT_MODEL || 'gpt-4o-mini-transcribe',
   instruction: normalizeInstructionConfigValue(process.env.INSTRUCTION || ''),
+  core_hot_lead_enabled: process.env.CORE_HOT_LEAD_ENABLED !== 'false',
+  core_published_available_enabled: process.env.CORE_PUBLISHED_AVAILABLE_ENABLED !== 'false',
+  core_no_stock_check_enabled: process.env.CORE_NO_STOCK_CHECK_ENABLED !== 'false',
+  core_no_catalog_return_enabled: process.env.CORE_NO_CATALOG_RETURN_ENABLED !== 'false',
+  core_no_resell_enabled: process.env.CORE_NO_RESELL_ENABLED !== 'false',
+  core_rules_text: process.env.CORE_RULES_TEXT || '',
+  facts_no_invent_enabled: process.env.FACTS_NO_INVENT_ENABLED !== 'false',
+  facts_no_fake_payment_enabled: process.env.FACTS_NO_FAKE_PAYMENT_ENABLED !== 'false',
+  facts_no_fake_delivery_enabled: process.env.FACTS_NO_FAKE_DELIVERY_ENABLED !== 'false',
+  facts_no_fake_discounts_enabled: process.env.FACTS_NO_FAKE_DISCOUNTS_ENABLED !== 'false',
+  facts_no_final_payment_confirm_enabled: process.env.FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED !== 'false',
+  facts_no_fake_delivery_time_enabled: process.env.FACTS_NO_FAKE_DELIVERY_TIME_ENABLED !== 'false',
+  facts_rules_text: process.env.FACTS_RULES_TEXT || '',
+  smalltalk_enabled: process.env.SMALLTALK_ENABLED !== 'false',
+  smalltalk_style_enabled: process.env.SMALLTALK_STYLE_ENABLED !== 'false',
+  smalltalk_outfit_advice_enabled: process.env.SMALLTALK_OUTFIT_ADVICE_ENABLED !== 'false',
+  smalltalk_weather_enabled: process.env.SMALLTALK_WEATHER_ENABLED !== 'false',
+  smalltalk_soft_product_link_enabled: process.env.SMALLTALK_SOFT_PRODUCT_LINK_ENABLED !== 'false',
+  smalltalk_rules_text: process.env.SMALLTALK_RULES_TEXT || '',
+  order_path_enabled: process.env.ORDER_PATH_ENABLED !== 'false',
+  order_collect_size_enabled: process.env.ORDER_COLLECT_SIZE_ENABLED !== 'false',
+  order_collect_insole_enabled: process.env.ORDER_COLLECT_INSOLE_ENABLED !== 'false',
+  order_collect_full_name_enabled: process.env.ORDER_COLLECT_FULL_NAME_ENABLED !== 'false',
+  order_collect_phone_enabled: process.env.ORDER_COLLECT_PHONE_ENABLED !== 'false',
+  order_collect_city_enabled: process.env.ORDER_COLLECT_CITY_ENABLED !== 'false',
+  order_collect_delivery_service_enabled: process.env.ORDER_COLLECT_DELIVERY_SERVICE_ENABLED !== 'false',
+  order_collect_pickup_enabled: process.env.ORDER_COLLECT_PICKUP_ENABLED !== 'false',
+  order_collect_payment_enabled: process.env.ORDER_COLLECT_PAYMENT_ENABLED !== 'false',
+  order_collect_receipt_enabled: process.env.ORDER_COLLECT_RECEIPT_ENABLED !== 'false',
+  order_step_mode: process.env.ORDER_STEP_MODE || 'natural',
+  order_rules_text: process.env.ORDER_RULES_TEXT || '',
+  quality_replica_honesty_enabled: process.env.QUALITY_REPLICA_HONESTY_ENABLED !== 'false',
+  quality_no_original_claims_enabled: process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED !== 'false',
+  quality_calm_explanation_enabled: process.env.QUALITY_CALM_EXPLANATION_ENABLED !== 'false',
+  quality_rules_text: process.env.QUALITY_RULES_TEXT || '',
+  dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
+  dialog_examples_text: process.env.DIALOG_EXAMPLES_TEXT || '',
   tone: process.env.TONE || 'neutral',
   response_length: process.env.RESPONSE_LENGTH || 'medium',
   creativity: process.env.CREATIVITY || 'balanced',
@@ -2023,6 +2060,43 @@ function getRuntimeSnapshot() {
     stt_base_url: runtimeConfig.stt_base_url,
     stt_model: runtimeConfig.stt_model,
     instruction: runtimeConfig.instruction,
+    core_hot_lead_enabled: parseConfigBoolean(runtimeConfig.core_hot_lead_enabled, true),
+    core_published_available_enabled: parseConfigBoolean(runtimeConfig.core_published_available_enabled, true),
+    core_no_stock_check_enabled: parseConfigBoolean(runtimeConfig.core_no_stock_check_enabled, true),
+    core_no_catalog_return_enabled: parseConfigBoolean(runtimeConfig.core_no_catalog_return_enabled, true),
+    core_no_resell_enabled: parseConfigBoolean(runtimeConfig.core_no_resell_enabled, true),
+    core_rules_text: runtimeConfig.core_rules_text,
+    facts_no_invent_enabled: parseConfigBoolean(runtimeConfig.facts_no_invent_enabled, true),
+    facts_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_payment_enabled, true),
+    facts_no_fake_delivery_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_enabled, true),
+    facts_no_fake_discounts_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_discounts_enabled, true),
+    facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
+    facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
+    facts_rules_text: runtimeConfig.facts_rules_text,
+    smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
+    smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
+    smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),
+    smalltalk_weather_enabled: parseConfigBoolean(runtimeConfig.smalltalk_weather_enabled, true),
+    smalltalk_soft_product_link_enabled: parseConfigBoolean(runtimeConfig.smalltalk_soft_product_link_enabled, true),
+    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text,
+    order_path_enabled: parseConfigBoolean(runtimeConfig.order_path_enabled, true),
+    order_collect_size_enabled: parseConfigBoolean(runtimeConfig.order_collect_size_enabled, true),
+    order_collect_insole_enabled: parseConfigBoolean(runtimeConfig.order_collect_insole_enabled, true),
+    order_collect_full_name_enabled: parseConfigBoolean(runtimeConfig.order_collect_full_name_enabled, true),
+    order_collect_phone_enabled: parseConfigBoolean(runtimeConfig.order_collect_phone_enabled, true),
+    order_collect_city_enabled: parseConfigBoolean(runtimeConfig.order_collect_city_enabled, true),
+    order_collect_delivery_service_enabled: parseConfigBoolean(runtimeConfig.order_collect_delivery_service_enabled, true),
+    order_collect_pickup_enabled: parseConfigBoolean(runtimeConfig.order_collect_pickup_enabled, true),
+    order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
+    order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
+    order_step_mode: runtimeConfig.order_step_mode,
+    order_rules_text: runtimeConfig.order_rules_text,
+    quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
+    quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
+    quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
+    quality_rules_text: runtimeConfig.quality_rules_text,
+    dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
+    dialog_examples_text: runtimeConfig.dialog_examples_text,
     tone: runtimeConfig.tone,
     response_length: runtimeConfig.response_length,
     creativity: runtimeConfig.creativity,
@@ -2125,6 +2199,18 @@ function savePersistedConfig() {
   fs.renameSync(tempPath, CONFIG_FILE_PATH);
 }
 
+function applyBooleanConfig(body, key, envKey, fallback = true) {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return;
+  runtimeConfig[key] = parseConfigBoolean(body[key], fallback);
+  process.env[envKey] = String(runtimeConfig[key]);
+}
+
+function applyStringConfig(body, key, envKey, fallback = '') {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return;
+  runtimeConfig[key] = String(body[key] || fallback);
+  process.env[envKey] = runtimeConfig[key];
+}
+
 function applyConfigUpdate(body) {
   if (Object.prototype.hasOwnProperty.call(body, 'telegram_token')) {
     runtimeConfig.telegram_token = body.telegram_token || '';
@@ -2164,6 +2250,54 @@ function applyConfigUpdate(body) {
   if (Object.prototype.hasOwnProperty.call(body, 'instruction')) {
     runtimeConfig.instruction = normalizeInstructionConfigValue(body.instruction || '');
     process.env.INSTRUCTION = runtimeConfig.instruction;
+  }
+
+  [
+    ['core_hot_lead_enabled', 'CORE_HOT_LEAD_ENABLED'],
+    ['core_published_available_enabled', 'CORE_PUBLISHED_AVAILABLE_ENABLED'],
+    ['core_no_stock_check_enabled', 'CORE_NO_STOCK_CHECK_ENABLED'],
+    ['core_no_catalog_return_enabled', 'CORE_NO_CATALOG_RETURN_ENABLED'],
+    ['core_no_resell_enabled', 'CORE_NO_RESELL_ENABLED'],
+    ['facts_no_invent_enabled', 'FACTS_NO_INVENT_ENABLED'],
+    ['facts_no_fake_payment_enabled', 'FACTS_NO_FAKE_PAYMENT_ENABLED'],
+    ['facts_no_fake_delivery_enabled', 'FACTS_NO_FAKE_DELIVERY_ENABLED'],
+    ['facts_no_fake_discounts_enabled', 'FACTS_NO_FAKE_DISCOUNTS_ENABLED'],
+    ['facts_no_final_payment_confirm_enabled', 'FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED'],
+    ['facts_no_fake_delivery_time_enabled', 'FACTS_NO_FAKE_DELIVERY_TIME_ENABLED'],
+    ['smalltalk_enabled', 'SMALLTALK_ENABLED'],
+    ['smalltalk_style_enabled', 'SMALLTALK_STYLE_ENABLED'],
+    ['smalltalk_outfit_advice_enabled', 'SMALLTALK_OUTFIT_ADVICE_ENABLED'],
+    ['smalltalk_weather_enabled', 'SMALLTALK_WEATHER_ENABLED'],
+    ['smalltalk_soft_product_link_enabled', 'SMALLTALK_SOFT_PRODUCT_LINK_ENABLED'],
+    ['order_path_enabled', 'ORDER_PATH_ENABLED'],
+    ['order_collect_size_enabled', 'ORDER_COLLECT_SIZE_ENABLED'],
+    ['order_collect_insole_enabled', 'ORDER_COLLECT_INSOLE_ENABLED'],
+    ['order_collect_full_name_enabled', 'ORDER_COLLECT_FULL_NAME_ENABLED'],
+    ['order_collect_phone_enabled', 'ORDER_COLLECT_PHONE_ENABLED'],
+    ['order_collect_city_enabled', 'ORDER_COLLECT_CITY_ENABLED'],
+    ['order_collect_delivery_service_enabled', 'ORDER_COLLECT_DELIVERY_SERVICE_ENABLED'],
+    ['order_collect_pickup_enabled', 'ORDER_COLLECT_PICKUP_ENABLED'],
+    ['order_collect_payment_enabled', 'ORDER_COLLECT_PAYMENT_ENABLED'],
+    ['order_collect_receipt_enabled', 'ORDER_COLLECT_RECEIPT_ENABLED'],
+    ['quality_replica_honesty_enabled', 'QUALITY_REPLICA_HONESTY_ENABLED'],
+    ['quality_no_original_claims_enabled', 'QUALITY_NO_ORIGINAL_CLAIMS_ENABLED'],
+    ['quality_calm_explanation_enabled', 'QUALITY_CALM_EXPLANATION_ENABLED'],
+  ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
+
+  [
+    ['core_rules_text', 'CORE_RULES_TEXT'],
+    ['facts_rules_text', 'FACTS_RULES_TEXT'],
+    ['smalltalk_rules_text', 'SMALLTALK_RULES_TEXT'],
+    ['order_rules_text', 'ORDER_RULES_TEXT'],
+    ['quality_rules_text', 'QUALITY_RULES_TEXT'],
+  ].forEach(([key, envKey]) => applyStringConfig(body, key, envKey));
+
+  applyBooleanConfig(body, 'dialog_examples_enabled', 'DIALOG_EXAMPLES_ENABLED', false);
+  applyStringConfig(body, 'dialog_examples_text', 'DIALOG_EXAMPLES_TEXT');
+
+  if (Object.prototype.hasOwnProperty.call(body, 'order_step_mode')) {
+    runtimeConfig.order_step_mode = body.order_step_mode || 'natural';
+    process.env.ORDER_STEP_MODE = runtimeConfig.order_step_mode;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'tone')) {
@@ -3065,6 +3199,107 @@ function getMediaBehaviorGuidance(mediaBehavior) {
   return map[mediaBehavior] || map.answer_from_media;
 }
 
+function buildGuidanceSection(title, rows, freeText = '') {
+  const body = rows.filter(Boolean);
+  const text = String(freeText || '').trim();
+  if (text) body.push(text);
+  if (!body.length) return '';
+  return [title, ...body.map((row) => `- ${row}`)].join('\n');
+}
+
+function getIwakCoreGuidance(config) {
+  return buildGuidanceSection('Ядро IWAK:', [
+    parseConfigBoolean(config.core_hot_lead_enabled, true)
+      && 'Клиент из Telegram/сайта обычно уже тёплый и пришёл к покупке, поэтому не продавать с нуля.',
+    parseConfigBoolean(config.core_published_available_enabled, true)
+      && 'Опубликованный товар считается доступным к заказу.',
+    parseConfigBoolean(config.core_no_stock_check_enabled, true)
+      && 'Не проверять склад, остатки или базу товаров и не писать, что нужно уточнить наличие.',
+    parseConfigBoolean(config.core_no_catalog_return_enabled, true)
+      && 'Не возвращать клиента в каталог, если он уже прислал товар или размер.',
+    parseConfigBoolean(config.core_no_resell_enabled, true)
+      && 'Работать как closing-менеджер: принять заказ, уточнить недостающее, довести до оплаты и чека.',
+  ], config.core_rules_text);
+}
+
+function getFactBoundaryGuidance(config) {
+  return buildGuidanceSection('Границы фактов:', [
+    parseConfigBoolean(config.facts_no_invent_enabled, true)
+      && 'Свободно формулировать, но не выдумывать факты, цены, наличие, сроки, службы, реквизиты или скидки.',
+    parseConfigBoolean(config.facts_no_fake_payment_enabled, true)
+      && 'Реквизиты брать только из раздела Оплата. Если их нет, не придумывать.',
+    parseConfigBoolean(config.facts_no_fake_delivery_enabled, true)
+      && 'Условия доставки брать только из раздела Доставка.',
+    parseConfigBoolean(config.facts_no_fake_discounts_enabled, true)
+      && 'Если клиент просит скидку, не обещать её от себя: текущая цена финальная, акции бывают только если они явно указаны.',
+    parseConfigBoolean(config.facts_no_final_payment_confirm_enabled, true)
+      && 'После чека не подтверждать финально оплату: чек получен, дальше проверка вручную.',
+    parseConfigBoolean(config.facts_no_fake_delivery_time_enabled, true)
+      && 'Не обещать точные сроки отправки или доставки, если они не указаны в AI Control.',
+  ], config.facts_rules_text);
+}
+
+function getSmalltalkGuidance(config) {
+  if (!parseConfigBoolean(config.smalltalk_enabled, true)) return '';
+  return buildGuidanceSection('Живость общения:', [
+    'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
+    parseConfigBoolean(config.smalltalk_style_enabled, true)
+      && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
+    parseConfigBoolean(config.smalltalk_outfit_advice_enabled, true)
+      && 'Можно советовать, что надеть и с чем сочетать товары IWAK, не выдумывая конкретные остатки сверх присланного товара.',
+    parseConfigBoolean(config.smalltalk_weather_enabled, true)
+      && 'Если клиент спрашивает про погоду, можно ответить общими словами или честно сказать, что точной онлайн-погоды нет, если она не передана в диалог.',
+    parseConfigBoolean(config.smalltalk_soft_product_link_enabled, true)
+      && 'Если разговор уместно связан со стилем, можно мягко привязать его к товару IWAK без давления.',
+  ], config.smalltalk_rules_text);
+}
+
+function getOrderPathGuidance(config) {
+  if (!parseConfigBoolean(config.order_path_enabled, true)) return '';
+  const stepMode = config.order_step_mode === 'single'
+    ? 'Собирать данные максимально по одному шагу, чтобы клиенту было легко отвечать.'
+    : 'Собирать данные естественно: не повторять уже полученное, можно объединять близкие вопросы в одно сообщение.';
+  return buildGuidanceSection('Путь заказа:', [
+    stepMode,
+    parseConfigBoolean(config.order_collect_size_enabled, true)
+      && 'Если размер уже указан, записать его и не спрашивать повторно.',
+    parseConfigBoolean(config.order_collect_insole_enabled, true)
+      && 'Для обуви уточнить длину стельки в сантиметрах, если её ещё нет.',
+    parseConfigBoolean(config.order_collect_full_name_enabled, true)
+      && 'Для оформления собрать ФИО получателя.',
+    parseConfigBoolean(config.order_collect_phone_enabled, true)
+      && 'Собрать телефон получателя для накладной и уведомлений доставки.',
+    parseConfigBoolean(config.order_collect_city_enabled, true)
+      && 'Собрать город доставки.',
+    parseConfigBoolean(config.order_collect_delivery_service_enabled, true)
+      && 'Уточнить удобную службу доставки из разрешённых в разделе Доставка.',
+    parseConfigBoolean(config.order_collect_pickup_enabled, true)
+      && 'Для ПВЗ собрать адрес/название пункта или ориентир; для курьера собрать адрес.',
+    parseConfigBoolean(config.order_collect_payment_enabled, true)
+      && 'Когда основные данные собраны, аккуратно отправить реквизиты из раздела Оплата.',
+    parseConfigBoolean(config.order_collect_receipt_enabled, true)
+      && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
+  ], config.order_rules_text);
+}
+
+function getQualityGuidance(config) {
+  return buildGuidanceSection('Товар и качество:', [
+    parseConfigBoolean(config.quality_replica_honesty_enabled, true)
+      && 'Если клиент спрашивает про оригинальность, честно говорить: это хорошая фабричная реплика.',
+    parseConfigBoolean(config.quality_no_original_claims_enabled, true)
+      && 'Не использовать слово "оригинал" и не создавать впечатление оригинала, если товар не оригинальный.',
+    parseConfigBoolean(config.quality_calm_explanation_enabled, true)
+      && 'Объяснять качество спокойно, уверенно и без оправданий.',
+  ], config.quality_rules_text);
+}
+
+function getDialogExamplesGuidance(config) {
+  if (!parseConfigBoolean(config.dialog_examples_enabled, false)) return '';
+  const text = String(config.dialog_examples_text || '').trim();
+  if (!text) return '';
+  return ['Примеры диалогов для стиля. Не копировать дословно, использовать как ориентир:', text].join('\n');
+}
+
 function getVisiblePaymentGuidance(config) {
   if (!parseConfigBoolean(config.payment_enabled, false)) {
     return 'Оплата в AI Control выключена: не отправляйте и не придумывайте реквизиты, номер карты/телефона, банк или получателя.';
@@ -3099,6 +3334,12 @@ function getVisibleDeliveryGuidance(config) {
 
 function getVisibleControlState(config, memoryContext = null) {
   return {
+    core: Boolean(getIwakCoreGuidance(config)),
+    facts: Boolean(getFactBoundaryGuidance(config)),
+    smalltalk: Boolean(getSmalltalkGuidance(config)),
+    orderPath: Boolean(getOrderPathGuidance(config)),
+    quality: Boolean(getQualityGuidance(config)),
+    examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
     behavior: true,
     media: true,
@@ -3135,6 +3376,16 @@ function buildSystemPrompt(config, memoryContext = null) {
     getMediaBehaviorGuidance(config.media_behavior),
   ].filter(Boolean);
 
+  [
+    getIwakCoreGuidance(config),
+    getFactBoundaryGuidance(config),
+    getSmalltalkGuidance(config),
+    getOrderPathGuidance(config),
+    getQualityGuidance(config),
+  ].forEach((section) => {
+    if (section) control.push(section);
+  });
+
   if (String(config.instruction || '').trim()) {
     control.push('Инструкция:', String(config.instruction).trim());
   }
@@ -3143,6 +3394,8 @@ function buildSystemPrompt(config, memoryContext = null) {
   if (paymentGuidance) control.push(paymentGuidance);
   const deliveryGuidance = getVisibleDeliveryGuidance(config);
   if (deliveryGuidance) control.push(deliveryGuidance);
+  const examplesGuidance = getDialogExamplesGuidance(config);
+  if (examplesGuidance) control.push(examplesGuidance);
   parts.push(control.join('\n'));
   return parts.filter((part) => String(part || '').trim()).join('\n\n');
 }
@@ -3607,6 +3860,43 @@ app.get('/config/status', async (req, res) => {
     stt_base_url: runtimeConfig.stt_base_url || '',
     stt_model: runtimeConfig.stt_model || 'gpt-4o-mini-transcribe',
     instruction: runtimeConfig.instruction || '',
+    core_hot_lead_enabled: parseConfigBoolean(runtimeConfig.core_hot_lead_enabled, true),
+    core_published_available_enabled: parseConfigBoolean(runtimeConfig.core_published_available_enabled, true),
+    core_no_stock_check_enabled: parseConfigBoolean(runtimeConfig.core_no_stock_check_enabled, true),
+    core_no_catalog_return_enabled: parseConfigBoolean(runtimeConfig.core_no_catalog_return_enabled, true),
+    core_no_resell_enabled: parseConfigBoolean(runtimeConfig.core_no_resell_enabled, true),
+    core_rules_text: runtimeConfig.core_rules_text || '',
+    facts_no_invent_enabled: parseConfigBoolean(runtimeConfig.facts_no_invent_enabled, true),
+    facts_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_payment_enabled, true),
+    facts_no_fake_delivery_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_enabled, true),
+    facts_no_fake_discounts_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_discounts_enabled, true),
+    facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
+    facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
+    facts_rules_text: runtimeConfig.facts_rules_text || '',
+    smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
+    smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
+    smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),
+    smalltalk_weather_enabled: parseConfigBoolean(runtimeConfig.smalltalk_weather_enabled, true),
+    smalltalk_soft_product_link_enabled: parseConfigBoolean(runtimeConfig.smalltalk_soft_product_link_enabled, true),
+    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text || '',
+    order_path_enabled: parseConfigBoolean(runtimeConfig.order_path_enabled, true),
+    order_collect_size_enabled: parseConfigBoolean(runtimeConfig.order_collect_size_enabled, true),
+    order_collect_insole_enabled: parseConfigBoolean(runtimeConfig.order_collect_insole_enabled, true),
+    order_collect_full_name_enabled: parseConfigBoolean(runtimeConfig.order_collect_full_name_enabled, true),
+    order_collect_phone_enabled: parseConfigBoolean(runtimeConfig.order_collect_phone_enabled, true),
+    order_collect_city_enabled: parseConfigBoolean(runtimeConfig.order_collect_city_enabled, true),
+    order_collect_delivery_service_enabled: parseConfigBoolean(runtimeConfig.order_collect_delivery_service_enabled, true),
+    order_collect_pickup_enabled: parseConfigBoolean(runtimeConfig.order_collect_pickup_enabled, true),
+    order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
+    order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
+    order_step_mode: runtimeConfig.order_step_mode || 'natural',
+    order_rules_text: runtimeConfig.order_rules_text || '',
+    quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
+    quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
+    quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
+    quality_rules_text: runtimeConfig.quality_rules_text || '',
+    dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
+    dialog_examples_text: runtimeConfig.dialog_examples_text || '',
     tone: runtimeConfig.tone || 'neutral',
     response_length: runtimeConfig.response_length || 'medium',
     creativity: runtimeConfig.creativity || 'balanced',
@@ -3968,6 +4258,43 @@ app.delete('/config', (req, res) => {
   runtimeConfig.stt_base_url = 'https://api.openai.com/v1';
   runtimeConfig.stt_model = 'gpt-4o-mini-transcribe';
   runtimeConfig.instruction = '';
+  runtimeConfig.core_hot_lead_enabled = true;
+  runtimeConfig.core_published_available_enabled = true;
+  runtimeConfig.core_no_stock_check_enabled = true;
+  runtimeConfig.core_no_catalog_return_enabled = true;
+  runtimeConfig.core_no_resell_enabled = true;
+  runtimeConfig.core_rules_text = '';
+  runtimeConfig.facts_no_invent_enabled = true;
+  runtimeConfig.facts_no_fake_payment_enabled = true;
+  runtimeConfig.facts_no_fake_delivery_enabled = true;
+  runtimeConfig.facts_no_fake_discounts_enabled = true;
+  runtimeConfig.facts_no_final_payment_confirm_enabled = true;
+  runtimeConfig.facts_no_fake_delivery_time_enabled = true;
+  runtimeConfig.facts_rules_text = '';
+  runtimeConfig.smalltalk_enabled = true;
+  runtimeConfig.smalltalk_style_enabled = true;
+  runtimeConfig.smalltalk_outfit_advice_enabled = true;
+  runtimeConfig.smalltalk_weather_enabled = true;
+  runtimeConfig.smalltalk_soft_product_link_enabled = true;
+  runtimeConfig.smalltalk_rules_text = '';
+  runtimeConfig.order_path_enabled = true;
+  runtimeConfig.order_collect_size_enabled = true;
+  runtimeConfig.order_collect_insole_enabled = true;
+  runtimeConfig.order_collect_full_name_enabled = true;
+  runtimeConfig.order_collect_phone_enabled = true;
+  runtimeConfig.order_collect_city_enabled = true;
+  runtimeConfig.order_collect_delivery_service_enabled = true;
+  runtimeConfig.order_collect_pickup_enabled = true;
+  runtimeConfig.order_collect_payment_enabled = true;
+  runtimeConfig.order_collect_receipt_enabled = true;
+  runtimeConfig.order_step_mode = 'natural';
+  runtimeConfig.order_rules_text = '';
+  runtimeConfig.quality_replica_honesty_enabled = true;
+  runtimeConfig.quality_no_original_claims_enabled = true;
+  runtimeConfig.quality_calm_explanation_enabled = true;
+  runtimeConfig.quality_rules_text = '';
+  runtimeConfig.dialog_examples_enabled = false;
+  runtimeConfig.dialog_examples_text = '';
   runtimeConfig.tone = 'neutral';
   runtimeConfig.response_length = 'medium';
   runtimeConfig.creativity = 'balanced';
@@ -4001,6 +4328,43 @@ app.delete('/config', (req, res) => {
   process.env.STT_BASE_URL = 'https://api.openai.com/v1';
   process.env.STT_MODEL = 'gpt-4o-mini-transcribe';
   process.env.INSTRUCTION = '';
+  process.env.CORE_HOT_LEAD_ENABLED = 'true';
+  process.env.CORE_PUBLISHED_AVAILABLE_ENABLED = 'true';
+  process.env.CORE_NO_STOCK_CHECK_ENABLED = 'true';
+  process.env.CORE_NO_CATALOG_RETURN_ENABLED = 'true';
+  process.env.CORE_NO_RESELL_ENABLED = 'true';
+  process.env.CORE_RULES_TEXT = '';
+  process.env.FACTS_NO_INVENT_ENABLED = 'true';
+  process.env.FACTS_NO_FAKE_PAYMENT_ENABLED = 'true';
+  process.env.FACTS_NO_FAKE_DELIVERY_ENABLED = 'true';
+  process.env.FACTS_NO_FAKE_DISCOUNTS_ENABLED = 'true';
+  process.env.FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED = 'true';
+  process.env.FACTS_NO_FAKE_DELIVERY_TIME_ENABLED = 'true';
+  process.env.FACTS_RULES_TEXT = '';
+  process.env.SMALLTALK_ENABLED = 'true';
+  process.env.SMALLTALK_STYLE_ENABLED = 'true';
+  process.env.SMALLTALK_OUTFIT_ADVICE_ENABLED = 'true';
+  process.env.SMALLTALK_WEATHER_ENABLED = 'true';
+  process.env.SMALLTALK_SOFT_PRODUCT_LINK_ENABLED = 'true';
+  process.env.SMALLTALK_RULES_TEXT = '';
+  process.env.ORDER_PATH_ENABLED = 'true';
+  process.env.ORDER_COLLECT_SIZE_ENABLED = 'true';
+  process.env.ORDER_COLLECT_INSOLE_ENABLED = 'true';
+  process.env.ORDER_COLLECT_FULL_NAME_ENABLED = 'true';
+  process.env.ORDER_COLLECT_PHONE_ENABLED = 'true';
+  process.env.ORDER_COLLECT_CITY_ENABLED = 'true';
+  process.env.ORDER_COLLECT_DELIVERY_SERVICE_ENABLED = 'true';
+  process.env.ORDER_COLLECT_PICKUP_ENABLED = 'true';
+  process.env.ORDER_COLLECT_PAYMENT_ENABLED = 'true';
+  process.env.ORDER_COLLECT_RECEIPT_ENABLED = 'true';
+  process.env.ORDER_STEP_MODE = 'natural';
+  process.env.ORDER_RULES_TEXT = '';
+  process.env.QUALITY_REPLICA_HONESTY_ENABLED = 'true';
+  process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED = 'true';
+  process.env.QUALITY_CALM_EXPLANATION_ENABLED = 'true';
+  process.env.QUALITY_RULES_TEXT = '';
+  process.env.DIALOG_EXAMPLES_ENABLED = 'false';
+  process.env.DIALOG_EXAMPLES_TEXT = '';
   process.env.TONE = 'neutral';
   process.env.RESPONSE_LENGTH = 'medium';
   process.env.CREATIVITY = 'balanced';
