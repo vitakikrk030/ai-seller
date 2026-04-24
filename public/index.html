@@ -1769,6 +1769,31 @@
 <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
+                    <div class="list-title">Магазин и доверие</div>
+                    <div class="list-subtitle">Ответы про офлайн, Садовод и почему сейчас работаем онлайн.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="storeTrustEnabled" type="checkbox" /> Включить правила про магазин и доверие</label>
+                    <label class="toggle-line"><input id="storeTrustOnlineOnlyEnabled" type="checkbox" /> Объяснять, что сейчас работаем только онлайн</label>
+                    <label class="toggle-line"><input id="storeTrustSadovodHistoryEnabled" type="checkbox" /> Упоминать, что раньше были на Садоводе, если клиент спрашивает</label>
+                    <label class="toggle-line"><input id="storeTrustCostReasonEnabled" type="checkbox" /> Объяснять причину через стоимость офлайна и влияние на цену</label>
+                    <label class="toggle-line"><input id="storeTrustNoAddressEnabled" type="checkbox" /> Не выдумывать адрес и не приглашать приехать</label>
+                    <label class="toggle-line"><input id="storeTrustSafePurchaseEnabled" type="checkbox" /> Переводить к безопасной покупке: доставка, проверка, осмотр</label>
+                    <div class="field">
+                      <div class="field-label">Базовая формулировка</div>
+                      <textarea id="storeTrustText" placeholder="Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveStoreTrust" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
                     <div class="list-title">Живость общения</div>
                     <div class="list-subtitle">Человеческая речь, small talk, стиль и мягкая связь с товаром.</div>
                   </div>
@@ -2271,6 +2296,7 @@
                         <option value="discount">Просит скидку</option>
                         <option value="quality">Спрашивает про оригинальность</option>
                         <option value="extra_photos">Просит дополнительные фото</option>
+                        <option value="store_offline">Спрашивает про офлайн-магазин</option>
                         <option value="delivery">Уточняет доставку</option>
                         <option value="payment">Готов оплатить</option>
                         <option value="receipt_ok">Чек без явных расхождений</option>
@@ -2677,6 +2703,13 @@
       const qualityReturnInspectEnabled = document.getElementById('qualityReturnInspectEnabled');
       const qualityReturnText = document.getElementById('qualityReturnText');
       const qualityRulesText = document.getElementById('qualityRulesText');
+      const storeTrustEnabled = document.getElementById('storeTrustEnabled');
+      const storeTrustOnlineOnlyEnabled = document.getElementById('storeTrustOnlineOnlyEnabled');
+      const storeTrustSadovodHistoryEnabled = document.getElementById('storeTrustSadovodHistoryEnabled');
+      const storeTrustCostReasonEnabled = document.getElementById('storeTrustCostReasonEnabled');
+      const storeTrustNoAddressEnabled = document.getElementById('storeTrustNoAddressEnabled');
+      const storeTrustSafePurchaseEnabled = document.getElementById('storeTrustSafePurchaseEnabled');
+      const storeTrustText = document.getElementById('storeTrustText');
       const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
       const dialogExamplesText = document.getElementById('dialogExamplesText');
       const aiControlPreview = document.getElementById('aiControlPreview');
@@ -2738,6 +2771,7 @@
       const savePaymentButton = document.getElementById('savePayment');
       const saveDeliveryButton = document.getElementById('saveDelivery');
       const saveQualityRulesButton = document.getElementById('saveQualityRules');
+      const saveStoreTrustButton = document.getElementById('saveStoreTrust');
       const saveDialogExamplesButton = document.getElementById('saveDialogExamples');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
@@ -3367,6 +3401,15 @@
           insole: '',
           delivery: '',
         },
+        store_offline: {
+          message: 'А где вы находитесь? Можно приехать в магазин или на Садовод?',
+          receipt: '',
+          product: 'New Balance 1906R',
+          price: '5490 ₽',
+          size: '42',
+          insole: '',
+          delivery: '',
+        },
         delivery: {
           message: 'А как доставка будет и сколько стоит?',
           receipt: '',
@@ -3690,6 +3733,13 @@
         qualityReturnInspectEnabled.checked = data.quality_return_inspect_enabled !== false;
         qualityReturnText.value = data.quality_return_text || '';
         qualityRulesText.value = data.quality_rules_text || '';
+        storeTrustEnabled.checked = data.store_trust_enabled !== false;
+        storeTrustOnlineOnlyEnabled.checked = data.store_trust_online_only_enabled !== false;
+        storeTrustSadovodHistoryEnabled.checked = data.store_trust_sadovod_history_enabled !== false;
+        storeTrustCostReasonEnabled.checked = data.store_trust_cost_reason_enabled !== false;
+        storeTrustNoAddressEnabled.checked = data.store_trust_no_address_enabled !== false;
+        storeTrustSafePurchaseEnabled.checked = data.store_trust_safe_purchase_enabled !== false;
+        storeTrustText.value = data.store_trust_text || '';
         dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
         dialogExamplesText.value = data.dialog_examples_text || '';
         aiControlPreview.value = data.ai_control_context || '';
@@ -4018,6 +4068,25 @@
               quality_return_inspect_enabled: qualityReturnInspectEnabled.checked,
               quality_return_text: qualityReturnText.value,
               quality_rules_text: qualityRulesText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveStoreTrust() {
+        await performSave(saveStoreTrustButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              store_trust_enabled: storeTrustEnabled.checked,
+              store_trust_online_only_enabled: storeTrustOnlineOnlyEnabled.checked,
+              store_trust_sadovod_history_enabled: storeTrustSadovodHistoryEnabled.checked,
+              store_trust_cost_reason_enabled: storeTrustCostReasonEnabled.checked,
+              store_trust_no_address_enabled: storeTrustNoAddressEnabled.checked,
+              store_trust_safe_purchase_enabled: storeTrustSafePurchaseEnabled.checked,
+              store_trust_text: storeTrustText.value,
             }),
           });
           await loadStatus();
@@ -4441,6 +4510,7 @@
         deliveryExampleText,
       ]);
       bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityReturnSoftEnabled, qualityReturnNoDatesEnabled, qualityReturnInspectEnabled, qualityReturnText, qualityRulesText]);
+      bindDirtyState(saveStoreTrustButton, [storeTrustEnabled, storeTrustOnlineOnlyEnabled, storeTrustSadovodHistoryEnabled, storeTrustCostReasonEnabled, storeTrustNoAddressEnabled, storeTrustSafePurchaseEnabled, storeTrustText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
@@ -4461,6 +4531,7 @@
       document.getElementById('savePayment').addEventListener('click', savePayment);
       document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
       document.getElementById('saveQualityRules').addEventListener('click', saveQualityRules);
+      document.getElementById('saveStoreTrust').addEventListener('click', saveStoreTrust);
       document.getElementById('saveDialogExamples').addEventListener('click', saveDialogExamples);
       document.getElementById('runScenario').addEventListener('click', runScenario);
       scenarioSelect.addEventListener('change', applyScenarioPreset);

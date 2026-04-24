@@ -34,6 +34,7 @@ const PDF_RECEIPT_TEXT_LIMIT = 2500;
 const PDF_RENDER_TIMEOUT_MS = 15000;
 const PDF_RENDER_DPI = 180;
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
+const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем.';
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -170,6 +171,13 @@ const runtimeConfig = {
   quality_return_inspect_enabled: process.env.QUALITY_RETURN_INSPECT_ENABLED !== 'false',
   quality_return_text: process.env.QUALITY_RETURN_TEXT || DEFAULT_QUALITY_RETURN_TEXT,
   quality_rules_text: process.env.QUALITY_RULES_TEXT || '',
+  store_trust_enabled: process.env.STORE_TRUST_ENABLED !== 'false',
+  store_trust_online_only_enabled: process.env.STORE_TRUST_ONLINE_ONLY_ENABLED !== 'false',
+  store_trust_sadovod_history_enabled: process.env.STORE_TRUST_SADOVOD_HISTORY_ENABLED !== 'false',
+  store_trust_cost_reason_enabled: process.env.STORE_TRUST_COST_REASON_ENABLED !== 'false',
+  store_trust_no_address_enabled: process.env.STORE_TRUST_NO_ADDRESS_ENABLED !== 'false',
+  store_trust_safe_purchase_enabled: process.env.STORE_TRUST_SAFE_PURCHASE_ENABLED !== 'false',
+  store_trust_text: process.env.STORE_TRUST_TEXT || DEFAULT_STORE_TRUST_TEXT,
   dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
   dialog_examples_text: process.env.DIALOG_EXAMPLES_TEXT || '',
   tone: process.env.TONE || 'neutral',
@@ -2155,6 +2163,13 @@ function getRuntimeSnapshot() {
     quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
     quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
     quality_rules_text: runtimeConfig.quality_rules_text,
+    store_trust_enabled: parseConfigBoolean(runtimeConfig.store_trust_enabled, true),
+    store_trust_online_only_enabled: parseConfigBoolean(runtimeConfig.store_trust_online_only_enabled, true),
+    store_trust_sadovod_history_enabled: parseConfigBoolean(runtimeConfig.store_trust_sadovod_history_enabled, true),
+    store_trust_cost_reason_enabled: parseConfigBoolean(runtimeConfig.store_trust_cost_reason_enabled, true),
+    store_trust_no_address_enabled: parseConfigBoolean(runtimeConfig.store_trust_no_address_enabled, true),
+    store_trust_safe_purchase_enabled: parseConfigBoolean(runtimeConfig.store_trust_safe_purchase_enabled, true),
+    store_trust_text: runtimeConfig.store_trust_text || DEFAULT_STORE_TRUST_TEXT,
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text,
     tone: runtimeConfig.tone,
@@ -2367,6 +2382,12 @@ function applyConfigUpdate(body) {
     ['quality_return_soft_enabled', 'QUALITY_RETURN_SOFT_ENABLED'],
     ['quality_return_no_dates_enabled', 'QUALITY_RETURN_NO_DATES_ENABLED'],
     ['quality_return_inspect_enabled', 'QUALITY_RETURN_INSPECT_ENABLED'],
+    ['store_trust_enabled', 'STORE_TRUST_ENABLED'],
+    ['store_trust_online_only_enabled', 'STORE_TRUST_ONLINE_ONLY_ENABLED'],
+    ['store_trust_sadovod_history_enabled', 'STORE_TRUST_SADOVOD_HISTORY_ENABLED'],
+    ['store_trust_cost_reason_enabled', 'STORE_TRUST_COST_REASON_ENABLED'],
+    ['store_trust_no_address_enabled', 'STORE_TRUST_NO_ADDRESS_ENABLED'],
+    ['store_trust_safe_purchase_enabled', 'STORE_TRUST_SAFE_PURCHASE_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   [
@@ -2380,6 +2401,7 @@ function applyConfigUpdate(body) {
     ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT'],
     ['quality_return_text', 'QUALITY_RETURN_TEXT'],
     ['quality_rules_text', 'QUALITY_RULES_TEXT'],
+    ['store_trust_text', 'STORE_TRUST_TEXT'],
     ['payment_style_text', 'PAYMENT_STYLE_TEXT'],
     ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT'],
     ['payment_example_text', 'PAYMENT_EXAMPLE_TEXT'],
@@ -3798,6 +3820,24 @@ function getQualityGuidance(config) {
   ], config.quality_rules_text);
 }
 
+function getStoreTrustGuidance(config) {
+  if (!parseConfigBoolean(config.store_trust_enabled, true)) return '';
+  return buildGuidanceSection('Магазин и доверие:', [
+    parseConfigBoolean(config.store_trust_online_only_enabled, true)
+      && 'Если клиент спрашивает про офлайн-магазин, адрес, где посмотреть или можно ли приехать: спокойно объяснить, что сейчас работаем только онлайн.',
+    parseConfigBoolean(config.store_trust_sadovod_history_enabled, true)
+      && 'Если клиент спрашивает про Садовод: можно сказать, что раньше действительно работали на Садоводе, но сейчас уже нет.',
+    parseConfigBoolean(config.store_trust_cost_reason_enabled, true)
+      && 'Причину объяснять без оправданий: содержание павильона, склада и сотрудников сильно выросло, а офлайн-расходы отражались бы на цене товара.',
+    parseConfigBoolean(config.store_trust_no_address_enabled, true)
+      && 'Не выдумывать адрес, павильон, точку выдачи или возможность приехать. Не писать "приезжайте", "можно подъехать" или "адрес такой-то".',
+    parseConfigBoolean(config.store_trust_safe_purchase_enabled, true)
+      && 'После объяснения онлайн-формата мягко вернуть к безопасной покупке: заказ оформляем в диалоге, доставка бесплатная, перед отправкой товар проверяем, при получении можно спокойно осмотреть.',
+    String(config.store_trust_text || DEFAULT_STORE_TRUST_TEXT).trim()
+      && `Базовая формулировка. Не копировать дословно, использовать как смысл:\n${String(config.store_trust_text || DEFAULT_STORE_TRUST_TEXT).trim()}`,
+  ]);
+}
+
 function getDialogExamplesGuidance(config) {
   if (!parseConfigBoolean(config.dialog_examples_enabled, false)) return '';
   const text = String(config.dialog_examples_text || '').trim();
@@ -3867,6 +3907,7 @@ function getVisibleControlState(config, memoryContext = null) {
     responseGuard: Boolean(getResponseGuardGuidance(config)),
     receiptCheck: Boolean(getReceiptCheckGuidance(config)),
     quality: Boolean(getQualityGuidance(config)),
+    storeTrust: Boolean(getStoreTrustGuidance(config)),
     examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
     behavior: true,
@@ -3912,6 +3953,7 @@ function buildSystemPrompt(config, memoryContext = null) {
     getResponseGuardGuidance(config),
     getReceiptCheckGuidance(config),
     getQualityGuidance(config),
+    getStoreTrustGuidance(config),
   ].forEach((section) => {
     if (section) control.push(section);
   });
@@ -3958,6 +4000,10 @@ const SCENARIO_TEST_DEFINITIONS = {
   extra_photos: {
     title: 'Просит дополнительные фото',
     defaultMessage: 'Можно до заказа увидеть дополнительные живые фото? Насколько качественная реплика?',
+  },
+  store_offline: {
+    title: 'Спрашивает про офлайн-магазин',
+    defaultMessage: 'А где вы находитесь? Можно приехать в магазин или на Садовод?',
   },
   delivery: {
     title: 'Уточняет доставку',
@@ -4180,6 +4226,41 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
         /без\s+условий/i,
       ]),
       'Лучше мягко: при получении осмотрите, если что-то не подойдёт — напишите, решим через возврат/обмен по правилам.'
+    );
+  }
+
+  if (scenario.id === 'store_offline') {
+    addScenarioCheck(
+      checks,
+      'store_online_only',
+      'Объяснил онлайн-формат',
+      scenarioTextHasAny(lower, [/онлайн|только\s+онлайн|работаем\s+онлайн/i])
+        && !scenarioTextHasAny(lower, [/приезжайте|подъезжайте|можно\s+приехать|можете\s+приехать|адрес\s*[:\-]|павильон\s*\d/i]),
+      'Нужно сказать, что сейчас работаем онлайн, и не приглашать приехать.'
+    );
+    addScenarioCheck(
+      checks,
+      'sadovod_context',
+      'Садовод объяснён без легенд',
+      scenarioTextHasAny(lower, [/садовод/i])
+        && scenarioTextHasAny(lower, [/раньше|были|работали/i])
+        && scenarioTextHasAny(lower, [/сейчас|уже\s+нет|онлайн/i]),
+      'Если клиент спросил про Садовод, ответ должен признать прошлый контекст и объяснить текущий онлайн-формат.'
+    );
+    addScenarioCheck(
+      checks,
+      'offline_cost_reason',
+      'Причина связана с ценой',
+      scenarioTextHasAny(lower, [/дорог|расход|содержан|аренд|павильон|сотрудник|склад/i])
+        && scenarioTextHasAny(lower, [/цен|стоимост/i]),
+      'Нужен понятный мост: офлайн-расходы выросли и влияли бы на конечную цену.'
+    );
+    addScenarioCheck(
+      checks,
+      'safe_purchase_bridge',
+      'Есть безопасный следующий шаг',
+      scenarioTextHasAny(lower, [/доставк|оформ|провер|получени|осмотр/i]),
+      'После объяснения надо вернуть клиента к заказу: доставка, проверка, оформление в диалоге.'
     );
   }
 
@@ -4732,6 +4813,13 @@ app.get('/config/status', async (req, res) => {
     quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
     quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
     quality_rules_text: runtimeConfig.quality_rules_text || '',
+    store_trust_enabled: parseConfigBoolean(runtimeConfig.store_trust_enabled, true),
+    store_trust_online_only_enabled: parseConfigBoolean(runtimeConfig.store_trust_online_only_enabled, true),
+    store_trust_sadovod_history_enabled: parseConfigBoolean(runtimeConfig.store_trust_sadovod_history_enabled, true),
+    store_trust_cost_reason_enabled: parseConfigBoolean(runtimeConfig.store_trust_cost_reason_enabled, true),
+    store_trust_no_address_enabled: parseConfigBoolean(runtimeConfig.store_trust_no_address_enabled, true),
+    store_trust_safe_purchase_enabled: parseConfigBoolean(runtimeConfig.store_trust_safe_purchase_enabled, true),
+    store_trust_text: runtimeConfig.store_trust_text || DEFAULT_STORE_TRUST_TEXT,
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text || '',
     tone: runtimeConfig.tone || 'neutral',
@@ -5210,6 +5298,13 @@ app.delete('/config', (req, res) => {
   runtimeConfig.quality_return_inspect_enabled = true;
   runtimeConfig.quality_return_text = DEFAULT_QUALITY_RETURN_TEXT;
   runtimeConfig.quality_rules_text = '';
+  runtimeConfig.store_trust_enabled = true;
+  runtimeConfig.store_trust_online_only_enabled = true;
+  runtimeConfig.store_trust_sadovod_history_enabled = true;
+  runtimeConfig.store_trust_cost_reason_enabled = true;
+  runtimeConfig.store_trust_no_address_enabled = true;
+  runtimeConfig.store_trust_safe_purchase_enabled = true;
+  runtimeConfig.store_trust_text = DEFAULT_STORE_TRUST_TEXT;
   runtimeConfig.dialog_examples_enabled = false;
   runtimeConfig.dialog_examples_text = '';
   runtimeConfig.tone = 'neutral';
