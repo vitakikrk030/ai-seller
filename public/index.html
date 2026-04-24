@@ -2008,6 +2008,13 @@
                     <label class="toggle-line"><input id="qualityNoOriginalClaimsEnabled" type="checkbox" /> Не использовать слово «оригинал», если это не оригинал</label>
                     <label class="toggle-line"><input id="qualityCalmExplanationEnabled" type="checkbox" /> Объяснять качество спокойно, без оправданий</label>
                     <label class="toggle-line"><input id="qualityNoExtraPhotosEnabled" type="checkbox" /> Не обещать дополнительные фото, мягко вести к фото в каталоге и возврату/обмену</label>
+                    <label class="toggle-line"><input id="qualityReturnSoftEnabled" type="checkbox" /> Мягко упоминать возврат/обмен, если клиент сомневается</label>
+                    <label class="toggle-line"><input id="qualityReturnNoDatesEnabled" type="checkbox" /> Не называть сроки возврата, если они не указаны вручную</label>
+                    <label class="toggle-line"><input id="qualityReturnInspectEnabled" type="checkbox" /> Просить спокойно осмотреть товар при получении</label>
+                    <div class="field">
+                      <div class="field-label">Формулировка возврата / обмена</div>
+                      <textarea id="qualityReturnText" placeholder="При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина."></textarea>
+                    </div>
                     <div class="field">
                       <div class="field-label">Дополнительные правила качества</div>
                       <textarea id="qualityRulesText" placeholder="Например: хорошая фабричная реплика, материалы и посадку объяснять спокойно."></textarea>
@@ -2665,6 +2672,10 @@
       const qualityNoOriginalClaimsEnabled = document.getElementById('qualityNoOriginalClaimsEnabled');
       const qualityCalmExplanationEnabled = document.getElementById('qualityCalmExplanationEnabled');
       const qualityNoExtraPhotosEnabled = document.getElementById('qualityNoExtraPhotosEnabled');
+      const qualityReturnSoftEnabled = document.getElementById('qualityReturnSoftEnabled');
+      const qualityReturnNoDatesEnabled = document.getElementById('qualityReturnNoDatesEnabled');
+      const qualityReturnInspectEnabled = document.getElementById('qualityReturnInspectEnabled');
+      const qualityReturnText = document.getElementById('qualityReturnText');
       const qualityRulesText = document.getElementById('qualityRulesText');
       const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
       const dialogExamplesText = document.getElementById('dialogExamplesText');
@@ -3674,6 +3685,10 @@
         qualityNoOriginalClaimsEnabled.checked = data.quality_no_original_claims_enabled !== false;
         qualityCalmExplanationEnabled.checked = data.quality_calm_explanation_enabled !== false;
         qualityNoExtraPhotosEnabled.checked = data.quality_no_extra_photos_enabled !== false;
+        qualityReturnSoftEnabled.checked = data.quality_return_soft_enabled !== false;
+        qualityReturnNoDatesEnabled.checked = data.quality_return_no_dates_enabled !== false;
+        qualityReturnInspectEnabled.checked = data.quality_return_inspect_enabled !== false;
+        qualityReturnText.value = data.quality_return_text || '';
         qualityRulesText.value = data.quality_rules_text || '';
         dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
         dialogExamplesText.value = data.dialog_examples_text || '';
@@ -3998,6 +4013,10 @@
               quality_no_original_claims_enabled: qualityNoOriginalClaimsEnabled.checked,
               quality_calm_explanation_enabled: qualityCalmExplanationEnabled.checked,
               quality_no_extra_photos_enabled: qualityNoExtraPhotosEnabled.checked,
+              quality_return_soft_enabled: qualityReturnSoftEnabled.checked,
+              quality_return_no_dates_enabled: qualityReturnNoDatesEnabled.checked,
+              quality_return_inspect_enabled: qualityReturnInspectEnabled.checked,
+              quality_return_text: qualityReturnText.value,
               quality_rules_text: qualityRulesText.value,
             }),
           });
@@ -4421,7 +4440,7 @@
         deliveryBoldMode,
         deliveryExampleText,
       ]);
-      bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityRulesText]);
+      bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityReturnSoftEnabled, qualityReturnNoDatesEnabled, qualityReturnInspectEnabled, qualityReturnText, qualityRulesText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);

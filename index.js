@@ -33,6 +33,7 @@ const MAX_PDF_RECEIPT_BYTES = 8 * 1024 * 1024;
 const PDF_RECEIPT_TEXT_LIMIT = 2500;
 const PDF_RENDER_TIMEOUT_MS = 15000;
 const PDF_RENDER_DPI = 180;
+const DEFAULT_QUALITY_RETURN_TEXT = 'При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -164,6 +165,10 @@ const runtimeConfig = {
   quality_no_original_claims_enabled: process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED !== 'false',
   quality_calm_explanation_enabled: process.env.QUALITY_CALM_EXPLANATION_ENABLED !== 'false',
   quality_no_extra_photos_enabled: process.env.QUALITY_NO_EXTRA_PHOTOS_ENABLED !== 'false',
+  quality_return_soft_enabled: process.env.QUALITY_RETURN_SOFT_ENABLED !== 'false',
+  quality_return_no_dates_enabled: process.env.QUALITY_RETURN_NO_DATES_ENABLED !== 'false',
+  quality_return_inspect_enabled: process.env.QUALITY_RETURN_INSPECT_ENABLED !== 'false',
+  quality_return_text: process.env.QUALITY_RETURN_TEXT || DEFAULT_QUALITY_RETURN_TEXT,
   quality_rules_text: process.env.QUALITY_RULES_TEXT || '',
   dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
   dialog_examples_text: process.env.DIALOG_EXAMPLES_TEXT || '',
@@ -2145,6 +2150,10 @@ function getRuntimeSnapshot() {
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
     quality_no_extra_photos_enabled: parseConfigBoolean(runtimeConfig.quality_no_extra_photos_enabled, true),
+    quality_return_soft_enabled: parseConfigBoolean(runtimeConfig.quality_return_soft_enabled, true),
+    quality_return_no_dates_enabled: parseConfigBoolean(runtimeConfig.quality_return_no_dates_enabled, true),
+    quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
+    quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
     quality_rules_text: runtimeConfig.quality_rules_text,
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text,
@@ -2355,6 +2364,9 @@ function applyConfigUpdate(body) {
     ['quality_no_original_claims_enabled', 'QUALITY_NO_ORIGINAL_CLAIMS_ENABLED'],
     ['quality_calm_explanation_enabled', 'QUALITY_CALM_EXPLANATION_ENABLED'],
     ['quality_no_extra_photos_enabled', 'QUALITY_NO_EXTRA_PHOTOS_ENABLED'],
+    ['quality_return_soft_enabled', 'QUALITY_RETURN_SOFT_ENABLED'],
+    ['quality_return_no_dates_enabled', 'QUALITY_RETURN_NO_DATES_ENABLED'],
+    ['quality_return_inspect_enabled', 'QUALITY_RETURN_INSPECT_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   [
@@ -2366,6 +2378,7 @@ function applyConfigUpdate(body) {
     ['receipt_check_success_text', 'RECEIPT_CHECK_SUCCESS_TEXT'],
     ['receipt_check_mismatch_text', 'RECEIPT_CHECK_MISMATCH_TEXT'],
     ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT'],
+    ['quality_return_text', 'QUALITY_RETURN_TEXT'],
     ['quality_rules_text', 'QUALITY_RULES_TEXT'],
     ['payment_style_text', 'PAYMENT_STYLE_TEXT'],
     ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT'],
@@ -3734,6 +3747,8 @@ function getResponseGuardGuidance(config) {
       && 'Нет ли финального подтверждения оплаты, поступления денег или отправки без ручной проверки.',
     parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
       && 'Если клиент просит дополнительные/живые фото, не обещан ли в ответе показ или отправка новых фото.',
+    parseConfigBoolean(config.quality_return_no_dates_enabled, true)
+      && 'Если упоминается возврат/обмен, не названы ли сроки или юридические обещания, которых нет в AI Control.',
   ], config.response_guard_rules_text);
 }
 
@@ -3771,8 +3786,15 @@ function getQualityGuidance(config) {
       && 'Объяснять качество спокойно, уверенно и без оправданий.',
     parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
       && 'Если клиент просит дополнительные или живые фото, не обещать "сейчас скину/отправлю/найду фото". Мягко объяснить, что все актуальные фото уже есть в карточке, посте или каталоге.',
-    parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
-      && 'Если клиент сомневается по фото или качеству, спокойно напомнить: перед отправкой товар проверяем, а если после получения что-то не подойдёт, вопрос решается через возврат/обмен по правилам магазина.',
+    parseConfigBoolean(config.quality_return_soft_enabled, true)
+      && 'Если клиент сомневается по фото или качеству, мягко подвести к возврату/обмену без давления и без юридического тона.',
+    parseConfigBoolean(config.quality_return_inspect_enabled, true)
+      && 'Просить при получении спокойно осмотреть товар, чтобы сразу убедиться, что всё подходит.',
+    parseConfigBoolean(config.quality_return_no_dates_enabled, true)
+      && 'Не называть сроки возврата/обмена, если срок не указан вручную в AI Control. Не писать "14 дней", "всегда можете" или "политика возврата".',
+    parseConfigBoolean(config.quality_return_soft_enabled, true)
+      && String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()
+      && `Мягкая формулировка возврата/обмена: ${String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()}`,
   ], config.quality_rules_text);
 }
 
@@ -4145,6 +4167,19 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
         && scenarioTextHasAny(lower, [/реплик|качеств|провер/i])
         && scenarioTextHasAny(lower, [/возврат|обмен/i]),
       'Нужен мягкий мост: фото в каталоге, качество спокойно, перед отправкой проверяем, возврат/обмен по правилам.'
+    );
+    addScenarioCheck(
+      checks,
+      'return_no_hard_terms',
+      'Возврат без жёстких сроков и юридического тона',
+      !scenarioTextHasAny(lower, [
+        /14\s*(?:дн|дней|дня)/i,
+        /в\s+течение\s+\d+\s*(?:дн|дней|дня)/i,
+        /всегда\s+можете/i,
+        /политик[аеуы]\s+возврат/i,
+        /без\s+условий/i,
+      ]),
+      'Лучше мягко: при получении осмотрите, если что-то не подойдёт — напишите, решим через возврат/обмен по правилам.'
     );
   }
 
@@ -4692,6 +4727,10 @@ app.get('/config/status', async (req, res) => {
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
     quality_no_extra_photos_enabled: parseConfigBoolean(runtimeConfig.quality_no_extra_photos_enabled, true),
+    quality_return_soft_enabled: parseConfigBoolean(runtimeConfig.quality_return_soft_enabled, true),
+    quality_return_no_dates_enabled: parseConfigBoolean(runtimeConfig.quality_return_no_dates_enabled, true),
+    quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
+    quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
     quality_rules_text: runtimeConfig.quality_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text || '',
@@ -5166,6 +5205,10 @@ app.delete('/config', (req, res) => {
   runtimeConfig.quality_no_original_claims_enabled = true;
   runtimeConfig.quality_calm_explanation_enabled = true;
   runtimeConfig.quality_no_extra_photos_enabled = true;
+  runtimeConfig.quality_return_soft_enabled = true;
+  runtimeConfig.quality_return_no_dates_enabled = true;
+  runtimeConfig.quality_return_inspect_enabled = true;
+  runtimeConfig.quality_return_text = DEFAULT_QUALITY_RETURN_TEXT;
   runtimeConfig.quality_rules_text = '';
   runtimeConfig.dialog_examples_enabled = false;
   runtimeConfig.dialog_examples_text = '';
