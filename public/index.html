@@ -2248,23 +2248,72 @@
 <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Тест AI</div>
-                    <div class="list-subtitle">Быстрая проверка текущей policy-конфигурации.</div>
+                    <div class="list-title">Симулятор сценариев</div>
+                    <div class="list-subtitle">Песочница AI Control: готовые кейсы, ответ AI и проверка качества перед реальным диалогом.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
                     <div class="field">
-                      <label class="field-label" for="testMessage">Сообщение</label>
-                      <input id="testMessage" placeholder="Напиши тестовое сообщение для AI" />
+                      <label class="field-label" for="scenarioSelect">Сценарий</label>
+                      <select id="scenarioSelect">
+                        <option value="order_size">Горячий заказ: клиент прислал размер</option>
+                        <option value="order_all_data">Все данные одним сообщением</option>
+                        <option value="discount">Просит скидку</option>
+                        <option value="quality">Спрашивает про оригинальность</option>
+                        <option value="delivery">Уточняет доставку</option>
+                        <option value="payment">Готов оплатить</option>
+                        <option value="receipt_ok">Чек без явных расхождений</option>
+                        <option value="receipt_mismatch">Чек с расхождением</option>
+                        <option value="smalltalk">Поболтать / что надеть</option>
+                        <option value="angry">Раздражённый клиент</option>
+                      </select>
                     </div>
-                    <div class="actions">
-                      <button id="runTest" class="button-primary" type="button">Отправить</button>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <label class="field-label" for="scenarioProduct">Товар</label>
+                        <input id="scenarioProduct" placeholder="Nike Air Max 90" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="scenarioPrice">Цена</label>
+                        <input id="scenarioPrice" placeholder="5190 ₽" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="scenarioSize">Размер</label>
+                        <input id="scenarioSize" placeholder="42" />
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="scenarioInsole">Стелька</label>
+                        <input id="scenarioInsole" placeholder="27 см" />
+                      </div>
                     </div>
                     <div class="field">
-                      <div class="field-label">Ответ</div>
-                      <div id="testOutput" class="test-output muted">Ответ появится здесь.</div>
+                      <label class="field-label" for="scenarioDelivery">Данные доставки / получателя</label>
+                      <input id="scenarioDelivery" placeholder="Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс" />
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="scenarioMessage">Сообщение клиента</label>
+                      <textarea id="scenarioMessage" rows="4" placeholder="Сообщение, которое клиент написал в Telegram"></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="field-label" for="scenarioReceiptSummary">Receipt OCR summary / чек</label>
+                      <textarea id="scenarioReceiptSummary" rows="4" placeholder="Например: сумма 5000 ₽, банк Т-Банк, получатель Мадина И, дата 23.04.2026 21:05"></textarea>
+                    </div>
+                    <div class="actions">
+                      <button id="runScenario" class="button-primary" type="button">Запустить сценарий</button>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Ответ AI</div>
+                      <div id="scenarioReply" class="test-output muted">Ответ появится здесь.</div>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Проверка ответа</div>
+                      <div id="scenarioChecks" class="status-output muted">После запуска покажу, где всё чисто, а где ответ может слить клиента.</div>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Что ушло в AI</div>
+                      <div id="scenarioPromptPreview" class="status-output muted">Здесь будет короткая выжимка тестового контекста.</div>
                     </div>
                   </div>
                 </div>
@@ -2618,8 +2667,17 @@
       const dialogExamplesText = document.getElementById('dialogExamplesText');
       const aiControlPreview = document.getElementById('aiControlPreview');
       const integrationsModelSelect = document.getElementById('integrationsModelSelect');
-      const testMessage = document.getElementById('testMessage');
-      const testOutput = document.getElementById('testOutput');
+      const scenarioSelect = document.getElementById('scenarioSelect');
+      const scenarioProduct = document.getElementById('scenarioProduct');
+      const scenarioPrice = document.getElementById('scenarioPrice');
+      const scenarioSize = document.getElementById('scenarioSize');
+      const scenarioInsole = document.getElementById('scenarioInsole');
+      const scenarioDelivery = document.getElementById('scenarioDelivery');
+      const scenarioMessage = document.getElementById('scenarioMessage');
+      const scenarioReceiptSummary = document.getElementById('scenarioReceiptSummary');
+      const scenarioReply = document.getElementById('scenarioReply');
+      const scenarioChecks = document.getElementById('scenarioChecks');
+      const scenarioPromptPreview = document.getElementById('scenarioPromptPreview');
       const logsOutput = document.getElementById('logsOutput');
       const traceOutput = document.getElementById('traceOutput');
       const inboxList = document.getElementById('inboxList');
@@ -3249,6 +3307,137 @@
           .replaceAll('>', '&gt;');
       }
 
+      const scenarioPresets = {
+        order_size: {
+          message: 'Здравствуйте! Хочу заказать 42 размер.',
+          receipt: '',
+          product: 'Lacoste ODYSSA',
+          price: '5190 ₽',
+          size: '42',
+          insole: '',
+          delivery: '',
+        },
+        order_all_data: {
+          message: '27 см. Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс.',
+          receipt: '',
+          product: 'Lacoste ODYSSA',
+          price: '5190 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: 'Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс',
+        },
+        discount: {
+          message: 'А скидку можно? Если сейчас заберу.',
+          receipt: '',
+          product: 'Nike Air Max 95',
+          price: '5190 ₽',
+          size: '42',
+          insole: '',
+          delivery: '',
+        },
+        quality: {
+          message: 'Это оригинал или реплика? Качество нормальное?',
+          receipt: '',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '42',
+          insole: '',
+          delivery: '',
+        },
+        delivery: {
+          message: 'А как доставка будет и сколько стоит?',
+          receipt: '',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: '',
+        },
+        payment: {
+          message: 'Все данные отправил, можно оплачивать.',
+          receipt: '',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: 'Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс',
+        },
+        receipt_ok: {
+          message: 'Оплатил, чек прикрепил.',
+          receipt: 'Сумма: 5490 ₽. Банк: Т-Банк. Получатель: как в AI Control. Дата: сегодня. Статус: успешно.',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: 'Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс',
+        },
+        receipt_mismatch: {
+          message: 'Оплатил, чек прикрепил.',
+          receipt: 'Сумма: 5000 ₽. Банк: Т-Банк. Получатель: Искакова Мадина. Дата: сегодня. Статус: успешно.',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: 'Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс',
+        },
+        smalltalk: {
+          message: 'В Москве дождь, что вообще надеть с такими кроссами?',
+          receipt: '',
+          product: 'Nike Air Max 90',
+          price: '5490 ₽',
+          size: '',
+          insole: '',
+          delivery: '',
+        },
+        angry: {
+          message: 'Вы что, опять одно и то же спрашиваете? Я уже всё написал.',
+          receipt: '',
+          product: 'Lacoste ODYSSA',
+          price: '5190 ₽',
+          size: '42',
+          insole: '27 см',
+          delivery: 'Москва, ПВЗ Варшавское шоссе 106',
+        },
+      };
+
+      function applyScenarioPreset() {
+        const preset = scenarioPresets[scenarioSelect.value] || scenarioPresets.order_size;
+        scenarioProduct.value = preset.product || '';
+        scenarioPrice.value = preset.price || '';
+        scenarioSize.value = preset.size || '';
+        scenarioInsole.value = preset.insole || '';
+        scenarioDelivery.value = preset.delivery || '';
+        scenarioMessage.value = preset.message || '';
+        scenarioReceiptSummary.value = preset.receipt || '';
+        scenarioReply.className = 'test-output muted';
+        scenarioReply.textContent = 'Ответ появится здесь.';
+        scenarioChecks.className = 'status-output muted';
+        scenarioChecks.textContent = 'После запуска покажу, где всё чисто, а где ответ может слить клиента.';
+        scenarioPromptPreview.className = 'status-output muted';
+        scenarioPromptPreview.textContent = 'Здесь будет короткая выжимка тестового контекста.';
+      }
+
+      function renderScenarioChecks(data) {
+        const checks = Array.isArray(data.checks) ? data.checks : [];
+        if (!checks.length) {
+          scenarioChecks.className = 'status-output muted';
+          scenarioChecks.textContent = 'Диагностика не вернулась.';
+          return;
+        }
+
+        const passed = checks.filter((check) => check.ok).length;
+        scenarioChecks.className = 'status-output';
+        scenarioChecks.innerHTML = `
+          <div class="log-text">Оценка: ${escapeHtml(String(data.score || 0))}% · пройдено ${escapeHtml(String(passed))}/${escapeHtml(String(checks.length))}</div>
+          ${checks.map((check) => `
+            <div class="crm-message-item">
+              <strong>${check.ok ? 'OK' : 'Проверить'} · ${escapeHtml(check.label)}</strong><br>
+              ${escapeHtml(check.detail || '')}
+            </div>
+          `).join('')}
+        `;
+      }
+
       function mapTone(value) {
         const map = {
           neutral: 'Нейтральный',
@@ -3830,20 +4019,34 @@
         });
       }
 
-      async function runTest() {
-        testOutput.className = 'test-output muted';
-        testOutput.textContent = 'Отправка...';
+      async function runScenario() {
+        scenarioReply.className = 'test-output muted';
+        scenarioReply.textContent = 'AI думает в песочнице...';
+        scenarioChecks.className = 'status-output muted';
+        scenarioChecks.textContent = 'Проверяю ответ по чек-листу AI Control...';
+        scenarioPromptPreview.className = 'status-output muted';
+        scenarioPromptPreview.textContent = 'Собираю тестовый контекст...';
 
-        const data = await fetchJSON('/config/test-ai', {
+        const data = await fetchJSON('/config/scenario-test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: testMessage.value,
+            scenario: scenarioSelect.value,
+            message: scenarioMessage.value,
+            product: scenarioProduct.value,
+            price: scenarioPrice.value,
+            size: scenarioSize.value,
+            insole: scenarioInsole.value,
+            delivery: scenarioDelivery.value,
+            receipt_summary: scenarioReceiptSummary.value,
           }),
         });
 
-        testOutput.className = 'test-output';
-        testOutput.textContent = data.ok ? data.reply : (data.error || 'AI не вернул ответ.');
+        scenarioReply.className = data.ok ? 'test-output' : 'test-output muted';
+        scenarioReply.textContent = data.ok ? data.reply : (data.error || 'AI не вернул ответ.');
+        renderScenarioChecks(data);
+        scenarioPromptPreview.className = 'status-output';
+        scenarioPromptPreview.textContent = data.context_preview || 'Контекст не вернулся.';
       }
 
       async function saveTelegramConfig() {
@@ -4226,7 +4429,8 @@
       document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
       document.getElementById('saveQualityRules').addEventListener('click', saveQualityRules);
       document.getElementById('saveDialogExamples').addEventListener('click', saveDialogExamples);
-      document.getElementById('runTest').addEventListener('click', runTest);
+      document.getElementById('runScenario').addEventListener('click', runScenario);
+      scenarioSelect.addEventListener('change', applyScenarioPreset);
       document.getElementById('saveTelegram').addEventListener('click', saveTelegramConfig);
       document.getElementById('checkTelegram').addEventListener('click', checkTelegramConnection);
       document.getElementById('deleteTelegram').addEventListener('click', deleteTelegramConfig);
@@ -4303,6 +4507,7 @@
       updateMskClock();
       window.setInterval(updateMskClock, 30000);
       switchView('ai-control');
+      applyScenarioPreset();
       loadStatus().then(async () => {
         await loadModelsInto(integrationsModelSelect);
         await loadSttModelsInto(sttModel);

@@ -5,6 +5,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
+const zlib = require('zlib');
 const express = require('express');
 const axios = require('axios');
 const { createCustomerStore } = require('./src/customer-store');
@@ -26,6 +27,8 @@ const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_PDF_RECEIPT_BYTES = 8 * 1024 * 1024;
+const PDF_RECEIPT_TEXT_LIMIT = 2500;
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -3145,6 +3148,164 @@ async function transcribeTelegramMedia(config, context, fileId, options = {}) {
   }
 }
 
+function decodePdfLiteralString(value) {
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char !== '\\') {
+      result += char;
+      continue;
+    }
+    const next = value[index + 1];
+    if (!next) continue;
+    index += 1;
+    if (next === 'n') result += '\n';
+    else if (next === 'r') result += '\r';
+    else if (next === 't') result += '\t';
+    else if (next === 'b') result += '\b';
+    else if (next === 'f') result += '\f';
+    else if (/[0-7]/.test(next)) {
+      let octal = next;
+      for (let offset = 0; offset < 2 && /[0-7]/.test(value[index + 1]); offset += 1) {
+        octal += value[index + 1];
+        index += 1;
+      }
+      result += String.fromCharCode(parseInt(octal, 8));
+    } else {
+      result += next;
+    }
+  }
+  return result;
+}
+
+function decodePdfHexString(hex) {
+  const clean = String(hex || '').replace(/[^0-9a-f]/gi, '');
+  if (clean.length < 2) return '';
+  const even = clean.length % 2 === 0 ? clean : `${clean}0`;
+  const bytes = Buffer.from(even, 'hex');
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    let text = '';
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      text += String.fromCharCode(bytes.readUInt16BE(index));
+    }
+    return text;
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    let text = '';
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      text += String.fromCharCode(bytes.readUInt16LE(index));
+    }
+    return text;
+  }
+  return bytes.toString('utf8');
+}
+
+function normalizePdfExtractedText(text) {
+  return String(text || '')
+    .replace(/\u0000/g, '')
+    .replace(/[^\S\r\n]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function extractReadablePdfTextFromSource(source) {
+  const fragments = [];
+  const textOperators = /(?:\((?:\\.|[^\\()])*\)|<[\da-fA-F\s]+>)\s*(?:Tj|'|"|TJ)/g;
+  let match;
+  while ((match = textOperators.exec(source)) !== null) {
+    const token = match[0].trim();
+    const literal = token.match(/^\(([\s\S]*)\)\s*(?:Tj|'|"|TJ)$/);
+    if (literal) {
+      fragments.push(decodePdfLiteralString(literal[1]));
+      continue;
+    }
+    const hex = token.match(/^<([\da-fA-F\s]+)>\s*(?:Tj|'|"|TJ)$/);
+    if (hex) {
+      fragments.push(decodePdfHexString(hex[1]));
+    }
+  }
+
+  const fallbackStrings = source.match(/\((?:\\.|[^\\()]){2,}\)/g) || [];
+  fallbackStrings.slice(0, 160).forEach((item) => {
+    fragments.push(decodePdfLiteralString(item.slice(1, -1)));
+  });
+
+  return normalizePdfExtractedText(fragments.join('\n'));
+}
+
+function extractTextFromPdfBuffer(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return '';
+  const latin = buffer.toString('latin1');
+  const sources = [latin];
+  const streamRegex = /<<([\s\S]*?)>>\s*stream\r?\n?([\s\S]*?)\r?\n?endstream/g;
+  let streamMatch;
+  while ((streamMatch = streamRegex.exec(latin)) !== null) {
+    const dictionary = streamMatch[1] || '';
+    const streamBody = Buffer.from(streamMatch[2] || '', 'latin1');
+    if (/FlateDecode/i.test(dictionary)) {
+      try {
+        sources.push(zlib.inflateSync(streamBody).toString('latin1'));
+      } catch (error) {
+        try {
+          sources.push(zlib.inflateRawSync(streamBody).toString('latin1'));
+        } catch (_) {
+          // Some PDFs keep image streams compressed in a way we cannot safely read without extra dependencies.
+        }
+      }
+    } else if (!/DCTDecode|JPXDecode|CCITTFaxDecode/i.test(dictionary)) {
+      sources.push(streamBody.toString('latin1'));
+    }
+  }
+
+  return normalizePdfExtractedText(
+    sources
+      .map(extractReadablePdfTextFromSource)
+      .filter(Boolean)
+      .join('\n')
+  ).slice(0, PDF_RECEIPT_TEXT_LIMIT);
+}
+
+async function extractTelegramPdfReceiptText(config, context, document) {
+  if (!document?.file_id) return '';
+  if (document.file_size && document.file_size > MAX_PDF_RECEIPT_BYTES) {
+    logEvent('PDF_RECEIPT_SKIP', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      messageType: context.messageType,
+      status: 'error',
+      reason: 'pdf_too_large',
+      fileSize: document.file_size,
+    });
+    return '';
+  }
+
+  try {
+    const fileBuffer = await downloadTelegramFile(config, context.chatId, context.messageType, document.file_id);
+    const text = extractTextFromPdfBuffer(fileBuffer);
+    logEvent('PDF_RECEIPT_TEXT', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      messageType: context.messageType,
+      status: text ? 'ok' : 'error',
+      extractedChars: text.length,
+    });
+    return text;
+  } catch (error) {
+    logEvent('PDF_RECEIPT_ERROR', {
+      traceId: context.traceId,
+      userId: context.userId,
+      chatId: context.chatId,
+      messageType: context.messageType,
+      status: 'error',
+      error: error.message,
+    });
+    return '';
+  }
+}
+
 async function normalizeTelegramMessage(config, context, message) {
   const images = [];
   let text = message.text || message.caption || '';
@@ -3164,9 +3325,14 @@ async function normalizeTelegramMessage(config, context, message) {
   }
 
   if (message.document) {
+    const documentName = String(message.document.file_name || '').trim();
+    const documentMimeType = String(message.document.mime_type || '').trim();
+    const isPdfDocument =
+      /pdf/i.test(documentMimeType) ||
+      /\.pdf$/i.test(documentName);
     const isImageLikeDocument =
-      String(message.document.mime_type || '').startsWith('image/') ||
-      /\.(png|jpe?g|webp|gif|bmp)$/i.test(String(message.document.file_name || ''));
+      documentMimeType.startsWith('image/') ||
+      /\.(png|jpe?g|webp|gif|bmp)$/i.test(documentName);
 
     if (isImageLikeDocument) {
       hasMedia = true;
@@ -3177,6 +3343,24 @@ async function normalizeTelegramMessage(config, context, message) {
         logEvent('ERROR', { scope: 'telegram.getFile', message: e.message, messageType: 'document' });
       }
 
+    }
+
+    if (!text && isPdfDocument) {
+      const pdfText = await extractTelegramPdfReceiptText(config, context, message.document);
+      text = pdfText
+        ? [
+          'Клиент прислал PDF-файл с чеком/квитанцией. Текст PDF извлечён автоматически.',
+          'Receipt OCR summary из PDF:',
+          pdfText,
+          'Сверь сумму, банк, получателя/карту и дату с контекстом заказа и правилами AI Control. Не подтверждай оплату финально.',
+        ].join('\n')
+        : [
+          'Клиент прислал PDF-файл с чеком/квитанцией.',
+          'Содержимое PDF автоматически не прочитано: сумма, банк, получатель и дата не подтверждены.',
+          'Не подтверждать оплату финально и не писать, что чек корректный. Нужно мягко сказать, что PDF проверим вручную, либо попросить скрин/фото чека.',
+          documentName && `Имя файла: ${documentName}.`,
+        ].filter(Boolean).join(' ');
+      hasMedia = true;
     }
   }
 
@@ -3209,7 +3393,8 @@ async function normalizeTelegramMessage(config, context, message) {
   }
 
   if (!text && message.document) {
-    text = 'пользователь отправил файл';
+    text = 'Клиент прислал файл. Если это чек или квитанция, содержимое файла автоматически не прочитано: не подтверждать оплату финально, попросить скрин/фото чека или ручную проверку.';
+    hasMedia = true;
   }
 
   if (!text && message.audio) {
@@ -3351,6 +3536,7 @@ function getSmalltalkGuidance(config) {
   if (!parseConfigBoolean(config.smalltalk_enabled, true)) return '';
   return buildGuidanceSection('Живость общения:', [
     'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
+    'Если клиент спрашивает "ты AI/робот/бот?", не отвечать "я языковая модель". Коротко ответить от лица менеджера IWAK: "я на связи от IWAK, помогу с заказом" и перевести разговор к делу.',
     parseConfigBoolean(config.smalltalk_style_enabled, true)
       && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
     parseConfigBoolean(config.smalltalk_outfit_advice_enabled, true)
@@ -3411,6 +3597,7 @@ function getReceiptCheckGuidance(config) {
   if (!parseConfigBoolean(config.receipt_check_enabled, true)) return '';
   return buildGuidanceSection('Проверка чека:', [
     'Если клиент прислал чек, квитанцию, скрин оплаты или фото оплаты, сначала извлеки видимые данные из изображения/текста и сравни с контекстом заказа.',
+    'Если клиент прислал PDF/документ с чеком, а содержимое файла не извлечено в текст/изображение, не подтверждай чек как корректный: попроси прислать скрин/фото чека или напиши, что PDF проверим вручную.',
     parseConfigBoolean(config.receipt_check_amount_enabled, true)
       && 'Сверить сумму с ценой заказа, если сумма видна.',
     parseConfigBoolean(config.receipt_check_bank_enabled, true)
@@ -3579,6 +3766,249 @@ function buildAiControlPreview(config = runtimeConfig) {
     appliedControls: getVisibleControlState(config),
     capabilities: getCapabilitySnapshot(config),
   };
+}
+
+const SCENARIO_TEST_DEFINITIONS = {
+  order_size: {
+    title: 'Горячий заказ: клиент прислал размер',
+    defaultMessage: 'Здравствуйте! Хочу заказать 42 размер.',
+  },
+  order_all_data: {
+    title: 'Все данные одним сообщением',
+    defaultMessage: '27 см. Алишеров Алишер Алишерович, 89139487514, Москва, ПВЗ Варшавское шоссе 106, Яндекс.',
+  },
+  discount: {
+    title: 'Просит скидку',
+    defaultMessage: 'А скидку можно? Если сейчас заберу.',
+  },
+  quality: {
+    title: 'Спрашивает про оригинальность',
+    defaultMessage: 'Это оригинал или реплика? Качество нормальное?',
+  },
+  delivery: {
+    title: 'Уточняет доставку',
+    defaultMessage: 'А как доставка будет и сколько стоит?',
+  },
+  payment: {
+    title: 'Готов оплатить',
+    defaultMessage: 'Все данные отправил, можно оплачивать.',
+  },
+  receipt_ok: {
+    title: 'Чек без явных расхождений',
+    defaultMessage: 'Оплатил, чек прикрепил.',
+  },
+  receipt_mismatch: {
+    title: 'Чек с расхождением',
+    defaultMessage: 'Оплатил, чек прикрепил.',
+  },
+  smalltalk: {
+    title: 'Поболтать / что надеть',
+    defaultMessage: 'В Москве дождь, что вообще надеть с такими кроссами?',
+  },
+  angry: {
+    title: 'Раздражённый клиент',
+    defaultMessage: 'Вы что, опять одно и то же спрашиваете? Я уже всё написал.',
+  },
+};
+
+function normalizeScenarioText(value, fallback = '') {
+  return String(value || fallback || '').trim().slice(0, 1200);
+}
+
+function getDigitsOnly(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function buildScenarioTestCase(body = {}, config = runtimeConfig) {
+  const scenarioId = SCENARIO_TEST_DEFINITIONS[body.scenario] ? body.scenario : 'order_size';
+  const definition = SCENARIO_TEST_DEFINITIONS[scenarioId];
+  const context = {
+    product: normalizeScenarioText(body.product, 'Lacoste ODYSSA'),
+    price: normalizeScenarioText(body.price, '5190 ₽'),
+    size: normalizeScenarioText(body.size, '42'),
+    insole: normalizeScenarioText(body.insole, ''),
+    delivery: normalizeScenarioText(body.delivery, ''),
+    receiptSummary: normalizeScenarioText(body.receipt_summary, ''),
+  };
+  const message = truncateText(normalizeScenarioText(body.message, definition.defaultMessage));
+  const orderLines = [
+    'Симулятор AI Control. Это тестовая песочница, не реальный клиент и не реальная память.',
+    `Сценарий: ${definition.title}.`,
+    context.product && `Товар: ${context.product}.`,
+    context.price && `Цена заказа: ${context.price}.`,
+    context.size && `Размер уже известен: ${context.size}.`,
+    context.insole && `Длина стельки уже известна: ${context.insole}.`,
+    context.delivery && `Данные доставки/получателя уже присланы: ${context.delivery}.`,
+    context.receiptSummary && `Receipt OCR summary: ${context.receiptSummary}.`,
+    parseConfigBoolean(config.payment_enabled, false)
+      ? 'Если нужно отправить оплату, использовать только реквизиты из AI Control.'
+      : 'Оплата в AI Control может быть выключена: реквизиты не придумывать.',
+  ].filter(Boolean);
+
+  return {
+    id: scenarioId,
+    title: definition.title,
+    message,
+    context,
+    memoryContext: {
+      summary: orderLines.join('\n'),
+      history: [],
+      facts: {},
+      state: null,
+    },
+  };
+}
+
+function addScenarioCheck(checks, key, label, ok, detail) {
+  checks.push({ key, label, ok: Boolean(ok), detail: String(detail || '') });
+}
+
+function scenarioTextHasAny(text, patterns) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
+  const text = String(reply || '');
+  const lower = text.toLowerCase();
+  const compactDigits = getDigitsOnly(text);
+  const checks = [];
+  const configuredPaymentDigits = getDigitsOnly(config.payment_card_number);
+  const hasLongNumber = /\b\d[\d\s()+-]{8,}\d\b/.test(text);
+  const containsConfiguredPayment = configuredPaymentDigits
+    && compactDigits.includes(configuredPaymentDigits.slice(-Math.min(10, configuredPaymentDigits.length)));
+  const mentionsPaymentDetails = scenarioTextHasAny(lower, [
+    /тинькофф|т-банк|сбер|альфа|карта|номер\s+телефона|получатель|реквизит/i,
+  ]);
+
+  addScenarioCheck(
+    checks,
+    'no_fake_payment',
+    'Реквизиты не выдуманы',
+    !hasLongNumber || containsConfiguredPayment,
+    hasLongNumber && !containsConfiguredPayment
+      ? 'В ответе есть длинный номер, которого нет в реквизитах AI Control.'
+      : 'Не вижу чужих длинных номеров в ответе.'
+  );
+
+  addScenarioCheck(
+    checks,
+    'payment_disabled_safe',
+    'Оплата выключена = без реквизитов',
+    parseConfigBoolean(config.payment_enabled, false) || (!hasLongNumber && !mentionsPaymentDetails),
+    parseConfigBoolean(config.payment_enabled, false)
+      ? 'Оплата включена, реквизиты разрешены только из AI Control.'
+      : 'Если оплата выключена, ответ не должен отправлять банк/карту/получателя.'
+  );
+
+  addScenarioCheck(
+    checks,
+    'no_final_payment_confirm',
+    'Нет финального подтверждения оплаты',
+    !scenarioTextHasAny(lower, [
+      /оплат[ауы]\s+подтвержден/i,
+      /деньги\s+поступил/i,
+      /плат[её]ж\s+подтвержден/i,
+      /зачислен/i,
+      /оплата\s+прошла/i,
+    ]),
+    'AI может принять чек к проверке, но не должен писать, что деньги точно поступили.'
+  );
+
+  addScenarioCheck(
+    checks,
+    'no_repeat_known_size',
+    'Не спрашивает уже известный размер',
+    !(scenario.context.size && /какой\s+размер|размер\s+нужен|уточните\s+размер/i.test(lower)),
+    scenario.context.size ? `Размер уже был в тестовом контексте: ${scenario.context.size}.` : 'Размер в сценарии не задан.'
+  );
+
+  addScenarioCheck(
+    checks,
+    'human_tone',
+    'Не звучит как CRM-сценарий',
+    !scenarioTextHasAny(lower, [
+      /ваш\s+запрос\s+обработан/i,
+      /заявка\s+зарегистрирована/i,
+      /тикет/i,
+      /оператор\s+свяжется/i,
+      /я\s+языковая\s+модель/i,
+      /как\s+искусственный\s+интеллект/i,
+    ]),
+    'Ответ должен звучать как нормальный менеджер в Telegram, без технической роли и канцелярита.'
+  );
+
+  addScenarioCheck(
+    checks,
+    'next_step',
+    'Есть понятный следующий шаг',
+    scenarioTextHasAny(lower, [
+      /\?/,
+      /пришлите|напишите|подскажите|проверьте|можно\s+оплачивать|после\s+оплаты|чек|скрин/i,
+    ]),
+    'Клиенту должно быть понятно, что делать дальше.'
+  );
+
+  if (scenario.id === 'discount') {
+    addScenarioCheck(
+      checks,
+      'discount_policy',
+      'Скидка не обещана от себя',
+      scenarioTextHasAny(lower, [/скид/i])
+        && scenarioTextHasAny(lower, [/нет|финальн|акци|канал|сейчас\s+не/i])
+        && !scenarioTextHasAny(lower, [/сделаю\s+скид|дам\s+скид|уступ/i]),
+      'На просьбу скидки нужна мягкая позиция: цена финальная, акции только если явно есть.'
+    );
+  }
+
+  if (scenario.id === 'quality') {
+    addScenarioCheck(
+      checks,
+      'quality_honesty',
+      'Честно про фабричную реплику',
+      scenarioTextHasAny(lower, [/реплик|фабричн/i])
+        && !scenarioTextHasAny(lower, [/это\s+оригинал|100%\s*оригинал|полностью\s+оригинал/i]),
+      'Если спросили про оригинальность, нельзя создавать впечатление оригинала.'
+    );
+  }
+
+  if (scenario.id === 'receipt_mismatch') {
+    addScenarioCheck(
+      checks,
+      'receipt_mismatch',
+      'Расхождение по чеку замечено',
+      scenarioTextHasAny(lower, [/расхожд|не\s+сход|сумм|5000|5490|проверь/i])
+        && !scenarioTextHasAny(lower, [/оплат[ауы]\s+подтвержден|деньги\s+поступил/i]),
+      'При несовпадении суммы/получателя нужно мягко попросить проверить чек.'
+    );
+  }
+
+  if (/робот|бот|ai|ии|искусствен/i.test(`${scenario.message} ${scenario.context.receiptSummary}`.toLowerCase())) {
+    addScenarioCheck(
+      checks,
+      'identity_answer',
+      'Не отвечает технической ролью',
+      !scenarioTextHasAny(lower, [/я\s+языковая\s+модель|я\s+искусственный\s+интеллект|я\s+ai|я\s+ии/i])
+        && scenarioTextHasAny(lower, [/iwak|заказ|оформ/i]),
+      'На вопрос о природе AI лучше отвечать как менеджер IWAK и возвращать фокус к заказу.'
+    );
+  }
+
+  const passed = checks.filter((check) => check.ok).length;
+  const score = checks.length ? Math.round((passed / checks.length) * 100) : 0;
+  return { checks, score };
+}
+
+function buildScenarioContextPreview(scenario) {
+  return [
+    `Сценарий: ${scenario.title}`,
+    `Сообщение клиента: ${scenario.message}`,
+    scenario.context.product && `Товар: ${scenario.context.product}`,
+    scenario.context.price && `Цена: ${scenario.context.price}`,
+    scenario.context.size && `Размер: ${scenario.context.size}`,
+    scenario.context.insole && `Стелька: ${scenario.context.insole}`,
+    scenario.context.delivery && `Доставка: ${scenario.context.delivery}`,
+    scenario.context.receiptSummary && `Чек: ${scenario.context.receiptSummary}`,
+  ].filter(Boolean).join('\n');
 }
 
 function buildAiMessages(input) {
@@ -4401,27 +4831,7 @@ app.post('/config/test-ai', async (req, res) => {
     hasMedia: images.length > 0,
   });
 
-  if (parseConfigBoolean(config.memory_enabled, true)) {
-    updateCustomerMemoryFromInput(input);
-    appendMemoryMessage(input, 'user', getMemoryMessageText(input));
-  }
-
-  input.memoryContext = parseConfigBoolean(config.memory_enabled, true)
-    ? buildMemoryContext(chatId, {
-      limit: getConfigMemoryLimit(config),
-      excludeTraceIds: [traceId],
-      currentInput: input,
-    })
-    : { summary: '', history: [], facts: {}, state: null };
-
-
-  input.memoryContext = parseConfigBoolean(config.memory_enabled, true)
-    ? buildMemoryContext(chatId, {
-      limit: getConfigMemoryLimit(config),
-      excludeTraceIds: [traceId],
-      currentInput: input,
-    })
-    : { summary: '', history: [], facts: {}, state: null };
+  input.memoryContext = { summary: '', history: [], facts: {}, state: null };
 
   const reply = await requestAi(input);
 
@@ -4436,15 +4846,85 @@ app.post('/config/test-ai', async (req, res) => {
     return;
   }
 
-  if (parseConfigBoolean(config.memory_enabled, true)) {
-    appendMemoryMessage({
-      chatId,
-      traceId,
-      text: finalReply,
-    }, 'assistant', finalReply);
+  res.json({ ok: true, reply: finalReply });
+});
+
+app.post('/config/scenario-test', async (req, res) => {
+  const config = getRuntimeSnapshot();
+  const scenario = buildScenarioTestCase(req.body || {}, config);
+  const traceId = createTraceId();
+  const input = {
+    traceId,
+    chatId: `scenario:${scenario.id}`,
+    userId: 'scenario',
+    messageType: 'scenario_test',
+    text: scenario.message,
+    images: [],
+    hasMedia: false,
+    hasLinkInput: /https?:\/\//i.test(scenario.message),
+    config,
+    memoryContext: scenario.memoryContext,
+  };
+
+  if (!scenario.message) {
+    res.json({ ok: false, reply: '', error: 'Message is required', checks: [], score: 0 });
+    return;
   }
 
-  res.json({ ok: true, reply: finalReply });
+  logEvent('IN', {
+    traceId,
+    status: 'ok',
+    scope: 'scenario.test',
+    userId: input.userId,
+    chatId: input.chatId,
+    firstName: 'Scenario',
+    username: 'ai_control_simulator',
+    messageType: input.messageType,
+    text: input.text,
+    scenario: scenario.id,
+    hasMedia: false,
+  });
+
+  const reply = await requestAi(input);
+
+  if (typeof reply !== 'string') {
+    res.json({
+      ok: false,
+      reply: '',
+      error: 'AI did not return a reply',
+      checks: [],
+      score: 0,
+      context_preview: buildScenarioContextPreview(scenario),
+    });
+    return;
+  }
+
+  const finalReply = finalizeAiReply(input, reply);
+  if (!finalReply) {
+    res.json({
+      ok: false,
+      reply: '',
+      error: 'AI returned empty reply after normalization',
+      checks: [],
+      score: 0,
+      context_preview: buildScenarioContextPreview(scenario),
+    });
+    return;
+  }
+
+  const diagnostic = evaluateScenarioReply(finalReply, scenario, config);
+  res.json({
+    ok: true,
+    reply: finalReply,
+    scenario: {
+      id: scenario.id,
+      title: scenario.title,
+    },
+    checks: diagnostic.checks,
+    score: diagnostic.score,
+    context_preview: buildScenarioContextPreview(scenario),
+    applied_controls: getVisibleControlState(config, scenario.memoryContext),
+  });
 });
 
 app.delete('/config', (req, res) => {
