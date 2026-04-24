@@ -4,8 +4,10 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
+const { execFile } = require('child_process');
 const express = require('express');
 const axios = require('axios');
 const { createCustomerStore } = require('./src/customer-store');
@@ -29,6 +31,8 @@ const STT_TIMEOUT_MS = 30000;
 const MAX_STT_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_PDF_RECEIPT_BYTES = 8 * 1024 * 1024;
 const PDF_RECEIPT_TEXT_LIMIT = 2500;
+const PDF_RENDER_TIMEOUT_MS = 15000;
+const PDF_RENDER_DPI = 180;
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -3209,6 +3213,19 @@ function normalizePdfExtractedText(text) {
     .trim();
 }
 
+function isReadablePdfReceiptText(text) {
+  const source = normalizePdfExtractedText(text);
+  if (source.length < 20) return false;
+  const chars = Array.from(source);
+  const readableChars = chars.filter((char) => /[\p{L}\p{N}\s.,:;!?№#"'()\-+*/\\₽$€%]/u.test(char)).length;
+  const controlChars = chars.filter((char) => /[\u0000-\u001f\u007f-\u009f]/.test(char)).length;
+  const readableRatio = readableChars / Math.max(chars.length, 1);
+  const controlRatio = controlChars / Math.max(chars.length, 1);
+  const hasReceiptSignal = /(итого|сумма|сколько|банк|получател|карта|куда|перевод|квитанц|чек|руб|₽|t-?bank|tinkoff|тинькофф|сбер|дата|успешно|\d[\d\s.,]{2,}\s*(?:₽|руб))/i.test(source);
+  const hasHumanText = /[\p{L}]{3,}/u.test(source);
+  return readableRatio >= 0.82 && controlRatio <= 0.02 && hasReceiptSignal && hasHumanText;
+}
+
 function extractReadablePdfTextFromSource(source) {
   const fragments = [];
   const textOperators = /(?:\((?:\\.|[^\\()])*\)|<[\da-fA-F\s]+>)\s*(?:Tj|'|"|TJ)/g;
@@ -3258,16 +3275,126 @@ function extractTextFromPdfBuffer(buffer) {
     }
   }
 
-  return normalizePdfExtractedText(
+  const extractedText = normalizePdfExtractedText(
     sources
       .map(extractReadablePdfTextFromSource)
       .filter(Boolean)
       .join('\n')
-  ).slice(0, PDF_RECEIPT_TEXT_LIMIT);
+  );
+  return isReadablePdfReceiptText(extractedText)
+    ? extractedText.slice(0, PDF_RECEIPT_TEXT_LIMIT)
+    : '';
 }
 
-async function extractTelegramPdfReceiptText(config, context, document) {
-  if (!document?.file_id) return '';
+function execFilePromise(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function withTempDir(prefix, action) {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), prefix));
+  try {
+    return await action(dir);
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function tryRenderPdfWithPdftoppm(inputPath, outputPath) {
+  const outputPrefix = outputPath.replace(/\.png$/i, '');
+  await execFilePromise('pdftoppm', [
+    '-f', '1',
+    '-l', '1',
+    '-singlefile',
+    '-png',
+    '-r', String(PDF_RENDER_DPI),
+    inputPath,
+    outputPrefix,
+  ], { timeout: PDF_RENDER_TIMEOUT_MS });
+  return fs.existsSync(outputPath) ? outputPath : '';
+}
+
+async function tryRenderPdfWithImageMagick(inputPath, outputPath) {
+  await execFilePromise('magick', [
+    '-density', String(PDF_RENDER_DPI),
+    `${inputPath}[0]`,
+    '-background', 'white',
+    '-alpha', 'remove',
+    '-alpha', 'off',
+    outputPath,
+  ], { timeout: PDF_RENDER_TIMEOUT_MS });
+  return fs.existsSync(outputPath) ? outputPath : '';
+}
+
+async function tryRenderPdfWithConvert(inputPath, outputPath) {
+  await execFilePromise('convert', [
+    '-density', String(PDF_RENDER_DPI),
+    `${inputPath}[0]`,
+    '-background', 'white',
+    '-alpha', 'remove',
+    '-alpha', 'off',
+    outputPath,
+  ], { timeout: PDF_RENDER_TIMEOUT_MS });
+  return fs.existsSync(outputPath) ? outputPath : '';
+}
+
+async function renderPdfFirstPageToDataUrl(buffer, context) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return '';
+  return withTempDir('iwak-pdf-', async (dir) => {
+    const inputPath = path.join(dir, 'receipt.pdf');
+    const outputPath = path.join(dir, 'receipt.png');
+    await fs.promises.writeFile(inputPath, buffer);
+
+    const renderers = [
+      ['pdftoppm', tryRenderPdfWithPdftoppm],
+      ['magick', tryRenderPdfWithImageMagick],
+      ['convert', tryRenderPdfWithConvert],
+    ];
+
+    for (const [name, renderer] of renderers) {
+      try {
+        const renderedPath = await renderer(inputPath, outputPath);
+        if (!renderedPath) continue;
+        const imageBuffer = await fs.promises.readFile(renderedPath);
+        if (!imageBuffer.length) continue;
+        logEvent('PDF_RECEIPT_RENDER', {
+          traceId: context.traceId,
+          userId: context.userId,
+          chatId: context.chatId,
+          messageType: context.messageType,
+          status: 'ok',
+          renderer: name,
+          bytes: imageBuffer.length,
+        });
+        return `data:image/png;base64,${imageBuffer.toString('base64')}`;
+      } catch (error) {
+        logEvent('PDF_RECEIPT_RENDER_SKIP', {
+          traceId: context.traceId,
+          userId: context.userId,
+          chatId: context.chatId,
+          messageType: context.messageType,
+          status: 'error',
+          renderer: name,
+          error: error.code || error.message,
+        });
+      }
+    }
+
+    return '';
+  });
+}
+
+async function readTelegramPdfReceipt(config, context, document) {
+  if (!document?.file_id) return { text: '', imageDataUrl: '' };
   if (document.file_size && document.file_size > MAX_PDF_RECEIPT_BYTES) {
     logEvent('PDF_RECEIPT_SKIP', {
       traceId: context.traceId,
@@ -3278,21 +3405,23 @@ async function extractTelegramPdfReceiptText(config, context, document) {
       reason: 'pdf_too_large',
       fileSize: document.file_size,
     });
-    return '';
+    return { text: '', imageDataUrl: '' };
   }
 
   try {
     const fileBuffer = await downloadTelegramFile(config, context.chatId, context.messageType, document.file_id);
     const text = extractTextFromPdfBuffer(fileBuffer);
-    logEvent('PDF_RECEIPT_TEXT', {
+    const imageDataUrl = await renderPdfFirstPageToDataUrl(fileBuffer, context);
+    logEvent('PDF_RECEIPT_READ', {
       traceId: context.traceId,
       userId: context.userId,
       chatId: context.chatId,
       messageType: context.messageType,
-      status: text ? 'ok' : 'error',
+      status: text || imageDataUrl ? 'ok' : 'error',
       extractedChars: text.length,
+      renderedImage: Boolean(imageDataUrl),
     });
-    return text;
+    return { text, imageDataUrl };
   } catch (error) {
     logEvent('PDF_RECEIPT_ERROR', {
       traceId: context.traceId,
@@ -3302,7 +3431,7 @@ async function extractTelegramPdfReceiptText(config, context, document) {
       status: 'error',
       error: error.message,
     });
-    return '';
+    return { text: '', imageDataUrl: '' };
   }
 }
 
@@ -3346,14 +3475,24 @@ async function normalizeTelegramMessage(config, context, message) {
     }
 
     if (!text && isPdfDocument) {
-      const pdfText = await extractTelegramPdfReceiptText(config, context, message.document);
-      text = pdfText
+      const pdfReceipt = await readTelegramPdfReceipt(config, context, message.document);
+      if (pdfReceipt.imageDataUrl) {
+        images.push(pdfReceipt.imageDataUrl);
+      }
+      text = pdfReceipt.text
         ? [
-          'Клиент прислал PDF-файл с чеком/квитанцией. Текст PDF извлечён автоматически.',
+          'Клиент прислал PDF-файл с чеком/квитанцией. PDF обработан автоматически.',
           'Receipt OCR summary из PDF:',
-          pdfText,
+          pdfReceipt.text,
+          pdfReceipt.imageDataUrl && 'Первая страница PDF также конвертирована в изображение и приложена к этому запросу для визуальной проверки.',
           'Сверь сумму, банк, получателя/карту и дату с контекстом заказа и правилами AI Control. Не подтверждай оплату финально.',
-        ].join('\n')
+        ].filter(Boolean).join('\n')
+        : pdfReceipt.imageDataUrl
+          ? [
+            'Клиент прислал PDF-файл с чеком/квитанцией.',
+            'Текстовый слой PDF не читается, но первая страница PDF конвертирована в изображение и приложена к этому запросу.',
+            'Визуально прочитай чек с изображения: сумма, банк, получатель/карта и дата. Сверь с заказом и правилами AI Control. Не подтверждай оплату финально.',
+          ].join('\n')
         : [
           'Клиент прислал PDF-файл с чеком/квитанцией.',
           'Содержимое PDF автоматически не прочитано: сумма, банк, получатель и дата не подтверждены.',
