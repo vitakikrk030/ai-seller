@@ -1356,6 +1356,26 @@
         color: var(--muted);
         font-size: 9px;
         line-height: 1.35;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+      }
+
+      button.followup-guide-step {
+        appearance: none;
+        font: inherit;
+      }
+
+      .followup-guide-step:hover {
+        border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+        background: color-mix(in srgb, var(--accent-soft) 42%, var(--panel));
+        transform: translateY(-1px);
+      }
+
+      .followup-guide-step.active {
+        border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+        background: color-mix(in srgb, var(--accent-soft) 68%, var(--panel));
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent) inset;
       }
 
       .followup-guide-step strong {
@@ -3047,9 +3067,9 @@
                         <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
                       </div>
                       <div class="followup-simple-guide">
-                        <div class="followup-guide-step"><strong>Безопасно</strong>Выбери «Только готовить черновики» и раз в день нажимай «Отправить» в нужных диалогах.</div>
-                        <div class="followup-guide-step"><strong>Полуавто</strong>Нажми «Проверить сейчас» — система найдёт клиентов и подготовит тексты.</div>
-                        <div class="followup-guide-step"><strong>Полный авто</strong>Включай только когда уверен: режим «Авто» + «Разрешить автоотправку».</div>
+                        <button class="followup-guide-step" type="button" data-followup-preset="safe"><strong>Безопасно</strong>Нажми сюда: AI готовит черновики, ты раз в день сам жмёшь «Отправить».</button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="drafts"><strong>Полуавто</strong>Нажми сюда: AI ищет клиентов и готовит тексты после «Проверить сейчас».</button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="auto"><strong>Полный авто</strong>Нажми сюда: AI сможет отправлять сам, если отдельно разрешить автоотправку.</button>
                       </div>
                       <div class="followup-controls secondary">
                         <label class="followup-toggle followup-time-group">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
@@ -3257,6 +3277,8 @@
       const followupRepeatSalesEnabled = document.getElementById('followupRepeatSalesEnabled');
       const followupMode = document.getElementById('followupMode');
       const followupModeHelp = document.getElementById('followupModeHelp');
+      const followupPresetButtons = Array.from(document.querySelectorAll('[data-followup-preset]'));
+      let selectedFollowupPreset = '';
       const followupQuietStart = document.getElementById('followupQuietStart');
       const followupQuietEnd = document.getElementById('followupQuietEnd');
       const followupMinIntervalHours = document.getElementById('followupMinIntervalHours');
@@ -3618,6 +3640,34 @@
         if (followupAutoSendEnabled) {
           followupAutoSendEnabled.disabled = mode !== 'auto';
           if (mode !== 'auto') followupAutoSendEnabled.checked = false;
+        }
+        if (!followupMasterEnabled.checked || mode === 'off') {
+          selectedFollowupPreset = '';
+        } else if (!selectedFollowupPreset || mode === 'auto' || selectedFollowupPreset === 'auto') {
+          selectedFollowupPreset = mode === 'auto' ? 'auto' : 'safe';
+        }
+        followupPresetButtons.forEach((button) => {
+          const preset = button.dataset.followupPreset || '';
+          button.classList.toggle('active', followupMasterEnabled.checked && preset === selectedFollowupPreset);
+        });
+      }
+
+      function applyFollowupPreset(preset) {
+        selectedFollowupPreset = preset;
+        followupMasterEnabled.checked = true;
+        if (preset === 'auto') {
+          followupMode.value = 'auto';
+        } else {
+          followupMode.value = 'drafts';
+        }
+        syncFollowupModeUi();
+        setSaveButtonState(saveFollowupSettingsButton, 'dirty');
+        if (preset === 'auto') {
+          showSaveToast('ok', 'Выбран полный авто. Проверь галочку автоотправки и нажми «Сохранить».');
+        } else if (preset === 'drafts') {
+          showSaveToast('ok', 'Выбран полуавто. Нажми «Сохранить», потом «Проверить сейчас».');
+        } else {
+          showSaveToast('ok', 'Выбран безопасный режим. Нажми «Сохранить».');
         }
       }
 
@@ -5389,6 +5439,9 @@
       saveFollowupSettingsButton.addEventListener('click', saveFollowupSettings);
       followupMasterEnabled.addEventListener('change', syncFollowupModeUi);
       followupMode.addEventListener('change', syncFollowupModeUi);
+      followupPresetButtons.forEach((button) => {
+        button.addEventListener('click', () => applyFollowupPreset(button.dataset.followupPreset || 'safe'));
+      });
       runFollowupNowButton.addEventListener('click', runFollowupNow);
       refreshInboxButton.addEventListener('click', loadInbox);
       document.getElementById('refreshLogs').addEventListener('click', loadLogs);
