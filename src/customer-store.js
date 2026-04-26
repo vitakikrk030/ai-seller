@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function nowIso() {
   return new Date().toISOString();
@@ -212,6 +212,19 @@ function createCustomerStore(options = {}) {
     };
   }
 
+  function getBusinessConnectionByUserChatId(chatId) {
+    const row = statements.getBusinessConnectionByUserChatId.get(clean(chatId, 80));
+    if (!row) return null;
+    return {
+      id: row.business_connection_id,
+      userId: row.business_user_id || '',
+      userChatId: row.user_chat_id || '',
+      isEnabled: row.is_enabled !== 0,
+      rights: parseJson(row.rights_json),
+      updatedAt: row.updated_at,
+    };
+  }
+
   function getRecentMessages(inputOrChatId, limit = 20, excludeTraceIds = []) {
     const customerId = getCustomerId(inputOrChatId);
     if (!customerId) return [];
@@ -326,8 +339,80 @@ function createCustomerStore(options = {}) {
       statements.deleteFacts.run(customerId);
       statements.deleteState.run(customerId);
       statements.deleteOrders.run(customerId);
+      statements.deleteFollowupJobs.run(customerId);
     })();
     return true;
+  }
+
+  function upsertFollowupJob(patch = {}) {
+    const customer = getOrCreateByTelegram({
+      chatId: patch.chatId || patch.chat_id,
+      userId: patch.userId || patch.user_id || patch.chatId || patch.chat_id,
+    });
+    if (!customer) return null;
+    const timestamp = nowIso();
+    const id = Number(patch.id) || 0;
+    const params = {
+      id,
+      customer_id: customer.id,
+      chat_id: customer.telegram_chat_id,
+      kind: clean(patch.kind || 'order_followup', 40),
+      status_key: clean(patch.statusKey || patch.status_key, 80),
+      status_label: clean(patch.statusLabel || patch.status_label, 120),
+      mode: clean(patch.mode || 'drafts', 40),
+      state: clean(patch.state || 'draft', 40),
+      draft_text: clean(patch.draftText || patch.draft_text, 1800),
+      reason: clean(patch.reason, 600),
+      due_at: clean(patch.dueAt || patch.due_at, 80),
+      sent_at: clean(patch.sentAt || patch.sent_at, 80),
+      skipped_at: clean(patch.skippedAt || patch.skipped_at, 80),
+      canceled_at: clean(patch.canceledAt || patch.canceled_at, 80),
+      attempts: Math.max(0, Number(patch.attempts) || 0),
+      max_attempts: Math.max(1, Number(patch.maxAttempts || patch.max_attempts) || 1),
+      last_client_message_at: clean(patch.lastClientMessageAt || patch.last_client_message_at, 80),
+      last_outgoing_message_at: clean(patch.lastOutgoingMessageAt || patch.last_outgoing_message_at, 80),
+      safety_json: JSON.stringify(patch.safety || patch.safety_json || {}),
+      created_at: clean(patch.createdAt || patch.created_at, 80) || timestamp,
+      updated_at: timestamp,
+    };
+
+    if (id) {
+      statements.updateFollowupJob.run(params);
+      return getFollowupJob(id);
+    }
+
+    const result = statements.insertFollowupJob.run(params);
+    return getFollowupJob(result.lastInsertRowid);
+  }
+
+  function getFollowupJob(id) {
+    const row = statements.getFollowupJob.get(Number(id) || 0);
+    return mapFollowupJobRow(row);
+  }
+
+  function getOpenFollowupJobByChat(chatId) {
+    const row = statements.getOpenFollowupJobByChat.get(clean(chatId, 80));
+    return mapFollowupJobRow(row);
+  }
+
+  function listFollowupJobs(options = {}) {
+    const limit = Math.max(1, Math.min(500, Number(options.limit) || 100));
+    return statements.listFollowupJobs.all({ limit }).map(mapFollowupJobRow).filter(Boolean);
+  }
+
+  function insertFollowupEvent(event = {}) {
+    const timestamp = nowIso();
+    const customerId = Number(event.customerId || event.customer_id) || null;
+    const result = statements.insertFollowupEvent.run({
+      job_id: Number(event.jobId || event.job_id) || null,
+      customer_id: customerId,
+      chat_id: clean(event.chatId || event.chat_id, 80),
+      event: clean(event.event, 80),
+      message: clean(event.message, 800),
+      metadata_json: JSON.stringify(event.metadata || event.metadata_json || {}),
+      created_at: timestamp,
+    });
+    return statements.getFollowupEvent.get(result.lastInsertRowid);
   }
 
   function importLegacyMemory(memoryStore = {}) {
@@ -384,10 +469,16 @@ function createCustomerStore(options = {}) {
     upsertOrder,
     upsertBusinessConnection,
     getBusinessConnection,
+    getBusinessConnectionByUserChatId,
     getRecentMessages,
     getCustomerContext,
     getCustomerProfile,
     getInboxCustomers,
+    upsertFollowupJob,
+    getFollowupJob,
+    getOpenFollowupJobByChat,
+    listFollowupJobs,
+    insertFollowupEvent,
     clearCustomer,
     importLegacyMemory,
     close,
@@ -498,6 +589,59 @@ function runMigrations(db) {
     addColumnIfMissing(db, 'orders', 'payment_check_summary', 'TEXT');
     addColumnIfMissing(db, 'orders', 'proof_received_at', 'TEXT');
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(2, nowIso());
+  }
+
+  const hasV4 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(4);
+  if (!hasV4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS followup_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        chat_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status_key TEXT,
+        status_label TEXT,
+        mode TEXT NOT NULL,
+        state TEXT NOT NULL,
+        draft_text TEXT,
+        reason TEXT,
+        due_at TEXT,
+        sent_at TEXT,
+        skipped_at TEXT,
+        canceled_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 1,
+        last_client_message_at TEXT,
+        last_outgoing_message_at TEXT,
+        safety_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_followup_jobs_chat_state
+        ON followup_jobs(chat_id, state, updated_at);
+
+      CREATE INDEX IF NOT EXISTS idx_followup_jobs_due
+        ON followup_jobs(state, due_at);
+
+      CREATE TABLE IF NOT EXISTS followup_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER,
+        customer_id INTEGER,
+        chat_id TEXT,
+        event TEXT NOT NULL,
+        message TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES followup_jobs(id) ON DELETE SET NULL,
+        FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_followup_events_chat_created
+        ON followup_events(chat_id, created_at);
+    `);
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(4, nowIso());
   }
 
 }
@@ -626,10 +770,70 @@ function prepareStatements(db) {
         updated_at = excluded.updated_at
     `),
     getBusinessConnection: db.prepare('SELECT * FROM business_connections WHERE business_connection_id = ?'),
+    getBusinessConnectionByUserChatId: db.prepare(`
+      SELECT * FROM business_connections
+      WHERE user_chat_id = ? AND is_enabled != 0
+      ORDER BY datetime(updated_at) DESC
+      LIMIT 1
+    `),
+    insertFollowupJob: db.prepare(`
+      INSERT INTO followup_jobs (
+        customer_id, chat_id, kind, status_key, status_label, mode, state,
+        draft_text, reason, due_at, sent_at, skipped_at, canceled_at,
+        attempts, max_attempts, last_client_message_at, last_outgoing_message_at,
+        safety_json, created_at, updated_at
+      )
+      VALUES (
+        @customer_id, @chat_id, @kind, @status_key, @status_label, @mode, @state,
+        @draft_text, @reason, @due_at, @sent_at, @skipped_at, @canceled_at,
+        @attempts, @max_attempts, @last_client_message_at, @last_outgoing_message_at,
+        @safety_json, @created_at, @updated_at
+      )
+    `),
+    updateFollowupJob: db.prepare(`
+      UPDATE followup_jobs
+      SET kind = @kind,
+          status_key = @status_key,
+          status_label = @status_label,
+          mode = @mode,
+          state = @state,
+          draft_text = @draft_text,
+          reason = @reason,
+          due_at = @due_at,
+          sent_at = @sent_at,
+          skipped_at = @skipped_at,
+          canceled_at = @canceled_at,
+          attempts = @attempts,
+          max_attempts = @max_attempts,
+          last_client_message_at = @last_client_message_at,
+          last_outgoing_message_at = @last_outgoing_message_at,
+          safety_json = @safety_json,
+          updated_at = @updated_at
+      WHERE id = @id
+    `),
+    getFollowupJob: db.prepare('SELECT * FROM followup_jobs WHERE id = ?'),
+    getOpenFollowupJobByChat: db.prepare(`
+      SELECT * FROM followup_jobs
+      WHERE chat_id = ?
+        AND state IN ('draft', 'ready', 'blocked')
+      ORDER BY datetime(updated_at) DESC, id DESC
+      LIMIT 1
+    `),
+    listFollowupJobs: db.prepare(`
+      SELECT * FROM followup_jobs
+      ORDER BY datetime(updated_at) DESC, id DESC
+      LIMIT @limit
+    `),
+    insertFollowupEvent: db.prepare(`
+      INSERT INTO followup_events (job_id, customer_id, chat_id, event, message, metadata_json, created_at)
+      VALUES (@job_id, @customer_id, @chat_id, @event, @message, @metadata_json, @created_at)
+    `),
+    getFollowupEvent: db.prepare('SELECT * FROM followup_events WHERE id = ?'),
     deleteMessages: db.prepare('DELETE FROM messages WHERE customer_id = ?'),
     deleteFacts: db.prepare('DELETE FROM customer_facts WHERE customer_id = ?'),
     deleteState: db.prepare('DELETE FROM dialog_states WHERE customer_id = ?'),
     deleteOrders: db.prepare('DELETE FROM orders WHERE customer_id = ?'),
+    deleteFollowupJobs: db.prepare('DELETE FROM followup_jobs WHERE customer_id = ?'),
   };
 }
 
@@ -693,6 +897,33 @@ function mapOrderRow(row) {
     paymentCheckStatus: row.payment_check_status || '',
     paymentCheckSummary: row.payment_check_summary || '',
     proofReceivedAt: row.proof_received_at || '',
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function mapFollowupJobRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    chatId: row.chat_id || '',
+    kind: row.kind || '',
+    statusKey: row.status_key || '',
+    statusLabel: row.status_label || '',
+    mode: row.mode || '',
+    state: row.state || '',
+    draftText: row.draft_text || '',
+    reason: row.reason || '',
+    dueAt: row.due_at || '',
+    sentAt: row.sent_at || '',
+    skippedAt: row.skipped_at || '',
+    canceledAt: row.canceled_at || '',
+    attempts: row.attempts || 0,
+    maxAttempts: row.max_attempts || 1,
+    lastClientMessageAt: row.last_client_message_at || '',
+    lastOutgoingMessageAt: row.last_outgoing_message_at || '',
+    safety: parseJson(row.safety_json) || {},
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || '',
   };

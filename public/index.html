@@ -1287,11 +1287,15 @@
 
       .followup-controls {
         display: grid;
-        grid-template-columns: minmax(160px, 180px) minmax(180px, 1fr) minmax(270px, 290px) minmax(220px, 240px) minmax(110px, 125px);
+        grid-template-columns: repeat(4, minmax(150px, 1fr)) minmax(110px, 130px);
         align-items: center;
         gap: 8px;
         min-width: 0;
         width: 100%;
+      }
+
+      .followup-controls.secondary {
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
       }
 
       .followup-toggle {
@@ -1348,6 +1352,19 @@
         width: 100%;
         min-width: 0;
         justify-content: center;
+      }
+
+      .followup-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .followup-actions button {
+        border-radius: 999px;
+        font-size: 9px;
+        padding: 6px 9px;
       }
 
       .followup-grid {
@@ -1638,6 +1655,12 @@
         white-space: pre-wrap;
         font-size: 10px;
         line-height: 1.4;
+      }
+
+      .followup-job-meta {
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
       }
 
       .chat-view {
@@ -2885,18 +2908,30 @@
                     <div class="followup-panel-head">
                       <div class="followup-title">
                         <strong>Follow-up Autopilot</strong>
-                        <span>Пока безопасный режим: считаем, кому пора напомнить, и готовим черновик. Живую отправку включим отдельно.</span>
+                        <span>Очередь мягких напоминаний: черновики, ручная отправка, автоотправка и повторные продажи под контролем тумблеров.</span>
                       </div>
                       <div class="followup-controls">
                         <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"> Главный тумблер</label>
+                        <label class="followup-toggle"><input id="followupWorkerEnabled" type="checkbox"> Готовить черновики</label>
+                        <label class="followup-toggle"><input id="followupAutoSendEnabled" type="checkbox"> Автоотправка</label>
                         <select id="followupMode" class="mini-input followup-mode-select">
                           <option value="off">Выключено</option>
                           <option value="drafts">Черновики</option>
                           <option value="auto">Авто</option>
                         </select>
+                        <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
+                      </div>
+                      <div class="followup-controls secondary">
                         <label class="followup-toggle followup-time-group">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
                         <label class="followup-toggle followup-interval-group">Мин. интервал <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1"> ч</label>
-                        <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
+                        <label class="followup-toggle followup-interval-group">Лимит в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
+                        <label class="followup-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"> Повторные продажи</label>
+                      </div>
+                      <div class="followup-controls secondary">
+                        <label class="followup-toggle followup-interval-group">Повтор через <input id="followupRepeatSalesDays" class="mini-input" type="number" min="1" step="1"> дн</label>
+                        <label class="followup-toggle followup-interval-group">Проверка каждые <input id="followupWorkerIntervalSeconds" class="mini-input" type="number" min="60" step="60"> сек</label>
+                        <button id="runFollowupNow" class="button-secondary" type="button">Проверить сейчас</button>
+                        <span class="followup-toggle">Авто пишет только если включены все тумблеры</span>
                       </div>
                     </div>
                     <div class="followup-grid">
@@ -3087,10 +3122,17 @@
       const inboxResizeHandle = document.getElementById('inboxResizeHandle');
       const inboxFilters = document.getElementById('inboxFilters');
       const followupMasterEnabled = document.getElementById('followupMasterEnabled');
+      const followupWorkerEnabled = document.getElementById('followupWorkerEnabled');
+      const followupAutoSendEnabled = document.getElementById('followupAutoSendEnabled');
+      const followupRepeatSalesEnabled = document.getElementById('followupRepeatSalesEnabled');
       const followupMode = document.getElementById('followupMode');
       const followupQuietStart = document.getElementById('followupQuietStart');
       const followupQuietEnd = document.getElementById('followupQuietEnd');
       const followupMinIntervalHours = document.getElementById('followupMinIntervalHours');
+      const followupDailyLimit = document.getElementById('followupDailyLimit');
+      const followupRepeatSalesDays = document.getElementById('followupRepeatSalesDays');
+      const followupWorkerIntervalSeconds = document.getElementById('followupWorkerIntervalSeconds');
+      const runFollowupNowButton = document.getElementById('runFollowupNow');
       const followupWaitDataEnabled = document.getElementById('followupWaitDataEnabled');
       const followupWaitDataHours = document.getElementById('followupWaitDataHours');
       const followupWaitDataMax = document.getElementById('followupWaitDataMax');
@@ -3245,6 +3287,18 @@
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: UI_TIME_ZONE,
+        });
+      }
+
+      function formatShortDate(value) {
+        const date = value ? new Date(value) : null;
+        if (!date || Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
           hour: '2-digit',
           minute: '2-digit',
           timeZone: UI_TIME_ZONE,
@@ -3419,9 +3473,12 @@
 
       function renderFollowupCard(chat) {
         const followup = chat.followup || {};
+        const job = chat.followupJob || {};
         const status = chat.status || {};
         const blocked = Array.isArray(followup.blocked) ? followup.blocked : [];
         const modeText = followup.mode === 'auto' ? 'авто' : followup.mode === 'drafts' ? 'черновики' : 'выключено';
+        const draft = job.draftText || followup.draft || '';
+        const jobState = job.state ? `Черновик: ${job.state}` : 'Черновик ещё не создан';
         return `
           <div class="followup-card">
             <div class="followup-card-title">
@@ -3433,7 +3490,13 @@
               <span>Простой: ${escapeHtml(followup.idleLabel || '—')}</span>
               <span>Режим: ${escapeHtml(modeText)}</span>
             </div>
-            ${followup.draft ? `<div class="followup-draft">${escapeHtml(followup.draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
+            <div class="followup-job-meta">${escapeHtml(jobState)}${job.updatedAt ? ' · обновлён ' + escapeHtml(formatShortDate(job.updatedAt)) : ''}</div>
+            ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
+            <div class="followup-actions">
+              <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Создать черновик</button>
+              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить</button>` : ''}
+              ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Пропустить</button>` : ''}
+            </div>
             ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(blocked.join(' · '))}</div>` : ''}
           </div>
         `;
@@ -4243,10 +4306,16 @@
         sttBaseUrl.value = data.stt_base_url || 'https://api.openai.com/v1';
         sttModel.value = data.stt_model || 'gpt-4o-mini-transcribe';
         followupMasterEnabled.checked = data.followup_master_enabled === true;
+        followupWorkerEnabled.checked = data.followup_worker_enabled === true;
+        followupAutoSendEnabled.checked = data.followup_auto_send_enabled === true;
+        followupRepeatSalesEnabled.checked = data.followup_repeat_sales_enabled === true;
         followupMode.value = data.followup_mode || 'off';
         followupQuietStart.value = data.followup_quiet_start || '22:00';
         followupQuietEnd.value = data.followup_quiet_end || '10:00';
         followupMinIntervalHours.value = data.followup_min_interval_hours || '24';
+        followupDailyLimit.value = data.followup_daily_limit || '20';
+        followupRepeatSalesDays.value = data.followup_repeat_sales_days || '30';
+        followupWorkerIntervalSeconds.value = data.followup_worker_interval_seconds || '300';
         followupWaitDataEnabled.checked = data.followup_wait_data_enabled !== false;
         followupWaitDataHours.value = data.followup_wait_data_hours || '2';
         followupWaitDataMax.value = data.followup_wait_data_max || '2';
@@ -4533,10 +4602,16 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               followup_master_enabled: followupMasterEnabled.checked,
+              followup_worker_enabled: followupWorkerEnabled.checked,
+              followup_auto_send_enabled: followupAutoSendEnabled.checked,
+              followup_repeat_sales_enabled: followupRepeatSalesEnabled.checked,
               followup_mode: followupMode.value,
               followup_quiet_start: followupQuietStart.value,
               followup_quiet_end: followupQuietEnd.value,
               followup_min_interval_hours: followupMinIntervalHours.value,
+              followup_daily_limit: followupDailyLimit.value,
+              followup_repeat_sales_days: followupRepeatSalesDays.value,
+              followup_worker_interval_seconds: followupWorkerIntervalSeconds.value,
               followup_wait_data_enabled: followupWaitDataEnabled.checked,
               followup_wait_data_hours: followupWaitDataHours.value,
               followup_wait_data_max: followupWaitDataMax.value,
@@ -4557,6 +4632,47 @@
           await loadStatus();
           if (views.inbox.classList.contains('active')) await loadInbox();
         });
+      }
+
+      async function runFollowupNow() {
+        await performSave(runFollowupNowButton, async () => {
+          await fetchJSON('/followups/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ forceDrafts: false }),
+          });
+          await loadInbox();
+        });
+      }
+
+      async function generateFollowupDraft(chatId) {
+        if (!chatId) return;
+        await fetchJSON('/followups/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId }),
+        });
+        await loadInbox();
+      }
+
+      async function sendFollowupDraft(jobId) {
+        if (!jobId) return;
+        await fetchJSON(`/followups/${encodeURIComponent(jobId)}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ forceManual: false }),
+        });
+        await loadInbox();
+      }
+
+      async function skipFollowupDraft(jobId) {
+        if (!jobId) return;
+        await fetchJSON(`/followups/${encodeURIComponent(jobId)}/skip`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Пропущено из Inbox' }),
+        });
+        await loadInbox();
       }
 
       async function savePayment() {
@@ -5064,10 +5180,16 @@
       bindDirtyState(saveIntegrationsModelButton, [integrationsModelSelect]);
       bindDirtyState(saveFollowupSettingsButton, [
         followupMasterEnabled,
+        followupWorkerEnabled,
+        followupAutoSendEnabled,
+        followupRepeatSalesEnabled,
         followupMode,
         followupQuietStart,
         followupQuietEnd,
         followupMinIntervalHours,
+        followupDailyLimit,
+        followupRepeatSalesDays,
+        followupWorkerIntervalSeconds,
         followupWaitDataEnabled,
         followupWaitDataHours,
         followupWaitDataMax,
@@ -5114,6 +5236,7 @@
       document.getElementById('reloadIntegrationModels').addEventListener('click', () => loadModelsInto(integrationsModelSelect));
       document.getElementById('deleteModel').addEventListener('click', deleteModelConfig);
       saveFollowupSettingsButton.addEventListener('click', saveFollowupSettings);
+      runFollowupNowButton.addEventListener('click', runFollowupNow);
       refreshInboxButton.addEventListener('click', loadInbox);
       document.getElementById('refreshLogs').addEventListener('click', loadLogs);
       document.getElementById('clearLogs').addEventListener('click', clearLogs);
@@ -5129,6 +5252,22 @@
         if (!chat) return;
         currentInboxChatId = chat.dataset.chatId || '';
         loadInbox();
+      });
+
+      inboxThread.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-followup-action]');
+        if (!button) return;
+        const action = button.dataset.followupAction || '';
+        button.disabled = true;
+        try {
+          if (action === 'generate') await generateFollowupDraft(button.dataset.chatId || currentInboxChatId);
+          if (action === 'send') await sendFollowupDraft(button.dataset.jobId);
+          if (action === 'skip') await skipFollowupDraft(button.dataset.jobId);
+        } catch (error) {
+          showToast(error.message || 'Не удалось выполнить действие', 'error');
+        } finally {
+          button.disabled = false;
+        }
       });
 
       inboxFilters.addEventListener('click', (event) => {

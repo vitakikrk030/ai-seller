@@ -217,10 +217,16 @@ const runtimeConfig = {
   delivery_bold_mode: process.env.DELIVERY_BOLD_MODE || 'off',
   delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || '',
   followup_master_enabled: process.env.FOLLOWUP_MASTER_ENABLED === 'true',
+  followup_worker_enabled: process.env.FOLLOWUP_WORKER_ENABLED === 'true',
+  followup_auto_send_enabled: process.env.FOLLOWUP_AUTO_SEND_ENABLED === 'true',
+  followup_repeat_sales_enabled: process.env.FOLLOWUP_REPEAT_SALES_ENABLED === 'true',
   followup_mode: process.env.FOLLOWUP_MODE || 'off',
   followup_quiet_start: process.env.FOLLOWUP_QUIET_START || '22:00',
   followup_quiet_end: process.env.FOLLOWUP_QUIET_END || '10:00',
   followup_min_interval_hours: process.env.FOLLOWUP_MIN_INTERVAL_HOURS || '24',
+  followup_daily_limit: process.env.FOLLOWUP_DAILY_LIMIT || '20',
+  followup_repeat_sales_days: process.env.FOLLOWUP_REPEAT_SALES_DAYS || '30',
+  followup_worker_interval_seconds: process.env.FOLLOWUP_WORKER_INTERVAL_SECONDS || '300',
   followup_wait_data_enabled: process.env.FOLLOWUP_WAIT_DATA_ENABLED !== 'false',
   followup_wait_data_hours: process.env.FOLLOWUP_WAIT_DATA_HOURS || '2',
   followup_wait_data_max: process.env.FOLLOWUP_WAIT_DATA_MAX || '2',
@@ -598,6 +604,20 @@ function getBusinessConnectionById(id) {
   const dbConnection = safeCustomerStoreCall('customer.business_connection.get', (store) => store.getBusinessConnection(cleanId));
   if (dbConnection) return dbConnection;
   return cleanId ? memoryStore.businessConnections[cleanId] || null : null;
+}
+
+function getBusinessConnectionByUserChatId(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return null;
+  const dbConnection = safeCustomerStoreCall('customer.business_connection.get_by_chat', (store) => (
+    typeof store.getBusinessConnectionByUserChatId === 'function'
+      ? store.getBusinessConnectionByUserChatId(cleanChatId)
+      : null
+  ));
+  if (dbConnection) return dbConnection;
+  return Object.values(memoryStore.businessConnections || {})
+    .filter((connection) => String(connection.userChatId || '') === cleanChatId && connection.isEnabled !== false)
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
 }
 
 function setDialogAiMode(chatId, mode, source = '') {
@@ -2450,10 +2470,16 @@ function getRuntimeSnapshot() {
     delivery_bold_mode: runtimeConfig.delivery_bold_mode,
     delivery_example_text: runtimeConfig.delivery_example_text,
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
+    followup_worker_enabled: parseConfigBoolean(runtimeConfig.followup_worker_enabled, false),
+    followup_auto_send_enabled: parseConfigBoolean(runtimeConfig.followup_auto_send_enabled, false),
+    followup_repeat_sales_enabled: parseConfigBoolean(runtimeConfig.followup_repeat_sales_enabled, false),
     followup_mode: runtimeConfig.followup_mode,
     followup_quiet_start: runtimeConfig.followup_quiet_start,
     followup_quiet_end: runtimeConfig.followup_quiet_end,
     followup_min_interval_hours: runtimeConfig.followup_min_interval_hours,
+    followup_daily_limit: runtimeConfig.followup_daily_limit,
+    followup_repeat_sales_days: runtimeConfig.followup_repeat_sales_days,
+    followup_worker_interval_seconds: runtimeConfig.followup_worker_interval_seconds,
     followup_wait_data_enabled: parseConfigBoolean(runtimeConfig.followup_wait_data_enabled, true),
     followup_wait_data_hours: runtimeConfig.followup_wait_data_hours,
     followup_wait_data_max: runtimeConfig.followup_wait_data_max,
@@ -2681,6 +2707,9 @@ function applyConfigUpdate(body) {
 
   [
     ['followup_master_enabled', 'FOLLOWUP_MASTER_ENABLED', false],
+    ['followup_worker_enabled', 'FOLLOWUP_WORKER_ENABLED', false],
+    ['followup_auto_send_enabled', 'FOLLOWUP_AUTO_SEND_ENABLED', false],
+    ['followup_repeat_sales_enabled', 'FOLLOWUP_REPEAT_SALES_ENABLED', false],
     ['followup_wait_data_enabled', 'FOLLOWUP_WAIT_DATA_ENABLED', true],
     ['followup_wait_payment_enabled', 'FOLLOWUP_WAIT_PAYMENT_ENABLED', true],
     ['followup_wait_receipt_enabled', 'FOLLOWUP_WAIT_RECEIPT_ENABLED', true],
@@ -2692,6 +2721,9 @@ function applyConfigUpdate(body) {
     ['followup_quiet_start', 'FOLLOWUP_QUIET_START', '22:00'],
     ['followup_quiet_end', 'FOLLOWUP_QUIET_END', '10:00'],
     ['followup_min_interval_hours', 'FOLLOWUP_MIN_INTERVAL_HOURS', '24'],
+    ['followup_daily_limit', 'FOLLOWUP_DAILY_LIMIT', '20'],
+    ['followup_repeat_sales_days', 'FOLLOWUP_REPEAT_SALES_DAYS', '30'],
+    ['followup_worker_interval_seconds', 'FOLLOWUP_WORKER_INTERVAL_SECONDS', '300'],
     ['followup_wait_data_hours', 'FOLLOWUP_WAIT_DATA_HOURS', '2'],
     ['followup_wait_data_max', 'FOLLOWUP_WAIT_DATA_MAX', '2'],
     ['followup_wait_payment_hours', 'FOLLOWUP_WAIT_PAYMENT_HOURS', '3'],
@@ -5153,10 +5185,16 @@ app.get('/config/status', async (req, res) => {
     delivery_bold_mode: runtimeConfig.delivery_bold_mode || 'off',
     delivery_example_text: runtimeConfig.delivery_example_text || '',
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
+    followup_worker_enabled: parseConfigBoolean(runtimeConfig.followup_worker_enabled, false),
+    followup_auto_send_enabled: parseConfigBoolean(runtimeConfig.followup_auto_send_enabled, false),
+    followup_repeat_sales_enabled: parseConfigBoolean(runtimeConfig.followup_repeat_sales_enabled, false),
     followup_mode: runtimeConfig.followup_mode || 'off',
     followup_quiet_start: runtimeConfig.followup_quiet_start || '22:00',
     followup_quiet_end: runtimeConfig.followup_quiet_end || '10:00',
     followup_min_interval_hours: runtimeConfig.followup_min_interval_hours || '24',
+    followup_daily_limit: runtimeConfig.followup_daily_limit || '20',
+    followup_repeat_sales_days: runtimeConfig.followup_repeat_sales_days || '30',
+    followup_worker_interval_seconds: runtimeConfig.followup_worker_interval_seconds || '300',
     followup_wait_data_enabled: parseConfigBoolean(runtimeConfig.followup_wait_data_enabled, true),
     followup_wait_data_hours: runtimeConfig.followup_wait_data_hours || '2',
     followup_wait_data_max: runtimeConfig.followup_wait_data_max || '2',
@@ -5464,18 +5502,372 @@ function buildInboxFollowup(profile = {}, status = {}, config = runtimeConfig) {
   };
 }
 
+function getFollowupMode(config = runtimeConfig) {
+  return ['off', 'drafts', 'auto'].includes(config.followup_mode) ? config.followup_mode : 'off';
+}
+
+function getLastClientAndOutgoing(profile = {}) {
+  const messages = Array.isArray(profile.recentMessages) ? profile.recentMessages : [];
+  return {
+    lastClient: getLastMessageByRole(messages, ['user']),
+    lastOutgoing: getLastMessageByRole(messages, ['assistant', 'manager']),
+  };
+}
+
+function isWithinQuietHours(config = runtimeConfig, now = new Date()) {
+  const toMinutes = (value, fallback) => {
+    const match = String(value || fallback).match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return toMinutes(fallback, '00:00');
+    return Math.max(0, Math.min(1439, Number(match[1]) * 60 + Number(match[2])));
+  };
+  const start = toMinutes(config.followup_quiet_start, '22:00');
+  const end = toMinutes(config.followup_quiet_end, '10:00');
+  const current = now.getHours() * 60 + now.getMinutes();
+  if (start === end) return false;
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
+function addHoursIso(dateValue, hours) {
+  const base = dateValue ? new Date(dateValue) : new Date();
+  const safeBase = Number.isNaN(base.getTime()) ? new Date() : base;
+  return new Date(safeBase.getTime() + (Number(hours) || 0) * 3600000).toISOString();
+}
+
+function shouldOfferRepeatSale(profile = {}, config = runtimeConfig) {
+  if (!parseConfigBoolean(config.followup_repeat_sales_enabled, false)) return false;
+  const money = buildInboxMoneyStats(profile.orders || []);
+  if (!money.confirmedOrdersCount) return false;
+  const status = detectInboxStatus(profile);
+  if (!['paid', 'closed', 'new'].includes(status.key)) return false;
+  const messages = Array.isArray(profile.recentMessages) ? profile.recentMessages : [];
+  const lastAny = messages[messages.length - 1] || null;
+  const idleHours = hoursBetweenNow(lastAny?.createdAt || profile.customer?.lastSeenAt);
+  const days = Math.max(1, Number(config.followup_repeat_sales_days) || 30);
+  return idleHours !== null && idleHours >= days * 24;
+}
+
+function buildRepeatSaleStatus(profile = {}, config = runtimeConfig) {
+  const days = Math.max(1, Number(config.followup_repeat_sales_days) || 30);
+  return {
+    key: 'repeat_sale',
+    label: 'Повторная продажа',
+    tone: 'good',
+    reason: `клиент уже покупал, можно мягко предложить новинки через ${days} дн.`,
+  };
+}
+
+function buildRepeatSaleDraft(profile = {}) {
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const name = facts.firstName?.value || profile.customer?.firstName || '';
+  const size = facts.shoeSize?.value || order.size || '';
+  const appeal = name ? `${name}, ` : '';
+  const sizeText = size ? `в вашем размере ${size}` : 'под ваш размер';
+  return `${appeal}если актуально, могу показать свежие варианты ${sizeText}. По стилю подберу близко к тому, что вы уже смотрели/брали.`;
+}
+
+function buildFollowupDraft(profile = {}, status = {}, kind = 'order_followup') {
+  if (kind === 'repeat_sale' || status.key === 'repeat_sale') return buildRepeatSaleDraft(profile);
+  return buildInboxDraft(profile, status);
+}
+
+function buildFollowupJobCandidate(profile = {}, config = runtimeConfig) {
+  let status = detectInboxStatus(profile);
+  let kind = 'order_followup';
+  let rule = getInboxRuleConfig(status.key, config);
+  const followup = buildInboxFollowup(profile, status, config);
+
+  if ((!rule || !followup.dueByTime) && shouldOfferRepeatSale(profile, config)) {
+    status = buildRepeatSaleStatus(profile, config);
+    kind = 'repeat_sale';
+    rule = {
+      enabled: true,
+      hours: Math.max(1, Number(config.followup_repeat_sales_days) || 30) * 24,
+      maxTouches: 1,
+    };
+  }
+
+  const { lastClient, lastOutgoing } = getLastClientAndOutgoing(profile);
+  const anchorTime = lastClient?.createdAt || profile.customer?.lastSeenAt || profile.customer?.updatedAt || '';
+  const dueAt = addHoursIso(anchorTime, rule?.hours || 1);
+  const draftText = buildFollowupDraft(profile, status, kind);
+
+  return {
+    profile,
+    status,
+    kind,
+    rule,
+    followup: buildInboxFollowup(profile, status, config),
+    draftText,
+    dueAt,
+    lastClient,
+    lastOutgoing,
+  };
+}
+
+function buildFollowupSafety(candidate = {}, config = runtimeConfig, job = null, action = 'prepare') {
+  const blocked = [];
+  const mode = getFollowupMode(config);
+  const statusKey = candidate.status?.key || '';
+  const rule = candidate.rule || getInboxRuleConfig(statusKey, config);
+  const lastOutgoingHours = hoursBetweenNow(candidate.lastOutgoing?.createdAt);
+  const minInterval = Math.max(0, Number(config.followup_min_interval_hours) || 24);
+  const profile = candidate.profile || {};
+
+  if (!parseConfigBoolean(config.followup_master_enabled, false)) blocked.push('главный тумблер выключен');
+  if (!parseConfigBoolean(config.followup_worker_enabled, false)) blocked.push('автоматика Inbox выключена');
+  if (mode === 'off') blocked.push('режим follow-up выключен');
+  if (action === 'auto_send' && !parseConfigBoolean(config.followup_auto_send_enabled, false)) blocked.push('автоотправка выключена отдельным тумблером');
+  if (!rule) blocked.push('для статуса нет правила');
+  if (rule && !rule.enabled) blocked.push('правило статуса выключено');
+  if (profile.state?.aiMode === 'passive_manager') blocked.push('диалог ведёт менеджер вручную');
+  if (['paid', 'closed', 'manager', 'new'].includes(statusKey) && candidate.kind !== 'repeat_sale') blocked.push('статус не требует напоминания');
+  if (!candidate.draftText) blocked.push('нет текста черновика');
+  if (lastOutgoingHours !== null && lastOutgoingHours < minInterval) blocked.push(`последнее исходящее было ${lastOutgoingHours.toFixed(1)} ч назад`);
+  if (action === 'auto_send' && isWithinQuietHours(config)) blocked.push('сейчас тихие часы');
+  if (action === 'auto_send') {
+    const today = new Date().toISOString().slice(0, 10);
+    const sentToday = (safeCustomerStoreCall('followup.jobs.daily_limit', (store) => store.listFollowupJobs({ limit: 500 })) || [])
+      .filter((item) => String(item.sentAt || '').startsWith(today)).length;
+    const dailyLimit = Math.max(1, Number(config.followup_daily_limit) || 20);
+    if (sentToday >= dailyLimit) blocked.push(`дневной лимит ${dailyLimit} уже достигнут`);
+  }
+  if (job?.lastClientMessageAt && candidate.lastClient?.createdAt && job.lastClientMessageAt !== candidate.lastClient.createdAt) {
+    blocked.push('клиент уже ответил после создания черновика');
+  }
+  if (job && Number(job.attempts || 0) >= Math.max(1, Number(job.maxAttempts || rule?.maxTouches) || 1)) {
+    blocked.push('лимит касаний исчерпан');
+  }
+
+  return {
+    ok: blocked.length === 0,
+    blocked,
+    mode,
+    rule,
+  };
+}
+
+async function generateFollowupDraftWithAi(candidate = {}, config = runtimeConfig) {
+  const fallback = candidate.draftText || buildFollowupDraft(candidate.profile, candidate.status, candidate.kind);
+  if (!config.ai_key || !config.ai_url || !config.model) return fallback;
+
+  const profile = candidate.profile || {};
+  const money = buildInboxMoneyStats(profile.orders || []);
+  const messages = (profile.recentMessages || []).slice(-8).map((message) => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: message.text,
+  }));
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const prompt = [
+    'Сгенерируй один короткий follow-up для клиента IWAK.',
+    'Это НЕ массовая рассылка. Пиши как живой менеджер, мягко, без давления.',
+    'Не выдумывай товары, цены, скидки, сроки, реквизиты.',
+    'Если это повторная продажа — предложи показать варианты под размер/стиль, без конкретных моделей.',
+    'Если это незавершенный заказ — дай один понятный следующий шаг.',
+    'Не пиши ночью, не упоминай автоматику и AI.',
+    '',
+    `Статус: ${candidate.status?.label || candidate.status?.key || '—'}`,
+    `Причина: ${candidate.status?.reason || ''}`,
+    `Имя: ${facts.firstName?.value || profile.customer?.firstName || ''}`,
+    `Размер: ${facts.shoeSize?.value || order.size || ''}`,
+    `Последний товар: ${facts.lastProduct?.value || order.product || ''}`,
+    `Потратил: ${money.confirmedSpendLabel}`,
+    `Заказов: ${money.confirmedOrdersCount}`,
+  ].filter(Boolean).join('\n');
+
+  const reply = await requestAi({
+    traceId: createTraceId(),
+    chatId: `followup:${profile.customer?.chatId || 'unknown'}`,
+    userId: 'followup',
+    messageType: 'followup_draft',
+    updateType: 'followup',
+    text: prompt,
+    images: [],
+    hasMedia: false,
+    hasLinkInput: false,
+    config,
+    memoryContext: {
+      summary: profile.summary || '',
+      history: messages,
+      facts,
+      state: profile.state || null,
+    },
+  });
+
+  return normalizeMemoryText(finalizeAiReply({ messageType: 'followup_draft', config }, reply || '') || fallback).slice(0, 900);
+}
+
+async function prepareFollowupJob(profile = {}, config = runtimeConfig, options = {}) {
+  const candidate = buildFollowupJobCandidate(profile, config);
+  const chatId = profile.customer?.chatId || '';
+  const existing = safeCustomerStoreCall('followup.job.get_open', (store) => store.getOpenFollowupJobByChat(chatId));
+  const safety = buildFollowupSafety(candidate, config, existing, 'prepare');
+  const shouldForce = options.force === true;
+  const dueTimeReached = !candidate.dueAt || new Date(candidate.dueAt).getTime() <= Date.now();
+  if (!shouldForce && (!safety.ok || !dueTimeReached)) {
+    return { job: existing, candidate, safety, created: false };
+  }
+
+  const draftText = await generateFollowupDraftWithAi(candidate, config);
+  const job = safeCustomerStoreCall('followup.job.upsert', (store) => store.upsertFollowupJob({
+    id: existing?.id,
+    chatId,
+    userId: profile.customer?.userId || chatId,
+    kind: candidate.kind,
+    statusKey: candidate.status.key,
+    statusLabel: candidate.status.label,
+    mode: getFollowupMode(config),
+    state: safety.ok ? 'ready' : 'blocked',
+    draftText,
+    reason: candidate.status.reason || '',
+    dueAt: candidate.dueAt,
+    attempts: existing?.attempts || 0,
+    maxAttempts: candidate.rule?.maxTouches || existing?.maxAttempts || 1,
+    lastClientMessageAt: candidate.lastClient?.createdAt || '',
+    lastOutgoingMessageAt: candidate.lastOutgoing?.createdAt || '',
+    safety,
+  }));
+
+  safeCustomerStoreCall('followup.event.prepare', (store) => store.insertFollowupEvent({
+    jobId: job?.id,
+    customerId: job?.customerId,
+    chatId,
+    event: safety.ok ? 'DRAFT_READY' : 'DRAFT_BLOCKED',
+    message: draftText,
+    metadata: { statusKey: candidate.status.key, blocked: safety.blocked },
+  }));
+  logEvent(safety.ok ? 'FOLLOWUP_DRAFT_READY' : 'FOLLOWUP_DRAFT_BLOCKED', {
+    chatId,
+    jobId: job?.id || '',
+    statusKey: candidate.status.key,
+    blocked: safety.blocked,
+    status: safety.ok ? 'ok' : 'process',
+  });
+  return { job, candidate, safety, created: true };
+}
+
+async function sendFollowupJob(jobId, options = {}) {
+  const config = getRuntimeSnapshot();
+  const job = safeCustomerStoreCall('followup.job.get', (store) => store.getFollowupJob(jobId));
+  if (!job) return { ok: false, error: 'Черновик не найден' };
+  const profile = safeCustomerStoreCall('followup.profile.get', (store) => store.getCustomerProfile(job.chatId));
+  if (!profile) return { ok: false, error: 'Клиент не найден' };
+
+  const candidate = buildFollowupJobCandidate(profile, config);
+  candidate.draftText = job.draftText || candidate.draftText;
+  const action = options.auto ? 'auto_send' : 'manual_send';
+  const safety = buildFollowupSafety(candidate, config, job, action);
+  if (!safety.ok && !options.forceManual) {
+    safeCustomerStoreCall('followup.event.blocked_send', (store) => store.insertFollowupEvent({
+      jobId: job.id,
+      customerId: job.customerId,
+      chatId: job.chatId,
+      event: 'SEND_BLOCKED',
+      message: safety.blocked.join(' · '),
+      metadata: safety,
+    }));
+    return { ok: false, error: safety.blocked.join(' · '), safety };
+  }
+
+  const connection = getBusinessConnectionByUserChatId(job.chatId);
+  const context = {
+    traceId: createTraceId(),
+    chatId: job.chatId,
+    userId: profile.customer?.userId || job.chatId,
+    updateType: 'followup',
+    messageType: 'followup',
+    businessConnectionId: connection?.id || '',
+    useReply: false,
+  };
+  const sent = await sendTelegramMessage(config, context, job.draftText);
+  if (!sent) return { ok: false, error: 'Telegram не принял сообщение' };
+
+  appendMemoryMessage(context, 'assistant', job.draftText);
+  const updated = safeCustomerStoreCall('followup.job.sent', (store) => store.upsertFollowupJob({
+    ...job,
+    chatId: job.chatId,
+    userId: profile.customer?.userId || job.chatId,
+    state: 'sent',
+    sentAt: new Date().toISOString(),
+    attempts: Number(job.attempts || 0) + 1,
+    safety,
+  }));
+  safeCustomerStoreCall('followup.event.sent', (store) => store.insertFollowupEvent({
+    jobId: job.id,
+    customerId: job.customerId,
+    chatId: job.chatId,
+    event: options.auto ? 'AUTO_SENT' : 'MANUAL_SENT',
+    message: job.draftText,
+    metadata: { telegramMessageId: sent.message_id || '', businessConnectionId: context.businessConnectionId },
+  }));
+  logEvent(options.auto ? 'FOLLOWUP_AUTO_SENT' : 'FOLLOWUP_MANUAL_SENT', {
+    chatId: job.chatId,
+    jobId: job.id,
+    telegramMessageId: sent.message_id || '',
+    status: 'ok',
+  });
+  return { ok: true, job: updated || job, telegramMessageId: sent.message_id || '' };
+}
+
+async function runFollowupWorker(options = {}) {
+  const config = getRuntimeSnapshot();
+  const startedAt = Date.now();
+  const result = { scanned: 0, created: 0, sent: 0, blocked: 0, skipped: 0 };
+  if (!parseConfigBoolean(config.followup_master_enabled, false) || !parseConfigBoolean(config.followup_worker_enabled, false)) {
+    return { ...result, disabled: true };
+  }
+  const mode = getFollowupMode(config);
+  if (mode === 'off') return { ...result, disabled: true };
+
+  const profiles = safeCustomerStoreCall('followup.worker.inbox', (store) => store.getInboxCustomers({ limit: 300 })) || [];
+  for (const profile of profiles) {
+    result.scanned += 1;
+    try {
+      const prepared = await prepareFollowupJob(profile, config, { force: options.forceDrafts === true });
+      if (prepared.created) result.created += 1;
+      if (!prepared.safety?.ok) {
+        result.blocked += 1;
+        continue;
+      }
+      if (mode === 'auto' && parseConfigBoolean(config.followup_auto_send_enabled, false) && prepared.job?.id) {
+        const sent = await sendFollowupJob(prepared.job.id, { auto: true });
+        if (sent.ok) result.sent += 1;
+        else result.blocked += 1;
+      }
+    } catch (error) {
+      result.blocked += 1;
+      logEvent('ERROR', {
+        scope: 'followup.worker.profile',
+        chatId: profile.customer?.chatId || '',
+        status: 'error',
+        error: error.message,
+      });
+    }
+  }
+
+  logEvent('FOLLOWUP_WORKER_RUN', {
+    ...result,
+    duration: Date.now() - startedAt,
+    status: 'ok',
+  });
+  return result;
+}
+
 function buildInboxPayload(limit) {
   const rows = safeCustomerStoreCall('customer.inbox.list', (store) => store.getInboxCustomers({ limit })) || [];
   const items = rows.map((profile) => {
     const status = detectInboxStatus(profile);
     const money = buildInboxMoneyStats(profile.orders || []);
     const followup = buildInboxFollowup(profile, status);
+    const followupJob = safeCustomerStoreCall('followup.job.open', (store) => store.getOpenFollowupJobByChat(profile.customer?.chatId || ''));
     const lastMessage = (profile.recentMessages || [])[profile.recentMessages.length - 1] || null;
     return {
       ...profile,
       status,
       money,
       followup,
+      followupJob,
       lastMessage,
     };
   });
@@ -5488,9 +5880,90 @@ function buildInboxPayload(limit) {
   return { items, summary };
 }
 
+function startFollowupWorkerLoop() {
+  let stopped = false;
+  const tick = () => {
+    if (stopped) return;
+    runFollowupWorker().catch((error) => {
+      logEvent('ERROR', {
+        scope: 'followup.worker.loop',
+        status: 'error',
+        error: error.message,
+      });
+    }).finally(() => {
+      if (stopped) return;
+      const intervalSeconds = Math.max(60, Math.min(3600, Number(runtimeConfig.followup_worker_interval_seconds) || 300));
+      const timer = setTimeout(tick, intervalSeconds * 1000);
+      if (typeof timer.unref === 'function') timer.unref();
+    });
+  };
+  const firstTimer = setTimeout(tick, 10000);
+  if (typeof firstTimer.unref === 'function') firstTimer.unref();
+  return () => {
+    stopped = true;
+    clearTimeout(firstTimer);
+  };
+}
+
 app.get('/inbox', (req, res) => {
   const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200));
   res.json(buildInboxPayload(limit));
+});
+
+app.get('/followups', (req, res) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  const jobs = safeCustomerStoreCall('followup.jobs.list', (store) => store.listFollowupJobs({ limit })) || [];
+  res.json({ jobs });
+});
+
+app.post('/followups/run', async (req, res) => {
+  const result = await runFollowupWorker({ forceDrafts: req.body?.forceDrafts === true });
+  res.json({ ok: true, result });
+});
+
+app.post('/followups/generate', async (req, res) => {
+  const chatId = String(req.body?.chatId || '').trim();
+  if (!chatId) {
+    res.status(400).json({ ok: false, error: 'chatId is required' });
+    return;
+  }
+  const config = getRuntimeSnapshot();
+  const profile = safeCustomerStoreCall('followup.profile.generate', (store) => store.getCustomerProfile(chatId));
+  if (!profile) {
+    res.status(404).json({ ok: false, error: 'Клиент не найден' });
+    return;
+  }
+  const prepared = await prepareFollowupJob(profile, config, { force: true });
+  res.json({ ok: !!prepared.job, job: prepared.job, safety: prepared.safety });
+});
+
+app.post('/followups/:id/send', async (req, res) => {
+  const id = Number(req.params.id) || 0;
+  const result = await sendFollowupJob(id, { forceManual: req.body?.forceManual === true });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.post('/followups/:id/skip', (req, res) => {
+  const id = Number(req.params.id) || 0;
+  const job = safeCustomerStoreCall('followup.job.get_skip', (store) => store.getFollowupJob(id));
+  if (!job) {
+    res.status(404).json({ ok: false, error: 'Черновик не найден' });
+    return;
+  }
+  const updated = safeCustomerStoreCall('followup.job.skip', (store) => store.upsertFollowupJob({
+    ...job,
+    chatId: job.chatId,
+    state: 'skipped',
+    skippedAt: new Date().toISOString(),
+  }));
+  safeCustomerStoreCall('followup.event.skip', (store) => store.insertFollowupEvent({
+    jobId: job.id,
+    customerId: job.customerId,
+    chatId: job.chatId,
+    event: 'SKIPPED',
+    message: req.body?.reason || 'Пропущено вручную',
+  }));
+  res.json({ ok: true, job: updated });
 });
 
 app.get('/memory/:chatId', (req, res) => {
@@ -6136,6 +6609,7 @@ server.headersTimeout = 22000;
 server.keepAliveTimeout = 5000;
 
 console.log(`[BOOT] S.AI listening on http://${HOST}:${PORT}`);
+startFollowupWorkerLoop();
 
 process.on('unhandledRejection', (error) => {
   markSaiRuntimeError('process.unhandledRejection', error && error.message ? error.message : String(error));
