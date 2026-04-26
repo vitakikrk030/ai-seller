@@ -1308,7 +1308,7 @@
 
       .followup-daily-panel {
         display: grid;
-        grid-template-columns: minmax(190px, 230px) minmax(260px, 1fr) minmax(260px, 1fr) minmax(300px, 1.15fr);
+        grid-template-columns: minmax(190px, 230px) minmax(240px, 1fr) minmax(260px, 1fr);
         gap: 8px;
         align-items: center;
       }
@@ -1335,6 +1335,11 @@
         justify-content: center;
       }
 
+      .followup-wide-toggle {
+        grid-column: 1 / -1;
+        width: 100%;
+      }
+
       .followup-advanced {
         border: 1px solid var(--border);
         border-radius: 16px;
@@ -1345,9 +1350,9 @@
       .followup-advanced summary {
         list-style: none;
         cursor: pointer;
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(180px, max-content) 1fr;
         align-items: center;
-        justify-content: space-between;
         gap: 10px;
         padding: 10px 12px;
         color: var(--text);
@@ -1363,6 +1368,7 @@
         color: var(--muted);
         font-size: 8px;
         font-weight: 520;
+        text-align: right;
       }
 
       .followup-advanced-body {
@@ -1493,6 +1499,7 @@
         min-width: 0;
         white-space: normal;
         overflow: visible;
+        width: 100%;
       }
 
       .followup-toggle input {
@@ -3147,7 +3154,7 @@
                         <button id="runFollowupNow" class="button-secondary" type="button">Проверить клиентов сейчас</button>
                         <label class="followup-toggle followup-time-group">Не писать ночью <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
                         <label class="followup-toggle followup-interval-group">Лимит авто-сообщений в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
-                        <label class="followup-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"><span class="followup-toggle-text">Повторные предложения старым клиентам</span></label>
+                        <label class="followup-toggle followup-wide-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"><span class="followup-toggle-text">Повторные предложения старым клиентам</span></label>
                       </div>
                       <details class="followup-advanced">
                         <summary>
@@ -3777,9 +3784,25 @@
               ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить</button>` : ''}
               ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Пропустить</button>` : ''}
             </div>
-            ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(blocked.join(' · '))}</div>` : ''}
+            ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
           </div>
         `;
+      }
+
+      function formatFollowupBlocks(blocked) {
+        return blocked.map((item) => {
+          const text = String(item || '');
+          const outgoingMatch = text.match(/последнее исходящее было ([\d.]+) ч назад/i);
+          if (outgoingMatch) {
+            const hours = Number(outgoingMatch[1]);
+            if (Number.isFinite(hours)) {
+              if (hours < 0.05) return 'Рано напоминать: мы только что писали клиенту';
+              if (hours < 1) return `Рано напоминать: мы писали клиенту примерно ${Math.max(1, Math.round(hours * 60))} мин назад`;
+              return `Рано напоминать: мы писали клиенту примерно ${hours.toFixed(1)} ч назад`;
+            }
+          }
+          return text;
+        }).join(' · ');
       }
 
       function getMemoryValue(memory, key) {
@@ -4946,7 +4969,7 @@
         const result = await fetchJSON(`/followups/${encodeURIComponent(jobId)}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ forceManual: false }),
+          body: JSON.stringify({ forceManual: true }),
         });
         await loadInbox();
         return result;

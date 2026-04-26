@@ -3096,6 +3096,12 @@ function parseConfigBoolean(value, fallback = true) {
   return fallback;
 }
 
+function parseConfigNumber(value, fallback = 0) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function normalizeReplyMode(value) {
   return ['smart', 'last', 'media', 'off'].includes(value) ? value : 'smart';
 }
@@ -5469,7 +5475,7 @@ function buildInboxFollowup(profile = {}, status = {}, config = runtimeConfig) {
   const anchorTime = lastClient?.createdAt || profile.customer?.lastSeenAt || profile.customer?.updatedAt || '';
   const idleHours = hoursBetweenNow(anchorTime);
   const lastOutgoingHours = hoursBetweenNow(lastOutgoing?.createdAt);
-  const minInterval = Math.max(0, Number(config.followup_min_interval_hours) || 24);
+  const minInterval = Math.max(0, parseConfigNumber(config.followup_min_interval_hours, 24));
   const blocked = [];
 
   if (!masterEnabled) blocked.push('главный тумблер автоматики выключен');
@@ -5611,7 +5617,7 @@ function buildFollowupSafety(candidate = {}, config = runtimeConfig, job = null,
   const statusKey = candidate.status?.key || '';
   const rule = candidate.rule || getInboxRuleConfig(statusKey, config);
   const lastOutgoingHours = hoursBetweenNow(candidate.lastOutgoing?.createdAt);
-  const minInterval = Math.max(0, Number(config.followup_min_interval_hours) || 24);
+  const minInterval = Math.max(0, parseConfigNumber(config.followup_min_interval_hours, 24));
   const profile = candidate.profile || {};
 
   if (!parseConfigBoolean(config.followup_master_enabled, false)) blocked.push('главный тумблер выключен');
