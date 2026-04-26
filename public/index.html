@@ -1294,8 +1294,53 @@
         width: 100%;
       }
 
+      .followup-main-switches {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(190px, 1fr)) minmax(150px, 210px) minmax(110px, 130px);
+        gap: 8px;
+        align-items: stretch;
+        width: 100%;
+      }
+
       .followup-controls.secondary {
         grid-template-columns: repeat(4, minmax(150px, 1fr));
+      }
+
+      .followup-switch-card {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 84%, transparent);
+        border-radius: 16px;
+        padding: 8px 10px;
+        min-width: 0;
+        min-height: 44px;
+      }
+
+      .followup-switch-card input {
+        accent-color: var(--accent);
+        width: 16px;
+        height: 16px;
+      }
+
+      .followup-switch-copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .followup-switch-copy strong {
+        color: var(--text);
+        font-size: 10px;
+        line-height: 1.15;
+      }
+
+      .followup-switch-copy span {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.2;
       }
 
       .followup-toggle {
@@ -1870,6 +1915,10 @@
 
         .followup-panel-head,
         .followup-controls {
+          grid-template-columns: 1fr;
+        }
+
+        .followup-main-switches {
           grid-template-columns: 1fr;
         }
 
@@ -2916,10 +2965,28 @@
                         <strong>Follow-up Autopilot</strong>
                         <span>Очередь мягких напоминаний: черновики, ручная отправка, автоотправка и повторные продажи под контролем тумблеров.</span>
                       </div>
-                      <div class="followup-controls">
-                        <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"><span class="followup-toggle-text">Главный тумблер</span></label>
-                        <label class="followup-toggle"><input id="followupWorkerEnabled" type="checkbox"><span class="followup-toggle-text">Готовить черновики</span></label>
-                        <label class="followup-toggle"><input id="followupAutoSendEnabled" type="checkbox"><span class="followup-toggle-text">Автоотправка</span></label>
+                      <div class="followup-main-switches">
+                        <label class="followup-switch-card">
+                          <input id="followupMasterEnabled" type="checkbox">
+                          <span class="followup-switch-copy">
+                            <strong>Главный тумблер</strong>
+                            <span>Аварийно включает или выключает всю автоматику</span>
+                          </span>
+                        </label>
+                        <label class="followup-switch-card">
+                          <input id="followupWorkerEnabled" type="checkbox">
+                          <span class="followup-switch-copy">
+                            <strong>Готовить черновики</strong>
+                            <span>AI сам создаёт текст напоминания в Inbox</span>
+                          </span>
+                        </label>
+                        <label class="followup-switch-card">
+                          <input id="followupAutoSendEnabled" type="checkbox">
+                          <span class="followup-switch-copy">
+                            <strong>Автоотправка</strong>
+                            <span>Отправляет без кнопки только в режиме Авто</span>
+                          </span>
+                        </label>
                         <select id="followupMode" class="mini-input followup-mode-select">
                           <option value="off">Выключено</option>
                           <option value="drafts">Черновики</option>
