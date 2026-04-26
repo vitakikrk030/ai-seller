@@ -486,6 +486,7 @@
 
       #view-inbox .list-shell {
         flex: 1 1 auto;
+        width: 100%;
       }
 
       #view-inbox .list-item[open] {
@@ -1238,7 +1239,7 @@
       }
 
       .inbox-panel {
-        max-width: 1140px;
+        max-width: none;
         width: 100%;
       }
 
@@ -1377,9 +1378,10 @@
 
       .inbox-workspace {
         display: grid;
-        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-        gap: 8px;
-        max-width: 1100px;
+        grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
+        gap: 10px;
+        max-width: none;
+        width: 100%;
         flex: 1 1 auto;
         height: calc(100vh - 220px);
         min-height: 470px;
