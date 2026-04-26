@@ -1296,7 +1296,7 @@
 
       .followup-main-switches {
         display: grid;
-        grid-template-columns: repeat(3, minmax(190px, 1fr)) minmax(150px, 210px) minmax(110px, 130px);
+        grid-template-columns: minmax(240px, 1.15fr) minmax(220px, 0.85fr) minmax(240px, 1fr) minmax(110px, 130px);
         gap: 8px;
         align-items: stretch;
         width: 100%;
@@ -1317,6 +1317,56 @@
         padding: 8px 10px;
         min-width: 0;
         min-height: 44px;
+      }
+
+      .followup-mode-card {
+        display: grid;
+        gap: 5px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 84%, transparent);
+        border-radius: 16px;
+        padding: 8px 10px;
+        min-width: 0;
+      }
+
+      .followup-mode-card strong {
+        color: var(--text);
+        font-size: 10px;
+        line-height: 1.15;
+      }
+
+      .followup-mode-help {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.25;
+        min-height: 20px;
+      }
+
+      .followup-simple-guide {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+      }
+
+      .followup-guide-step {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 8px 10px;
+        background: color-mix(in srgb, var(--panel) 62%, transparent);
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
+      }
+
+      .followup-guide-step strong {
+        display: block;
+        color: var(--text);
+        font-size: 10px;
+        margin-bottom: 2px;
+      }
+
+      .hidden-control {
+        display: none !important;
       }
 
       .followup-switch-card input {
@@ -1919,6 +1969,10 @@
         }
 
         .followup-main-switches {
+          grid-template-columns: 1fr;
+        }
+
+        .followup-simple-guide {
           grid-template-columns: 1fr;
         }
 
@@ -2963,36 +3017,39 @@
                     <div class="followup-panel-head">
                       <div class="followup-title">
                         <strong>Follow-up Autopilot</strong>
-                        <span>Очередь мягких напоминаний: черновики, ручная отправка, автоотправка и повторные продажи под контролем тумблеров.</span>
+                        <span>Раз в день открыл Inbox: смотри, кому пора написать, отправляй готовые черновики или включай аккуратную автоматику.</span>
                       </div>
+                      <input id="followupWorkerEnabled" class="hidden-control" type="checkbox">
                       <div class="followup-main-switches">
                         <label class="followup-switch-card">
                           <input id="followupMasterEnabled" type="checkbox">
                           <span class="followup-switch-copy">
-                            <strong>Главный тумблер</strong>
-                            <span>Аварийно включает или выключает всю автоматику</span>
+                            <strong>1. Автоматика Inbox</strong>
+                            <span>Главный стоп-кран. Выключено — ничего само не создаётся и не отправляется.</span>
                           </span>
                         </label>
-                        <label class="followup-switch-card">
-                          <input id="followupWorkerEnabled" type="checkbox">
-                          <span class="followup-switch-copy">
-                            <strong>Готовить черновики</strong>
-                            <span>AI сам создаёт текст напоминания в Inbox</span>
-                          </span>
-                        </label>
+                        <div class="followup-mode-card">
+                          <strong>2. Что делать</strong>
+                          <select id="followupMode" class="mini-input followup-mode-select">
+                            <option value="off">Ничего не делать</option>
+                            <option value="drafts">Только готовить черновики</option>
+                            <option value="auto">Готовить и отправлять автоматически</option>
+                          </select>
+                          <span id="followupModeHelp" class="followup-mode-help">Самый безопасный режим — черновики: AI пишет текст, ты нажимаешь «Отправить».</span>
+                        </div>
                         <label class="followup-switch-card">
                           <input id="followupAutoSendEnabled" type="checkbox">
                           <span class="followup-switch-copy">
-                            <strong>Автоотправка</strong>
-                            <span>Отправляет без кнопки только в режиме Авто</span>
+                            <strong>3. Разрешить автоотправку</strong>
+                            <span>Дополнительная защита. Без неё режим «Авто» всё равно не отправит клиенту сообщение.</span>
                           </span>
                         </label>
-                        <select id="followupMode" class="mini-input followup-mode-select">
-                          <option value="off">Выключено</option>
-                          <option value="drafts">Черновики</option>
-                          <option value="auto">Авто</option>
-                        </select>
                         <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
+                      </div>
+                      <div class="followup-simple-guide">
+                        <div class="followup-guide-step"><strong>Безопасно</strong>Выбери «Только готовить черновики» и раз в день нажимай «Отправить» в нужных диалогах.</div>
+                        <div class="followup-guide-step"><strong>Полуавто</strong>Нажми «Проверить сейчас» — система найдёт клиентов и подготовит тексты.</div>
+                        <div class="followup-guide-step"><strong>Полный авто</strong>Включай только когда уверен: режим «Авто» + «Разрешить автоотправку».</div>
                       </div>
                       <div class="followup-controls secondary">
                         <label class="followup-toggle followup-time-group">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
@@ -3199,6 +3256,7 @@
       const followupAutoSendEnabled = document.getElementById('followupAutoSendEnabled');
       const followupRepeatSalesEnabled = document.getElementById('followupRepeatSalesEnabled');
       const followupMode = document.getElementById('followupMode');
+      const followupModeHelp = document.getElementById('followupModeHelp');
       const followupQuietStart = document.getElementById('followupQuietStart');
       const followupQuietEnd = document.getElementById('followupQuietEnd');
       const followupMinIntervalHours = document.getElementById('followupMinIntervalHours');
@@ -3542,6 +3600,25 @@
       function renderStatusPill(status, extraClass = '') {
         if (!status) return '';
         return `<span class="status-pill ${escapeHtml(status.tone || 'neutral')} ${escapeHtml(extraClass)}">${escapeHtml(status.label || status.key || 'Статус')}</span>`;
+      }
+
+      function syncFollowupModeUi() {
+        if (!followupModeHelp) return;
+        const mode = followupMode.value || 'off';
+        if (mode === 'auto') {
+          followupModeHelp.textContent = 'Полный авто: AI готовит и может отправлять сам, но только если включено «Разрешить автоотправку».';
+        } else if (mode === 'drafts') {
+          followupModeHelp.textContent = 'Самый безопасный режим: AI пишет текст, ты видишь его в Inbox и сам нажимаешь «Отправить».';
+        } else {
+          followupModeHelp.textContent = 'Автоматика ничего не делает. Обычный AI Control продолжает отвечать клиентам как раньше.';
+        }
+        if (followupWorkerEnabled) {
+          followupWorkerEnabled.checked = followupMasterEnabled.checked && mode !== 'off';
+        }
+        if (followupAutoSendEnabled) {
+          followupAutoSendEnabled.disabled = mode !== 'auto';
+          if (mode !== 'auto') followupAutoSendEnabled.checked = false;
+        }
       }
 
       function renderFollowupCard(chat) {
@@ -4383,6 +4460,7 @@
         followupAutoSendEnabled.checked = data.followup_auto_send_enabled === true;
         followupRepeatSalesEnabled.checked = data.followup_repeat_sales_enabled === true;
         followupMode.value = data.followup_mode || 'off';
+        syncFollowupModeUi();
         followupQuietStart.value = data.followup_quiet_start || '22:00';
         followupQuietEnd.value = data.followup_quiet_end || '10:00';
         followupMinIntervalHours.value = data.followup_min_interval_hours || '24';
@@ -4675,8 +4753,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               followup_master_enabled: followupMasterEnabled.checked,
-              followup_worker_enabled: followupWorkerEnabled.checked,
-              followup_auto_send_enabled: followupAutoSendEnabled.checked,
+              followup_worker_enabled: followupMasterEnabled.checked && followupMode.value !== 'off',
+              followup_auto_send_enabled: followupMode.value === 'auto' && followupAutoSendEnabled.checked,
               followup_repeat_sales_enabled: followupRepeatSalesEnabled.checked,
               followup_mode: followupMode.value,
               followup_quiet_start: followupQuietStart.value,
@@ -5309,6 +5387,8 @@
       document.getElementById('reloadIntegrationModels').addEventListener('click', () => loadModelsInto(integrationsModelSelect));
       document.getElementById('deleteModel').addEventListener('click', deleteModelConfig);
       saveFollowupSettingsButton.addEventListener('click', saveFollowupSettings);
+      followupMasterEnabled.addEventListener('change', syncFollowupModeUi);
+      followupMode.addEventListener('change', syncFollowupModeUi);
       runFollowupNowButton.addEventListener('click', runFollowupNow);
       refreshInboxButton.addEventListener('click', loadInbox);
       document.getElementById('refreshLogs').addEventListener('click', loadLogs);
