@@ -33,6 +33,10 @@ const MAX_PDF_RECEIPT_BYTES = 8 * 1024 * 1024;
 const PDF_RECEIPT_TEXT_LIMIT = 2500;
 const PDF_RENDER_TIMEOUT_MS = 15000;
 const PDF_RENDER_DPI = 180;
+const IWAK_CART_MAX_ITEMS = 20;
+const IWAK_CART_FETCH_TIMEOUT_MS = 4500;
+const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
+const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'https://iwak.ru/api/products').replace(/\/$/, '');
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
 const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем.';
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
@@ -90,6 +94,7 @@ let lastSaiRuntimeError = null;
 const chatBatches = new Map();
 const managerReturnTimers = new Map();
 const managerPendingInputs = new Map();
+const iwakCartProductCache = new Map();
 const runtimeLogs = [];
 const logDir = path.join(__dirname, 'logs');
 const LOG_FILE_PATH = path.join(logDir, 'runtime.jsonl');
@@ -1644,6 +1649,224 @@ function buildBatchInput(inputs) {
   };
 }
 
+function stripTrailingUrlNoise(value) {
+  return String(value || '').replace(/[.,;!?]+$/g, '').replace(/[)\]}]+$/g, '');
+}
+
+function extractIwakCartLinks(text) {
+  const source = String(text || '');
+  const matches = source.match(/(?<![\w./-])(?:https?:\/\/)?(?:www\.)?iwak\.ru\/cart\?[^\s<>"']+/gi) || [];
+  return matches
+    .map(stripTrailingUrlNoise)
+    .map((raw) => {
+      const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+      try {
+        const url = new URL(normalized);
+        const host = url.hostname.toLowerCase();
+        if (!['iwak.ru', 'www.iwak.ru'].includes(host)) return null;
+        if (url.pathname !== '/cart') return null;
+        const items = url.searchParams.get('items');
+        if (!items) return null;
+        return { raw, items };
+      } catch (error) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function parseIwakCartItems(itemsValue) {
+  const parsed = [];
+  String(itemsValue || '').split(',').forEach((part) => {
+    if (parsed.length >= IWAK_CART_MAX_ITEMS) return;
+    const [idRaw, ...sizeParts] = String(part || '').trim().split(':');
+    const sizeRaw = sizeParts.join(':');
+    if (!/^\d{1,10}$/.test(String(idRaw || '').trim())) return;
+    const id = Number(idRaw);
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+
+    let size = '';
+    try {
+      size = decodeURIComponent(String(sizeRaw || '')).trim();
+    } catch (error) {
+      size = String(sizeRaw || '').trim();
+    }
+    if (!size || size.length > 24) return;
+    if (!/^[\p{L}\p{N}\s.,_+/-]+$/u.test(size)) return;
+    parsed.push({ id, size });
+  });
+  return parsed;
+}
+
+function getIwakCartItemsFromText(text) {
+  const items = [];
+  extractIwakCartLinks(text).forEach((link) => {
+    parseIwakCartItems(link.items).forEach((item) => {
+      if (items.length < IWAK_CART_MAX_ITEMS) items.push(item);
+    });
+  });
+  return items;
+}
+
+function normalizeCartPriceValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const normalized = String(value).replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatCartPrice(value) {
+  const numeric = normalizeCartPriceValue(value);
+  if (numeric === null) return '';
+  return `₽${new Intl.NumberFormat('ru-RU').format(Math.round(numeric))}`;
+}
+
+function pickCartProductPayload(data, requestedId) {
+  const source = data?.product || data?.data?.product || data?.data || data || {};
+  const brand = typeof source.brand === 'object'
+    ? (source.brand?.name || source.brand?.title || '')
+    : (source.brand || '');
+  const image = source.image || source.imageUrl || source.thumbnail || source.photo || '';
+  return {
+    id: Number(source.id || requestedId),
+    brand: String(brand || '').trim(),
+    name: String(source.name || source.title || '').trim(),
+    price: source.price ?? source.currentPrice ?? source.salePrice ?? null,
+    originalPrice: source.originalPrice ?? source.oldPrice ?? null,
+    image: typeof image === 'string' ? image : '',
+  };
+}
+
+async function fetchIwakProduct(productId) {
+  const cached = iwakCartProductCache.get(productId);
+  if (cached && Date.now() - cached.savedAt < IWAK_CART_PRODUCT_CACHE_TTL_MS) {
+    return cached.product;
+  }
+
+  const response = await httpClient.get(`${IWAK_PRODUCT_API_BASE_URL}/${productId}`, {
+    timeout: IWAK_CART_FETCH_TIMEOUT_MS,
+    responseType: 'json',
+    validateStatus: (status) => status >= 200 && status < 300,
+  });
+  const product = pickCartProductPayload(response.data, productId);
+  if (!product.name && !product.brand) {
+    throw new Error(`empty_product_${productId}`);
+  }
+  iwakCartProductCache.set(productId, { product, savedAt: Date.now() });
+  return product;
+}
+
+function buildIwakCartContext(cartItems, productsById, missingIds = []) {
+  const lines = [];
+  let total = 0;
+  let hasTotal = true;
+
+  cartItems.forEach((item) => {
+    const product = productsById.get(item.id);
+    if (!product) return;
+    const title = [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${item.id}`;
+    const priceText = formatCartPrice(product.price);
+    const numericPrice = normalizeCartPriceValue(product.price);
+    if (numericPrice === null) {
+      hasTotal = false;
+    } else {
+      total += numericPrice;
+    }
+    lines.push(`${lines.length + 1}. ${title}, размер ${item.size}${priceText ? `, цена ${priceText}` : ''}`);
+  });
+
+  if (!lines.length) return '';
+
+  const context = [
+    'Контекст корзины клиента:',
+    'Клиент отправил ссылку на корзину IWAK.',
+    'Состав корзины:',
+    ...lines,
+    '',
+    missingIds.length ? `Товаров определено: ${lines.length} из ${cartItems.length}` : `Товаров: ${lines.length}`,
+    hasTotal ? `Итого по найденным товарам: ${formatCartPrice(total)}` : '',
+    missingIds.length ? `Часть товаров из корзины не удалось определить: ${missingIds.map((id) => `ID ${id}`).join(', ')}.` : '',
+    '',
+    'Важно: размеры уже известны из ссылки корзины. Не спрашивай размер повторно по товарам из корзины.',
+    'Не выдумывай товары, цены или размеры, которых нет в этом контексте.',
+  ].filter((line) => line !== '');
+
+  return context.join('\n');
+}
+
+async function enrichIwakCartContext(input) {
+  const startedAt = Date.now();
+  const cartItems = getIwakCartItemsFromText(input.text);
+  if (!cartItems.length) return null;
+
+  const uniqueIds = Array.from(new Set(cartItems.map((item) => item.id))).slice(0, IWAK_CART_MAX_ITEMS);
+  const productsById = new Map();
+  const errors = [];
+
+  const results = await Promise.allSettled(uniqueIds.map(async (id) => {
+    const product = await fetchIwakProduct(id);
+    return { id, product };
+  }));
+
+  results.forEach((result, index) => {
+    const id = uniqueIds[index];
+    if (result.status === 'fulfilled') {
+      productsById.set(id, result.value.product);
+    } else {
+      errors.push({ id, message: result.reason?.message || String(result.reason || 'unknown_error') });
+    }
+  });
+
+  const foundIds = Array.from(productsById.keys());
+  const missingIds = uniqueIds.filter((id) => !productsById.has(id));
+  const summary = buildIwakCartContext(cartItems, productsById, missingIds);
+  const baseLog = {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
+    productIds: uniqueIds,
+    foundProductIds: foundIds,
+    itemCount: cartItems.length,
+    foundCount: foundIds.length,
+    durationMs: Date.now() - startedAt,
+  };
+
+  if (!summary) {
+    logEvent('CART_CONTEXT_FAILED', {
+      ...baseLog,
+      error: errors.map((item) => `${item.id}:${item.message}`).join('; ') || 'no_products_found',
+      status: 'error',
+    });
+    return null;
+  }
+
+  logEvent(foundIds.length === uniqueIds.length ? 'CART_CONTEXT_OK' : 'CART_CONTEXT_PARTIAL', {
+    ...baseLog,
+    error: errors.map((item) => `${item.id}:${item.message}`).join('; '),
+    status: foundIds.length === uniqueIds.length ? 'ok' : 'partial',
+  });
+
+  return {
+    summary,
+    items: cartItems,
+    productIds: uniqueIds,
+    foundProductIds: foundIds,
+    missingProductIds: missingIds,
+  };
+}
+
+function appendCartContextToMemory(input, cartContext) {
+  if (!cartContext?.summary) return;
+  input.cartContext = cartContext;
+  input.memoryContext = input.memoryContext || { summary: '', history: [], facts: {}, state: null };
+  input.memoryContext.summary = [input.memoryContext.summary, cartContext.summary]
+    .filter((part) => String(part || '').trim())
+    .join('\n\n');
+}
+
 async function processInputBatch(inputs) {
   if (!inputs.length) return;
 
@@ -1665,6 +1888,9 @@ async function processInputBatch(inputs) {
       limit: getConfigMemoryLimit(batchInput.config),
       currentInput: batchInput,
     }) : { summary: '', history: [], facts: {}, state: null };
+
+    const cartContext = await enrichIwakCartContext(batchInput);
+    appendCartContextToMemory(batchInput, cartContext);
 
     preparedInputs.forEach((input) => logMessageDelivered(input));
     await waitAndMarkBatchRead(batchInput.config, preparedInputs);
