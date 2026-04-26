@@ -1247,13 +1247,19 @@
         border: 1px solid var(--border);
         background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
         border-radius: 14px;
-        padding: 10px;
+        padding: 12px;
         margin: 0 0 10px;
         display: grid;
-        gap: 9px;
+        gap: 10px;
       }
 
-      .followup-panel-head,
+      .followup-panel-head {
+        display: grid;
+        grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.25fr);
+        align-items: start;
+        gap: 12px;
+      }
+
       .inbox-filter-row {
         display: flex;
         align-items: center;
@@ -1280,11 +1286,11 @@
       }
 
       .followup-controls {
-        display: flex;
+        display: grid;
+        grid-template-columns: 150px minmax(170px, 1fr) minmax(260px, auto) minmax(210px, auto) auto;
         align-items: center;
-        gap: 7px;
-        flex-wrap: wrap;
-        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
       }
 
       .followup-toggle {
@@ -1297,10 +1303,15 @@
         padding: 6px 9px;
         color: var(--text);
         font-size: 9px;
+        line-height: 1.15;
+        min-height: 33px;
+        min-width: 0;
+        white-space: nowrap;
       }
 
       .followup-toggle input {
         accent-color: var(--accent);
+        flex: 0 0 auto;
       }
 
       .mini-input {
@@ -1311,6 +1322,24 @@
         background: color-mix(in srgb, var(--panel) 84%, transparent);
         color: var(--text);
         font-size: 9px;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .followup-mode-select {
+        width: 100%;
+      }
+
+      .followup-time-group {
+        justify-content: center;
+      }
+
+      .followup-time-group input {
+        width: 72px;
+      }
+
+      .followup-interval-group input {
+        width: 68px;
       }
 
       .followup-grid {
@@ -1512,28 +1541,33 @@
       }
 
       .status-pill.hot {
-        color: color-mix(in srgb, var(--accent) 92%, var(--text));
-        border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+        color: #0b6b61;
+        background: color-mix(in srgb, var(--accent) 18%, white 82%);
+        border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
       }
 
       .status-pill.warn {
-        color: color-mix(in srgb, var(--danger) 72%, var(--text));
-        border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+        color: #9a3412;
+        background: #fff3dd;
+        border-color: #f2b66d;
       }
 
       .status-pill.good {
-        color: color-mix(in srgb, var(--ok) 80%, var(--text));
-        border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+        color: #0f7a48;
+        background: #e8f8ef;
+        border-color: #88d5a8;
       }
 
       .status-pill.muted {
-        opacity: 0.72;
+        color: #64748b;
+        background: #f3f6f8;
+        border-color: #d8e0e7;
       }
 
       .status-pill.attention {
-        color: var(--text);
-        border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-        background: color-mix(in srgb, var(--accent) 10%, var(--panel-alt));
+        color: #7c2d12;
+        border-color: #f0b65f;
+        background: #fff2d6;
       }
 
       .money-strip {
@@ -1789,6 +1823,16 @@
 
         .followup-grid {
           grid-template-columns: 1fr;
+        }
+
+        .followup-panel-head,
+        .followup-controls {
+          grid-template-columns: 1fr;
+        }
+
+        .followup-time-group,
+        .followup-interval-group {
+          justify-content: flex-start;
         }
 
         .inbox-resize-bar {
@@ -2831,13 +2875,13 @@
                       </div>
                       <div class="followup-controls">
                         <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"> Главный тумблер</label>
-                        <select id="followupMode" class="mini-input">
+                        <select id="followupMode" class="mini-input followup-mode-select">
                           <option value="off">Выключено</option>
                           <option value="drafts">Черновики</option>
                           <option value="auto">Авто</option>
                         </select>
-                        <label class="followup-toggle">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
-                        <label class="followup-toggle">Мин. интервал <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1" style="width:70px;"> ч</label>
+                        <label class="followup-toggle followup-time-group">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
+                        <label class="followup-toggle followup-interval-group">Мин. интервал <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1"> ч</label>
                         <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
                       </div>
                     </div>
