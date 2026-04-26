@@ -4007,7 +4007,11 @@
 
       async function fetchJSON(url, options) {
         const res = await fetch(url, options);
-        return res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || data.message || `Ошибка запроса ${res.status}`);
+        }
+        return data;
       }
 
       function showSaveToast(type, text) {
@@ -4847,33 +4851,36 @@
       }
 
       async function generateFollowupDraft(chatId) {
-        if (!chatId) return;
-        await fetchJSON('/followups/generate', {
+        if (!chatId) throw new Error('Не вижу ID клиента для черновика');
+        const result = await fetchJSON('/followups/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chatId }),
         });
         await loadInbox();
+        return result;
       }
 
       async function sendFollowupDraft(jobId) {
-        if (!jobId) return;
-        await fetchJSON(`/followups/${encodeURIComponent(jobId)}/send`, {
+        if (!jobId) throw new Error('Черновик не выбран');
+        const result = await fetchJSON(`/followups/${encodeURIComponent(jobId)}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ forceManual: false }),
         });
         await loadInbox();
+        return result;
       }
 
       async function skipFollowupDraft(jobId) {
-        if (!jobId) return;
-        await fetchJSON(`/followups/${encodeURIComponent(jobId)}/skip`, {
+        if (!jobId) throw new Error('Черновик не выбран');
+        const result = await fetchJSON(`/followups/${encodeURIComponent(jobId)}/skip`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason: 'Пропущено из Inbox' }),
         });
         await loadInbox();
+        return result;
       }
 
       async function savePayment() {
@@ -5464,15 +5471,30 @@
         const button = event.target.closest('[data-followup-action]');
         if (!button) return;
         const action = button.dataset.followupAction || '';
+        const defaultLabel = button.textContent.trim();
         button.disabled = true;
+        if (action === 'generate') button.textContent = 'Создаю...';
+        if (action === 'send') button.textContent = 'Отправляю...';
+        if (action === 'skip') button.textContent = 'Пропускаю...';
         try {
-          if (action === 'generate') await generateFollowupDraft(button.dataset.chatId || currentInboxChatId);
-          if (action === 'send') await sendFollowupDraft(button.dataset.jobId);
-          if (action === 'skip') await skipFollowupDraft(button.dataset.jobId);
+          if (action === 'generate') {
+            const result = await generateFollowupDraft(button.dataset.chatId || currentInboxChatId);
+            const blocked = result?.safety?.blocked || [];
+            showSaveToast(blocked.length ? 'error' : 'ok', blocked.length ? `Черновик создан, но есть ограничение: ${blocked.join(' · ')}` : 'Черновик создан');
+          }
+          if (action === 'send') {
+            await sendFollowupDraft(button.dataset.jobId);
+            showSaveToast('ok', 'Напоминание отправлено');
+          }
+          if (action === 'skip') {
+            await skipFollowupDraft(button.dataset.jobId);
+            showSaveToast('ok', 'Черновик пропущен');
+          }
         } catch (error) {
-          showToast(error.message || 'Не удалось выполнить действие', 'error');
+          showSaveToast('error', error.message || 'Не удалось выполнить действие');
         } finally {
           button.disabled = false;
+          button.textContent = defaultLabel;
         }
       });
 
