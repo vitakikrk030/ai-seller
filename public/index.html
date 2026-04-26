@@ -1255,9 +1255,9 @@
 
       .followup-panel-head {
         display: grid;
-        grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.25fr);
+        grid-template-columns: 1fr;
         align-items: start;
-        gap: 12px;
+        gap: 10px;
       }
 
       .inbox-filter-row {
@@ -1287,10 +1287,11 @@
 
       .followup-controls {
         display: grid;
-        grid-template-columns: 150px minmax(170px, 1fr) minmax(260px, auto) minmax(210px, auto) auto;
+        grid-template-columns: minmax(160px, 180px) minmax(180px, 1fr) minmax(270px, 290px) minmax(220px, 240px) minmax(110px, 125px);
         align-items: center;
         gap: 8px;
         min-width: 0;
+        width: 100%;
       }
 
       .followup-toggle {
@@ -1307,6 +1308,7 @@
         min-height: 33px;
         min-width: 0;
         white-space: nowrap;
+        overflow: hidden;
       }
 
       .followup-toggle input {
@@ -1340,6 +1342,12 @@
 
       .followup-interval-group input {
         width: 68px;
+      }
+
+      .followup-controls .button-primary {
+        width: 100%;
+        min-width: 0;
+        justify-content: center;
       }
 
       .followup-grid {
@@ -1538,6 +1546,12 @@
         text-transform: uppercase;
         color: var(--muted);
         background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+      }
+
+      .status-pill.neutral {
+        color: #315a74;
+        background: #edf7fb;
+        border-color: #b8ddea;
       }
 
       .status-pill.hot {
