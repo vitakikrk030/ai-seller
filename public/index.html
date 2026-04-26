@@ -1340,6 +1340,42 @@
         width: 100%;
       }
 
+      .followup-repeat-card {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 84%, transparent);
+        border-radius: 16px;
+        padding: 10px 12px;
+        min-width: 0;
+      }
+
+      .followup-repeat-copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .followup-repeat-copy strong {
+        color: var(--text);
+        font-size: 10px;
+        line-height: 1.15;
+      }
+
+      .followup-repeat-copy span {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.25;
+      }
+
+      .followup-repeat-card input {
+        accent-color: var(--accent);
+        width: 16px;
+        height: 16px;
+      }
+
       .followup-advanced {
         border: 1px solid var(--border);
         border-radius: 16px;
@@ -1557,6 +1593,18 @@
         border-radius: 999px;
         font-size: 9px;
         padding: 6px 9px;
+      }
+
+      .followup-actions button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .followup-action-help {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.35;
+        margin-top: 4px;
       }
 
       .followup-grid {
@@ -3154,8 +3202,14 @@
                         <button id="runFollowupNow" class="button-secondary" type="button">Проверить клиентов сейчас</button>
                         <label class="followup-toggle followup-time-group">Не писать ночью <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
                         <label class="followup-toggle followup-interval-group">Лимит авто-сообщений в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
-                        <label class="followup-toggle followup-wide-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"><span class="followup-toggle-text">Повторные предложения старым клиентам</span></label>
                       </div>
+                      <label class="followup-repeat-card">
+                        <span class="followup-repeat-copy">
+                          <strong>Повторные предложения старым клиентам</strong>
+                          <span>Если клиент уже покупал, AI сможет мягко предложить новые варианты под его размер и стиль.</span>
+                        </span>
+                        <input id="followupRepeatSalesEnabled" type="checkbox">
+                      </label>
                       <details class="followup-advanced">
                         <summary>
                           Расширенные настройки
@@ -3781,9 +3835,10 @@
             ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Создать черновик</button>
-              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить</button>` : ''}
+              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить вручную</button>` : '<button class="button-primary" type="button" disabled>Отправить вручную</button>'}
               ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Пропустить</button>` : ''}
             </div>
+            <div class="followup-action-help">${job.id ? 'Черновик сохранён. Можно отправить вручную или пропустить.' : 'Чтобы появилась рабочая кнопка отправки, сначала нажмите «Создать черновик».'}</div>
             ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
           </div>
         `;
