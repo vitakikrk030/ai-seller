@@ -1242,6 +1242,139 @@
         width: 100%;
       }
 
+      .followup-panel {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        border-radius: 14px;
+        padding: 10px;
+        margin: 0 0 10px;
+        display: grid;
+        gap: 9px;
+      }
+
+      .followup-panel-head,
+      .inbox-filter-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .followup-title {
+        display: grid;
+        gap: 2px;
+      }
+
+      .followup-title strong {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .followup-title span {
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
+      }
+
+      .followup-controls {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .followup-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 84%, transparent);
+        border-radius: 999px;
+        padding: 6px 9px;
+        color: var(--text);
+        font-size: 9px;
+      }
+
+      .followup-toggle input {
+        accent-color: var(--accent);
+      }
+
+      .mini-input {
+        min-height: 31px;
+        border-radius: 999px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 84%, transparent);
+        color: var(--text);
+        font-size: 9px;
+      }
+
+      .followup-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 7px;
+      }
+
+      .followup-rule {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 72%, transparent);
+        border-radius: 12px;
+        padding: 8px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .followup-rule-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        font-size: 9px;
+        color: var(--text);
+      }
+
+      .followup-rule-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+
+      .followup-rule-fields label {
+        display: grid;
+        gap: 3px;
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .inbox-filter-row {
+        justify-content: flex-start;
+        margin: 0 0 10px;
+      }
+
+      .inbox-filter {
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 7px 10px;
+        font-size: 8px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+      }
+
+      .inbox-filter.active,
+      .inbox-filter:hover {
+        color: var(--text);
+        border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+        background: color-mix(in srgb, var(--accent) 10%, var(--panel-alt));
+      }
+
       .inbox-workspace {
         display: grid;
         grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
@@ -1348,6 +1481,113 @@
         -webkit-box-orient: vertical;
         overflow: hidden;
         word-break: break-word;
+      }
+
+      .preview-badges,
+      .money-strip,
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+
+      .preview-badges {
+        margin-top: 6px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 7px;
+        font-size: 8px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+      }
+
+      .status-pill.hot {
+        color: color-mix(in srgb, var(--accent) 92%, var(--text));
+        border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+      }
+
+      .status-pill.warn {
+        color: color-mix(in srgb, var(--danger) 72%, var(--text));
+        border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+      }
+
+      .status-pill.good {
+        color: color-mix(in srgb, var(--ok) 80%, var(--text));
+        border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+      }
+
+      .status-pill.muted {
+        opacity: 0.72;
+      }
+
+      .status-pill.attention {
+        color: var(--text);
+        border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+        background: color-mix(in srgb, var(--accent) 10%, var(--panel-alt));
+      }
+
+      .money-strip {
+        margin-top: 5px;
+      }
+
+      .money-chip {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px 8px;
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        display: grid;
+        gap: 2px;
+        min-width: 112px;
+      }
+
+      .money-chip span {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .money-chip strong {
+        color: var(--text);
+        font-size: 12px;
+      }
+
+      .followup-card {
+        border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+        background:
+          radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
+          color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        border-radius: 13px;
+        padding: 9px 10px;
+        display: grid;
+        gap: 7px;
+      }
+
+      .followup-card-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        color: var(--text);
+        font-size: 10px;
+        font-weight: 620;
+      }
+
+      .followup-draft {
+        color: var(--text);
+        border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+        padding-left: 8px;
+        white-space: pre-wrap;
+        font-size: 10px;
+        line-height: 1.4;
       }
 
       .chat-view {
@@ -1543,6 +1783,10 @@
           height: auto;
           min-height: 0;
           overflow: visible;
+        }
+
+        .followup-grid {
+          grid-template-columns: 1fr;
         }
 
         .inbox-resize-bar {
@@ -2577,6 +2821,56 @@
                       <button id="refreshInbox" class="button-primary" type="button">Обновить</button>
                     </div>
                   </div>
+                  <div class="followup-panel">
+                    <div class="followup-panel-head">
+                      <div class="followup-title">
+                        <strong>Follow-up Autopilot</strong>
+                        <span>Пока безопасный режим: считаем, кому пора напомнить, и готовим черновик. Живую отправку включим отдельно.</span>
+                      </div>
+                      <div class="followup-controls">
+                        <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"> Главный тумблер</label>
+                        <select id="followupMode" class="mini-input">
+                          <option value="off">Выключено</option>
+                          <option value="drafts">Черновики</option>
+                          <option value="auto">Авто</option>
+                        </select>
+                        <label class="followup-toggle">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
+                        <label class="followup-toggle">Мин. интервал <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1" style="width:70px;"> ч</label>
+                        <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
+                      </div>
+                    </div>
+                    <div class="followup-grid">
+                      <div class="followup-rule">
+                        <div class="followup-rule-title"><span>Ждём данные</span><input id="followupWaitDataEnabled" type="checkbox"></div>
+                        <div class="followup-rule-fields"><label>Через, ч<input id="followupWaitDataHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Касаний<input id="followupWaitDataMax" class="mini-input" type="number" min="1" step="1"></label></div>
+                      </div>
+                      <div class="followup-rule">
+                        <div class="followup-rule-title"><span>Ждём оплату</span><input id="followupWaitPaymentEnabled" type="checkbox"></div>
+                        <div class="followup-rule-fields"><label>Через, ч<input id="followupWaitPaymentHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Касаний<input id="followupWaitPaymentMax" class="mini-input" type="number" min="1" step="1"></label></div>
+                      </div>
+                      <div class="followup-rule">
+                        <div class="followup-rule-title"><span>Ждём чек</span><input id="followupWaitReceiptEnabled" type="checkbox"></div>
+                        <div class="followup-rule-fields"><label>Через, ч<input id="followupWaitReceiptHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Касаний<input id="followupWaitReceiptMax" class="mini-input" type="number" min="1" step="1"></label></div>
+                      </div>
+                      <div class="followup-rule">
+                        <div class="followup-rule-title"><span>Обещал позже</span><input id="followupPromisedLaterEnabled" type="checkbox"></div>
+                        <div class="followup-rule-fields"><label>Через, ч<input id="followupPromisedLaterHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Касаний<input id="followupPromisedLaterMax" class="mini-input" type="number" min="1" step="1"></label></div>
+                      </div>
+                      <div class="followup-rule">
+                        <div class="followup-rule-title"><span>Выбирает</span><input id="followupChoosingEnabled" type="checkbox"></div>
+                        <div class="followup-rule-fields"><label>Через, ч<input id="followupChoosingHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Касаний<input id="followupChoosingMax" class="mini-input" type="number" min="1" step="1"></label></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="inboxFilters" class="inbox-filter-row">
+                    <button class="inbox-filter active" data-inbox-filter="all" type="button">Все</button>
+                    <button class="inbox-filter" data-inbox-filter="attention" type="button">Требуют внимания</button>
+                    <button class="inbox-filter" data-inbox-filter="waiting_payment" type="button">Ждём оплату</button>
+                    <button class="inbox-filter" data-inbox-filter="waiting_data" type="button">Ждём данные</button>
+                    <button class="inbox-filter" data-inbox-filter="promised_later" type="button">Обещал позже</button>
+                    <button class="inbox-filter" data-inbox-filter="paid" type="button">Оплаченные</button>
+                    <button class="inbox-filter" data-inbox-filter="manager" type="button">Вручную</button>
+                  </div>
                   <div class="inbox-workspace">
                     <div class="inbox-column">
                       <div class="trace-title">Chats</div>
@@ -2731,6 +3025,28 @@
       const inboxThread = document.getElementById('inboxThread');
       const inboxWorkspace = document.querySelector('.inbox-workspace');
       const inboxResizeHandle = document.getElementById('inboxResizeHandle');
+      const inboxFilters = document.getElementById('inboxFilters');
+      const followupMasterEnabled = document.getElementById('followupMasterEnabled');
+      const followupMode = document.getElementById('followupMode');
+      const followupQuietStart = document.getElementById('followupQuietStart');
+      const followupQuietEnd = document.getElementById('followupQuietEnd');
+      const followupMinIntervalHours = document.getElementById('followupMinIntervalHours');
+      const followupWaitDataEnabled = document.getElementById('followupWaitDataEnabled');
+      const followupWaitDataHours = document.getElementById('followupWaitDataHours');
+      const followupWaitDataMax = document.getElementById('followupWaitDataMax');
+      const followupWaitPaymentEnabled = document.getElementById('followupWaitPaymentEnabled');
+      const followupWaitPaymentHours = document.getElementById('followupWaitPaymentHours');
+      const followupWaitPaymentMax = document.getElementById('followupWaitPaymentMax');
+      const followupWaitReceiptEnabled = document.getElementById('followupWaitReceiptEnabled');
+      const followupWaitReceiptHours = document.getElementById('followupWaitReceiptHours');
+      const followupWaitReceiptMax = document.getElementById('followupWaitReceiptMax');
+      const followupPromisedLaterEnabled = document.getElementById('followupPromisedLaterEnabled');
+      const followupPromisedLaterHours = document.getElementById('followupPromisedLaterHours');
+      const followupPromisedLaterMax = document.getElementById('followupPromisedLaterMax');
+      const followupChoosingEnabled = document.getElementById('followupChoosingEnabled');
+      const followupChoosingHours = document.getElementById('followupChoosingHours');
+      const followupChoosingMax = document.getElementById('followupChoosingMax');
+      const saveFollowupSettingsButton = document.getElementById('saveFollowupSettings');
       const logsOkCount = document.getElementById('logsOkCount');
       const logsProcessCount = document.getElementById('logsProcessCount');
       const logsErrorCount = document.getElementById('logsErrorCount');
@@ -2789,6 +3105,8 @@
       let logsRefreshTimer = null;
       let currentTraceId = '';
       let currentInboxChatId = '';
+      let currentInboxFilter = 'all';
+      let inboxChatsCache = [];
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
       let isInstructionResizing = false;
@@ -2969,6 +3287,98 @@
           .sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
       }
 
+      function mapInboxItemToChat(item) {
+        const customer = item.customer || {};
+        const messages = (item.recentMessages || [])
+          .filter((message) => String(message.text || '').trim())
+          .map((message) => ({
+            id: message.id,
+            chatId: customer.chatId || message.chatId || '',
+            userId: customer.userId || message.userId || '',
+            time: message.createdAt,
+            type: message.role === 'assistant' || message.role === 'manager' ? 'out' : 'in',
+            source: message.role === 'manager' ? 'manager' : '',
+            text: message.text || '',
+            messageType: message.type || '',
+          }))
+          .sort((a, b) => new Date(a.time) - new Date(b.time));
+        const lastMessage = messages[messages.length - 1] || item.lastMessage || null;
+        return {
+          chatId: customer.chatId || '',
+          userId: customer.userId || customer.chatId || '',
+          firstName: customer.firstName || '',
+          lastName: customer.lastName || '',
+          username: customer.username || '',
+          phoneNumber: customer.phone || item.facts?.phone?.value || '',
+          updateType: 'database',
+          businessConnectionId: '',
+          diagnostics: [],
+          messages,
+          memory: {
+            customer,
+            facts: item.facts || {},
+            state: item.state || null,
+            lastOrder: item.lastOrder || null,
+            recentMessages: item.recentMessages || [],
+          },
+          status: item.status || { key: 'new', label: 'Новый', tone: 'neutral' },
+          money: item.money || {},
+          followup: item.followup || {},
+          orders: item.orders || [],
+          lastMessage,
+          preview: lastMessage ? (lastMessage.text || '') : '',
+          lastTime: lastMessage ? (lastMessage.createdAt || lastMessage.time || '') : (customer.lastSeenAt || customer.updatedAt || ''),
+        };
+      }
+
+      function filterInboxChats(chats) {
+        if (currentInboxFilter === 'all') return chats;
+        if (currentInboxFilter === 'attention') return chats.filter((chat) => chat.followup?.needsAttention);
+        return chats.filter((chat) => chat.status?.key === currentInboxFilter);
+      }
+
+      function renderInboxFilters(summary = {}) {
+        if (!inboxFilters) return;
+        inboxFilters.querySelectorAll('[data-inbox-filter]').forEach((button) => {
+          const key = button.dataset.inboxFilter || 'all';
+          const base = button.textContent.replace(/\s+\d+$/, '');
+          const count = key === 'all'
+            ? summary.total
+            : key === 'attention'
+              ? summary.needsAttention
+              : summary[key];
+          button.textContent = count ? `${base} ${count}` : base;
+          button.classList.toggle('active', key === currentInboxFilter);
+        });
+      }
+
+      function renderStatusPill(status, extraClass = '') {
+        if (!status) return '';
+        return `<span class="status-pill ${escapeHtml(status.tone || 'neutral')} ${escapeHtml(extraClass)}">${escapeHtml(status.label || status.key || 'Статус')}</span>`;
+      }
+
+      function renderFollowupCard(chat) {
+        const followup = chat.followup || {};
+        const status = chat.status || {};
+        const blocked = Array.isArray(followup.blocked) ? followup.blocked : [];
+        const modeText = followup.mode === 'auto' ? 'авто' : followup.mode === 'drafts' ? 'черновики' : 'выключено';
+        return `
+          <div class="followup-card">
+            <div class="followup-card-title">
+              <span>Follow-up</span>
+              <span class="status-pill ${followup.needsAttention ? 'attention' : 'muted'}">${followup.needsAttention ? 'нужно внимание' : 'спокойно'}</span>
+            </div>
+            <div class="chat-submeta">
+              <span>Статус: ${escapeHtml(status.label || '—')}</span>
+              <span>Простой: ${escapeHtml(followup.idleLabel || '—')}</span>
+              <span>Режим: ${escapeHtml(modeText)}</span>
+            </div>
+            ${followup.draft ? `<div class="followup-draft">${escapeHtml(followup.draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
+            ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(blocked.join(' · '))}</div>` : ''}
+          </div>
+        `;
+      }
+
       function getMemoryValue(memory, key) {
         return memory?.facts?.[key]?.value || '—';
       }
@@ -3014,6 +3424,12 @@
         const memory = chat.memory || {};
         const customer = memory.customer || {};
         const lastOrder = memory.lastOrder || {};
+        const lastOrderProduct = lastOrder.product || '';
+        const lastOrderSize = lastOrder.size || '';
+        const lastOrderStatus = lastOrder.status || '';
+        const lastOrderPayment = lastOrder.paymentStatus || lastOrder.payment_status || '';
+        const lastOrderCheck = lastOrder.paymentCheckStatus || lastOrder.payment_check_status || '';
+        const lastOrderCheckSummary = lastOrder.paymentCheckSummary || lastOrder.payment_check_summary || '';
         const recentMessages = Array.isArray(memory.recentMessages) ? memory.recentMessages.slice(-20) : [];
         const stage = memory.state?.stage || '—';
         const aiMode = memory.state?.aiMode === 'passive_manager'
@@ -3059,15 +3475,15 @@
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Последний заказ</div>
-              <div class="chat-detail-value">${escapeHtml(lastOrder.product ? [lastOrder.product, lastOrder.size, lastOrder.status].filter(Boolean).join(' · ') : '—')}</div>
+              <div class="chat-detail-value">${escapeHtml(lastOrderProduct ? [lastOrderProduct, lastOrderSize, lastOrderStatus].filter(Boolean).join(' · ') : '—')}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Оплата</div>
-              <div class="chat-detail-value">${escapeHtml([lastOrder.payment_status, lastOrder.payment_check_status].filter(Boolean).join(' · ') || '—')}</div>
+              <div class="chat-detail-value">${escapeHtml([lastOrderPayment, lastOrderCheck].filter(Boolean).join(' · ') || '—')}</div>
             </div>
             <div class="chat-detail wide">
               <div class="chat-detail-label">Проверка чека</div>
-              <div class="chat-detail-value">${escapeHtml(lastOrder.payment_check_summary || '—')}</div>
+              <div class="chat-detail-value">${escapeHtml(lastOrderCheckSummary || '—')}</div>
             </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Статус клиента</div>
@@ -3103,6 +3519,7 @@
 
         const displayName = buildChatDisplayName(chat);
         const secondaryMeta = buildChatSecondaryMeta(chat);
+        const money = chat.money || {};
 
         inboxThread.className = 'chat-view';
         inboxThread.innerHTML = `
@@ -3113,6 +3530,11 @@
                 <div class="chat-submeta">
                   <span>${escapeHtml(secondaryMeta)}</span>
                   <span>${escapeHtml(formatDateTimeLabel(chat.lastTime))}</span>
+                  <span>${escapeHtml(chat.status?.reason || '')}</span>
+                </div>
+                <div class="status-row">
+                  ${renderStatusPill(chat.status)}
+                  ${chat.followup?.needsAttention ? '<span class="status-pill attention">внимание</span>' : ''}
                 </div>
               </div>
               <div class="chat-actions">
@@ -3120,6 +3542,12 @@
                 <button class="chat-details-toggle" type="button" data-chat-details-toggle>${currentInboxDetailsOpen ? 'Скрыть' : 'Подробнее'}</button>
               </div>
             </div>
+            <div class="money-strip">
+              <div class="money-chip"><span>Потратил</span><strong>${escapeHtml(money.confirmedSpendLabel || '0 ₽')}</strong></div>
+              <div class="money-chip"><span>Заказов</span><strong>${escapeHtml(String(money.confirmedOrdersCount || 0))}</strong></div>
+              <div class="money-chip"><span>В работе</span><strong>${escapeHtml(money.potentialSpendLabel || '0 ₽')}</strong></div>
+            </div>
+            ${renderFollowupCard(chat)}
             <div class="chat-details${currentInboxDetailsOpen ? ' visible' : ''}">
               <div class="chat-detail">
                 <div class="chat-detail-label">Имя</div>
@@ -3231,6 +3659,11 @@
             </div>
             <div class="chat-submeta" style="margin-top: 4px;">
               <span>${escapeHtml(buildChatSecondaryMeta(chat))}</span>
+            </div>
+            <div class="preview-badges">
+              ${renderStatusPill(chat.status)}
+              ${chat.followup?.needsAttention ? '<span class="status-pill attention">внимание</span>' : ''}
+              ${chat.money?.confirmedSpendLabel && chat.money.confirmedSpendLabel !== '0 ₽' ? `<span class="status-pill good">${escapeHtml(chat.money.confirmedSpendLabel)}</span>` : ''}
             </div>
             <div class="chat-preview-text">${escapeHtml(chat.preview || '—')}</div>
           </div>
@@ -3749,6 +4182,26 @@
         sttApiKey.value = data.stt_api_key || '';
         sttBaseUrl.value = data.stt_base_url || 'https://api.openai.com/v1';
         sttModel.value = data.stt_model || 'gpt-4o-mini-transcribe';
+        followupMasterEnabled.checked = data.followup_master_enabled === true;
+        followupMode.value = data.followup_mode || 'off';
+        followupQuietStart.value = data.followup_quiet_start || '22:00';
+        followupQuietEnd.value = data.followup_quiet_end || '10:00';
+        followupMinIntervalHours.value = data.followup_min_interval_hours || '24';
+        followupWaitDataEnabled.checked = data.followup_wait_data_enabled !== false;
+        followupWaitDataHours.value = data.followup_wait_data_hours || '2';
+        followupWaitDataMax.value = data.followup_wait_data_max || '2';
+        followupWaitPaymentEnabled.checked = data.followup_wait_payment_enabled !== false;
+        followupWaitPaymentHours.value = data.followup_wait_payment_hours || '3';
+        followupWaitPaymentMax.value = data.followup_wait_payment_max || '2';
+        followupWaitReceiptEnabled.checked = data.followup_wait_receipt_enabled !== false;
+        followupWaitReceiptHours.value = data.followup_wait_receipt_hours || '1';
+        followupWaitReceiptMax.value = data.followup_wait_receipt_max || '1';
+        followupPromisedLaterEnabled.checked = data.followup_promised_later_enabled !== false;
+        followupPromisedLaterHours.value = data.followup_promised_later_hours || '4';
+        followupPromisedLaterMax.value = data.followup_promised_later_max || '2';
+        followupChoosingEnabled.checked = data.followup_choosing_enabled !== false;
+        followupChoosingHours.value = data.followup_choosing_hours || '24';
+        followupChoosingMax.value = data.followup_choosing_max || '1';
 
         const webhookText = data.webhook?.url
           ? ('URL: ' + data.webhook.url + (data.webhook.last_error_message ? '\nОшибка: ' + data.webhook.last_error_message : ''))
@@ -4010,6 +4463,39 @@
             }),
           });
           await loadStatus();
+        });
+      }
+
+      async function saveFollowupSettings() {
+        await performSave(saveFollowupSettingsButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              followup_master_enabled: followupMasterEnabled.checked,
+              followup_mode: followupMode.value,
+              followup_quiet_start: followupQuietStart.value,
+              followup_quiet_end: followupQuietEnd.value,
+              followup_min_interval_hours: followupMinIntervalHours.value,
+              followup_wait_data_enabled: followupWaitDataEnabled.checked,
+              followup_wait_data_hours: followupWaitDataHours.value,
+              followup_wait_data_max: followupWaitDataMax.value,
+              followup_wait_payment_enabled: followupWaitPaymentEnabled.checked,
+              followup_wait_payment_hours: followupWaitPaymentHours.value,
+              followup_wait_payment_max: followupWaitPaymentMax.value,
+              followup_wait_receipt_enabled: followupWaitReceiptEnabled.checked,
+              followup_wait_receipt_hours: followupWaitReceiptHours.value,
+              followup_wait_receipt_max: followupWaitReceiptMax.value,
+              followup_promised_later_enabled: followupPromisedLaterEnabled.checked,
+              followup_promised_later_hours: followupPromisedLaterHours.value,
+              followup_promised_later_max: followupPromisedLaterMax.value,
+              followup_choosing_enabled: followupChoosingEnabled.checked,
+              followup_choosing_hours: followupChoosingHours.value,
+              followup_choosing_max: followupChoosingMax.value,
+            }),
+          });
+          await loadStatus();
+          if (views.inbox.classList.contains('active')) await loadInbox();
         });
       }
 
@@ -4374,15 +4860,15 @@
       }
 
       async function loadInbox() {
-        const data = await fetchJSON('/logs?limit=500');
+        const data = await fetchJSON('/inbox?limit=200');
         const items = Array.isArray(data.items) ? data.items : [];
-        const chats = buildInboxChats(items);
+        inboxChatsCache = items.map(mapInboxItemToChat)
+          .filter((chat) => chat.chatId && chat.messages.length)
+          .sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
+        renderInboxFilters(data.summary || {});
+        const chats = filterInboxChats(inboxChatsCache);
         if (chats.length && (!currentInboxChatId || !chats.some((chat) => chat.chatId === currentInboxChatId))) {
           currentInboxChatId = chats[0].chatId;
-        }
-        const activeChat = chats.find((chat) => chat.chatId === currentInboxChatId);
-        if (activeChat) {
-          activeChat.memory = await fetchJSON(`/memory/${encodeURIComponent(activeChat.chatId)}`);
         }
         renderInboxChats(chats);
       }
@@ -4516,6 +5002,28 @@
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
       bindDirtyState(saveSttProviderButton, [sttBaseUrl, sttApiKey, sttModel]);
       bindDirtyState(saveIntegrationsModelButton, [integrationsModelSelect]);
+      bindDirtyState(saveFollowupSettingsButton, [
+        followupMasterEnabled,
+        followupMode,
+        followupQuietStart,
+        followupQuietEnd,
+        followupMinIntervalHours,
+        followupWaitDataEnabled,
+        followupWaitDataHours,
+        followupWaitDataMax,
+        followupWaitPaymentEnabled,
+        followupWaitPaymentHours,
+        followupWaitPaymentMax,
+        followupWaitReceiptEnabled,
+        followupWaitReceiptHours,
+        followupWaitReceiptMax,
+        followupPromisedLaterEnabled,
+        followupPromisedLaterHours,
+        followupPromisedLaterMax,
+        followupChoosingEnabled,
+        followupChoosingHours,
+        followupChoosingMax,
+      ]);
 
       document.getElementById('saveInstruction').addEventListener('click', saveInstruction);
       document.getElementById('saveCoreRules').addEventListener('click', saveCoreRules);
@@ -4545,6 +5053,7 @@
       document.getElementById('saveIntegrationsModel').addEventListener('click', () => saveModel(integrationsModelSelect));
       document.getElementById('reloadIntegrationModels').addEventListener('click', () => loadModelsInto(integrationsModelSelect));
       document.getElementById('deleteModel').addEventListener('click', deleteModelConfig);
+      saveFollowupSettingsButton.addEventListener('click', saveFollowupSettings);
       refreshInboxButton.addEventListener('click', loadInbox);
       document.getElementById('refreshLogs').addEventListener('click', loadLogs);
       document.getElementById('clearLogs').addEventListener('click', clearLogs);
@@ -4560,6 +5069,22 @@
         if (!chat) return;
         currentInboxChatId = chat.dataset.chatId || '';
         loadInbox();
+      });
+
+      inboxFilters.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-inbox-filter]');
+        if (!button) return;
+        currentInboxFilter = button.dataset.inboxFilter || 'all';
+        renderInboxFilters({
+          total: inboxChatsCache.length,
+          needsAttention: inboxChatsCache.filter((chat) => chat.followup?.needsAttention).length,
+          ...inboxChatsCache.reduce((acc, chat) => {
+            const key = chat.status?.key || 'unknown';
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {}),
+        });
+        renderInboxChats(filterInboxChats(inboxChatsCache));
       });
 
       if (inboxResizeHandle && inboxWorkspace) {

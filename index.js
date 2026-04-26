@@ -216,6 +216,26 @@ const runtimeConfig = {
   delivery_layout_text: process.env.DELIVERY_LAYOUT_TEXT || '',
   delivery_bold_mode: process.env.DELIVERY_BOLD_MODE || 'off',
   delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || '',
+  followup_master_enabled: process.env.FOLLOWUP_MASTER_ENABLED === 'true',
+  followup_mode: process.env.FOLLOWUP_MODE || 'off',
+  followup_quiet_start: process.env.FOLLOWUP_QUIET_START || '22:00',
+  followup_quiet_end: process.env.FOLLOWUP_QUIET_END || '10:00',
+  followup_min_interval_hours: process.env.FOLLOWUP_MIN_INTERVAL_HOURS || '24',
+  followup_wait_data_enabled: process.env.FOLLOWUP_WAIT_DATA_ENABLED !== 'false',
+  followup_wait_data_hours: process.env.FOLLOWUP_WAIT_DATA_HOURS || '2',
+  followup_wait_data_max: process.env.FOLLOWUP_WAIT_DATA_MAX || '2',
+  followup_wait_payment_enabled: process.env.FOLLOWUP_WAIT_PAYMENT_ENABLED !== 'false',
+  followup_wait_payment_hours: process.env.FOLLOWUP_WAIT_PAYMENT_HOURS || '3',
+  followup_wait_payment_max: process.env.FOLLOWUP_WAIT_PAYMENT_MAX || '2',
+  followup_wait_receipt_enabled: process.env.FOLLOWUP_WAIT_RECEIPT_ENABLED !== 'false',
+  followup_wait_receipt_hours: process.env.FOLLOWUP_WAIT_RECEIPT_HOURS || '1',
+  followup_wait_receipt_max: process.env.FOLLOWUP_WAIT_RECEIPT_MAX || '1',
+  followup_promised_later_enabled: process.env.FOLLOWUP_PROMISED_LATER_ENABLED !== 'false',
+  followup_promised_later_hours: process.env.FOLLOWUP_PROMISED_LATER_HOURS || '4',
+  followup_promised_later_max: process.env.FOLLOWUP_PROMISED_LATER_MAX || '2',
+  followup_choosing_enabled: process.env.FOLLOWUP_CHOOSING_ENABLED !== 'false',
+  followup_choosing_hours: process.env.FOLLOWUP_CHOOSING_HOURS || '24',
+  followup_choosing_max: process.env.FOLLOWUP_CHOOSING_MAX || '1',
   webhook_url: process.env.WEBHOOK_URL || '',
 };
 
@@ -2429,6 +2449,26 @@ function getRuntimeSnapshot() {
     delivery_layout_text: runtimeConfig.delivery_layout_text,
     delivery_bold_mode: runtimeConfig.delivery_bold_mode,
     delivery_example_text: runtimeConfig.delivery_example_text,
+    followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
+    followup_mode: runtimeConfig.followup_mode,
+    followup_quiet_start: runtimeConfig.followup_quiet_start,
+    followup_quiet_end: runtimeConfig.followup_quiet_end,
+    followup_min_interval_hours: runtimeConfig.followup_min_interval_hours,
+    followup_wait_data_enabled: parseConfigBoolean(runtimeConfig.followup_wait_data_enabled, true),
+    followup_wait_data_hours: runtimeConfig.followup_wait_data_hours,
+    followup_wait_data_max: runtimeConfig.followup_wait_data_max,
+    followup_wait_payment_enabled: parseConfigBoolean(runtimeConfig.followup_wait_payment_enabled, true),
+    followup_wait_payment_hours: runtimeConfig.followup_wait_payment_hours,
+    followup_wait_payment_max: runtimeConfig.followup_wait_payment_max,
+    followup_wait_receipt_enabled: parseConfigBoolean(runtimeConfig.followup_wait_receipt_enabled, true),
+    followup_wait_receipt_hours: runtimeConfig.followup_wait_receipt_hours,
+    followup_wait_receipt_max: runtimeConfig.followup_wait_receipt_max,
+    followup_promised_later_enabled: parseConfigBoolean(runtimeConfig.followup_promised_later_enabled, true),
+    followup_promised_later_hours: runtimeConfig.followup_promised_later_hours,
+    followup_promised_later_max: runtimeConfig.followup_promised_later_max,
+    followup_choosing_enabled: parseConfigBoolean(runtimeConfig.followup_choosing_enabled, true),
+    followup_choosing_hours: runtimeConfig.followup_choosing_hours,
+    followup_choosing_max: runtimeConfig.followup_choosing_max,
     webhook_url: runtimeConfig.webhook_url,
   };
 }
@@ -2638,6 +2678,36 @@ function applyConfigUpdate(body) {
 
   applyBooleanConfig(body, 'dialog_examples_enabled', 'DIALOG_EXAMPLES_ENABLED', false);
   applyStringConfig(body, 'dialog_examples_text', 'DIALOG_EXAMPLES_TEXT');
+
+  [
+    ['followup_master_enabled', 'FOLLOWUP_MASTER_ENABLED', false],
+    ['followup_wait_data_enabled', 'FOLLOWUP_WAIT_DATA_ENABLED', true],
+    ['followup_wait_payment_enabled', 'FOLLOWUP_WAIT_PAYMENT_ENABLED', true],
+    ['followup_wait_receipt_enabled', 'FOLLOWUP_WAIT_RECEIPT_ENABLED', true],
+    ['followup_promised_later_enabled', 'FOLLOWUP_PROMISED_LATER_ENABLED', true],
+    ['followup_choosing_enabled', 'FOLLOWUP_CHOOSING_ENABLED', true],
+  ].forEach(([key, envKey, fallback]) => applyBooleanConfig(body, key, envKey, fallback));
+
+  [
+    ['followup_quiet_start', 'FOLLOWUP_QUIET_START', '22:00'],
+    ['followup_quiet_end', 'FOLLOWUP_QUIET_END', '10:00'],
+    ['followup_min_interval_hours', 'FOLLOWUP_MIN_INTERVAL_HOURS', '24'],
+    ['followup_wait_data_hours', 'FOLLOWUP_WAIT_DATA_HOURS', '2'],
+    ['followup_wait_data_max', 'FOLLOWUP_WAIT_DATA_MAX', '2'],
+    ['followup_wait_payment_hours', 'FOLLOWUP_WAIT_PAYMENT_HOURS', '3'],
+    ['followup_wait_payment_max', 'FOLLOWUP_WAIT_PAYMENT_MAX', '2'],
+    ['followup_wait_receipt_hours', 'FOLLOWUP_WAIT_RECEIPT_HOURS', '1'],
+    ['followup_wait_receipt_max', 'FOLLOWUP_WAIT_RECEIPT_MAX', '1'],
+    ['followup_promised_later_hours', 'FOLLOWUP_PROMISED_LATER_HOURS', '4'],
+    ['followup_promised_later_max', 'FOLLOWUP_PROMISED_LATER_MAX', '2'],
+    ['followup_choosing_hours', 'FOLLOWUP_CHOOSING_HOURS', '24'],
+    ['followup_choosing_max', 'FOLLOWUP_CHOOSING_MAX', '1'],
+  ].forEach(([key, envKey, fallback]) => applyStringConfig(body, key, envKey, fallback));
+
+  if (Object.prototype.hasOwnProperty.call(body, 'followup_mode')) {
+    runtimeConfig.followup_mode = ['off', 'drafts', 'auto'].includes(body.followup_mode) ? body.followup_mode : 'off';
+    process.env.FOLLOWUP_MODE = runtimeConfig.followup_mode;
+  }
 
   if (Object.prototype.hasOwnProperty.call(body, 'order_step_mode')) {
     runtimeConfig.order_step_mode = body.order_step_mode || 'natural';
@@ -5082,6 +5152,26 @@ app.get('/config/status', async (req, res) => {
     delivery_layout_text: runtimeConfig.delivery_layout_text || '',
     delivery_bold_mode: runtimeConfig.delivery_bold_mode || 'off',
     delivery_example_text: runtimeConfig.delivery_example_text || '',
+    followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
+    followup_mode: runtimeConfig.followup_mode || 'off',
+    followup_quiet_start: runtimeConfig.followup_quiet_start || '22:00',
+    followup_quiet_end: runtimeConfig.followup_quiet_end || '10:00',
+    followup_min_interval_hours: runtimeConfig.followup_min_interval_hours || '24',
+    followup_wait_data_enabled: parseConfigBoolean(runtimeConfig.followup_wait_data_enabled, true),
+    followup_wait_data_hours: runtimeConfig.followup_wait_data_hours || '2',
+    followup_wait_data_max: runtimeConfig.followup_wait_data_max || '2',
+    followup_wait_payment_enabled: parseConfigBoolean(runtimeConfig.followup_wait_payment_enabled, true),
+    followup_wait_payment_hours: runtimeConfig.followup_wait_payment_hours || '3',
+    followup_wait_payment_max: runtimeConfig.followup_wait_payment_max || '2',
+    followup_wait_receipt_enabled: parseConfigBoolean(runtimeConfig.followup_wait_receipt_enabled, true),
+    followup_wait_receipt_hours: runtimeConfig.followup_wait_receipt_hours || '1',
+    followup_wait_receipt_max: runtimeConfig.followup_wait_receipt_max || '1',
+    followup_promised_later_enabled: parseConfigBoolean(runtimeConfig.followup_promised_later_enabled, true),
+    followup_promised_later_hours: runtimeConfig.followup_promised_later_hours || '4',
+    followup_promised_later_max: runtimeConfig.followup_promised_later_max || '2',
+    followup_choosing_enabled: parseConfigBoolean(runtimeConfig.followup_choosing_enabled, true),
+    followup_choosing_hours: runtimeConfig.followup_choosing_hours || '24',
+    followup_choosing_max: runtimeConfig.followup_choosing_max || '1',
     webhook_url: runtimeConfig.webhook_url || '',
     sai: getSaiStatus(),
   };
@@ -5197,6 +5287,210 @@ app.get('/logs/:traceId', (req, res) => {
     traceId,
     items,
   });
+});
+
+function parseMoneyAmount(value) {
+  const raw = String(value || '').replace(/\s+/g, '');
+  const match = raw.match(/(\d+(?:[.,]\d+)?)/);
+  if (!match) return 0;
+  return Number(match[1].replace(',', '.')) || 0;
+}
+
+function formatMoneyAmount(value) {
+  const amount = Math.round(Number(value) || 0);
+  if (!amount) return '0 ₽';
+  return `${new Intl.NumberFormat('ru-RU').format(amount)} ₽`;
+}
+
+function hoursBetweenNow(dateValue) {
+  const date = dateValue ? new Date(dateValue) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return Math.max(0, (Date.now() - date.getTime()) / 3600000);
+}
+
+function getLastMessageByRole(messages = [], roles = []) {
+  const allowed = new Set(roles);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (allowed.has(messages[index]?.role)) return messages[index];
+  }
+  return null;
+}
+
+function isConfirmedOrder(order = {}) {
+  const values = [
+    order.status,
+    order.paymentStatus,
+    order.paymentCheckStatus,
+  ].map((value) => String(value || '').toLowerCase());
+  return values.some((value) => /paid|confirmed|оплачен|подтвержден|подтверждён|shipped|done|completed/.test(value));
+}
+
+function buildInboxMoneyStats(orders = []) {
+  const confirmedOrders = orders.filter(isConfirmedOrder);
+  const confirmedSpend = confirmedOrders.reduce((sum, order) => sum + parseMoneyAmount(order.price), 0);
+  const potentialSpend = orders.reduce((sum, order) => sum + parseMoneyAmount(order.price), 0);
+  return {
+    ordersCount: orders.length,
+    confirmedOrdersCount: confirmedOrders.length,
+    confirmedSpend,
+    confirmedSpendLabel: formatMoneyAmount(confirmedSpend),
+    potentialSpend,
+    potentialSpendLabel: formatMoneyAmount(potentialSpend),
+    averageCheck: confirmedOrders.length ? Math.round(confirmedSpend / confirmedOrders.length) : 0,
+    averageCheckLabel: confirmedOrders.length ? formatMoneyAmount(confirmedSpend / confirmedOrders.length) : '0 ₽',
+  };
+}
+
+function getInboxRuleConfig(statusKey, config = runtimeConfig) {
+  const map = {
+    waiting_data: ['followup_wait_data_enabled', 'followup_wait_data_hours', 'followup_wait_data_max'],
+    waiting_payment: ['followup_wait_payment_enabled', 'followup_wait_payment_hours', 'followup_wait_payment_max'],
+    waiting_receipt: ['followup_wait_receipt_enabled', 'followup_wait_receipt_hours', 'followup_wait_receipt_max'],
+    promised_later: ['followup_promised_later_enabled', 'followup_promised_later_hours', 'followup_promised_later_max'],
+    choosing: ['followup_choosing_enabled', 'followup_choosing_hours', 'followup_choosing_max'],
+  };
+  const keys = map[statusKey];
+  if (!keys) return null;
+  return {
+    enabled: parseConfigBoolean(config[keys[0]], true),
+    hours: Math.max(0.25, Number(config[keys[1]]) || 1),
+    maxTouches: Math.max(1, Number(config[keys[2]]) || 1),
+  };
+}
+
+function detectInboxStatus(profile = {}) {
+  const messages = Array.isArray(profile.recentMessages) ? profile.recentMessages : [];
+  const lastClient = getLastMessageByRole(messages, ['user']);
+  const lastAny = messages[messages.length - 1] || null;
+  const lastText = String(lastClient?.text || lastAny?.text || '').toLowerCase();
+  const stateStage = String(profile.state?.stage || '').toLowerCase();
+  const aiMode = String(profile.state?.aiMode || '').toLowerCase();
+  const order = profile.lastOrder || {};
+  const orderStatus = String(order.status || '').toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+  const checkStatus = String(order.paymentCheckStatus || '').toLowerCase();
+
+  if (aiMode === 'passive_manager') {
+    return { key: 'manager', label: 'Вручную', tone: 'neutral', reason: 'менеджер ведёт диалог' };
+  }
+  if (/не актуально|передумал|отмена|не надо|откажусь|отказ/.test(lastText)) {
+    return { key: 'closed', label: 'Закрыт', tone: 'muted', reason: 'клиент отказался или отложил без продолжения' };
+  }
+  if (isConfirmedOrder(order)) {
+    return { key: 'paid', label: 'Оплачен', tone: 'good', reason: 'есть признаки подтверждённого заказа' };
+  }
+  if (order.proofReceivedAt || /proof_received|waiting_payment_check|check_received|receipt/.test(checkStatus)) {
+    return { key: 'waiting_receipt', label: 'Чек на проверке', tone: 'warn', reason: 'чек получен, нужна ручная сверка' };
+  }
+  if (/через час|позже|вечером|завтра|оплачу|напишу|вернусь|подумаю|определюсь|пока думаю/.test(lastText)) {
+    return { key: 'promised_later', label: 'Обещал вернуться', tone: 'warn', reason: 'клиент обещал написать/оплатить позже' };
+  }
+  if (/waiting_payment|payment_details_sent/.test(`${orderStatus} ${paymentStatus}`)) {
+    return { key: 'waiting_payment', label: 'Ждём оплату', tone: 'hot', reason: 'реквизиты уже отправлены' };
+  }
+  if (/collecting|ready_to_buy|draft|order/.test(`${stateStage} ${orderStatus}`)) {
+    return { key: 'waiting_data', label: 'Ждём данные', tone: 'hot', reason: 'заказ начат, не хватает данных' };
+  }
+  if (lastClient) {
+    return { key: 'choosing', label: 'Выбирает', tone: 'neutral', reason: 'клиент интересовался товаром' };
+  }
+  return { key: 'new', label: 'Новый', tone: 'neutral', reason: 'диалог только появился' };
+}
+
+function buildInboxDraft(profile = {}, status = {}) {
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const name = facts.firstName?.value || profile.customer?.firstName || '';
+  const product = order.product ? `по ${order.product}` : 'по заказу';
+  const appeal = name ? `${name}, ` : '';
+  if (status.key === 'waiting_payment') {
+    return `${appeal}подскажите, пожалуйста, получилось оплатить ${product}? Если удобно, пришлите чек — я сразу передам на проверку.`;
+  }
+  if (status.key === 'waiting_data') {
+    return `${appeal}чтобы спокойно оформить заказ, пришлите, пожалуйста, ФИО, телефон и удобный пункт выдачи. Доставка у нас бесплатная.`;
+  }
+  if (status.key === 'waiting_receipt') {
+    return `${appeal}чек получил, спасибо. Передал на проверку, как сверим — напишу по заказу.`;
+  }
+  if (status.key === 'promised_later') {
+    return `${appeal}напомню аккуратно ${product}. Если ещё актуально — я на связи, быстро оформим.`;
+  }
+  if (status.key === 'choosing') {
+    return `${appeal}если по модели остались вопросы — пишите, помогу спокойно определиться.`;
+  }
+  return '';
+}
+
+function buildInboxFollowup(profile = {}, status = {}, config = runtimeConfig) {
+  const masterEnabled = parseConfigBoolean(config.followup_master_enabled, false);
+  const mode = ['off', 'drafts', 'auto'].includes(config.followup_mode) ? config.followup_mode : 'off';
+  const rule = getInboxRuleConfig(status.key, config);
+  const messages = Array.isArray(profile.recentMessages) ? profile.recentMessages : [];
+  const lastClient = getLastMessageByRole(messages, ['user']);
+  const lastOutgoing = getLastMessageByRole(messages, ['assistant', 'manager']);
+  const anchorTime = lastClient?.createdAt || profile.customer?.lastSeenAt || profile.customer?.updatedAt || '';
+  const idleHours = hoursBetweenNow(anchorTime);
+  const lastOutgoingHours = hoursBetweenNow(lastOutgoing?.createdAt);
+  const minInterval = Math.max(0, Number(config.followup_min_interval_hours) || 24);
+  const blocked = [];
+
+  if (!masterEnabled) blocked.push('главный тумблер автоматики выключен');
+  if (mode === 'off') blocked.push('режим follow-up выключен');
+  if (!rule) blocked.push('для этого статуса нет правила');
+  if (rule && !rule.enabled) blocked.push('правило для статуса выключено');
+  if (lastOutgoingHours !== null && lastOutgoingHours < minInterval) blocked.push(`последнее исходящее было ${lastOutgoingHours.toFixed(1)} ч назад`);
+
+  const dueByTime = Boolean(rule && idleHours !== null && idleHours >= rule.hours);
+  const canPrepare = rule?.enabled && dueByTime && !blocked.length;
+  const needsAttention = dueByTime || ['waiting_payment', 'waiting_data', 'promised_later', 'waiting_receipt'].includes(status.key);
+  const draft = buildInboxDraft(profile, status);
+
+  return {
+    masterEnabled,
+    mode,
+    rule,
+    idleHours,
+    idleLabel: idleHours === null ? 'нет данных' : `${idleHours.toFixed(1)} ч`,
+    dueByTime,
+    needsAttention,
+    canPrepare,
+    canSendAuto: canPrepare && mode === 'auto',
+    draft: canPrepare || needsAttention ? draft : '',
+    blocked,
+    quietHours: {
+      start: config.followup_quiet_start || '22:00',
+      end: config.followup_quiet_end || '10:00',
+    },
+  };
+}
+
+function buildInboxPayload(limit) {
+  const rows = safeCustomerStoreCall('customer.inbox.list', (store) => store.getInboxCustomers({ limit })) || [];
+  const items = rows.map((profile) => {
+    const status = detectInboxStatus(profile);
+    const money = buildInboxMoneyStats(profile.orders || []);
+    const followup = buildInboxFollowup(profile, status);
+    const lastMessage = (profile.recentMessages || [])[profile.recentMessages.length - 1] || null;
+    return {
+      ...profile,
+      status,
+      money,
+      followup,
+      lastMessage,
+    };
+  });
+  const summary = items.reduce((acc, item) => {
+    acc.total += 1;
+    acc[item.status?.key || 'unknown'] = (acc[item.status?.key || 'unknown'] || 0) + 1;
+    if (item.followup?.needsAttention) acc.needsAttention += 1;
+    return acc;
+  }, { total: 0, needsAttention: 0 });
+  return { items, summary };
+}
+
+app.get('/inbox', (req, res) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200));
+  res.json(buildInboxPayload(limit));
 });
 
 app.get('/memory/:chatId', (req, res) => {

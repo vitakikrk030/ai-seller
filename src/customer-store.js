@@ -292,6 +292,32 @@ function createCustomerStore(options = {}) {
     };
   }
 
+  function getInboxCustomers(options = {}) {
+    const limit = Math.max(1, Math.min(500, Number(options.limit) || 200));
+    return statements.listCustomers.all({ limit }).map((customerRow) => {
+      const facts = getFactMapByCustomerId(customerRow.id, statements);
+      const stateRow = statements.getDialogState.get(customerRow.id);
+      const orders = statements.getOrdersByCustomerId.all(customerRow.id).map(mapOrderRow);
+      const recentMessages = statements.getRecentMessages.all({
+        customer_id: customerRow.id,
+        limit: 50,
+      }).reverse().map((row) => ({
+        ...mapMessageRow(row),
+        chatId: customerRow.telegram_chat_id || '',
+        userId: customerRow.telegram_user_id || customerRow.telegram_chat_id || '',
+      }));
+
+      return {
+        customer: mapCustomerRow(customerRow),
+        facts,
+        state: stateRow ? mapStateRow(stateRow) : null,
+        lastOrder: orders[0] || null,
+        orders,
+        recentMessages,
+      };
+    });
+  }
+
   function clearCustomer(inputOrChatId) {
     const customerId = getCustomerId(inputOrChatId);
     if (!customerId) return false;
@@ -361,6 +387,7 @@ function createCustomerStore(options = {}) {
     getRecentMessages,
     getCustomerContext,
     getCustomerProfile,
+    getInboxCustomers,
     clearCustomer,
     importLegacyMemory,
     close,
@@ -485,6 +512,11 @@ function prepareStatements(db) {
   return {
     getCustomerByChatId: db.prepare('SELECT * FROM customers WHERE telegram_chat_id = ?'),
     getCustomerById: db.prepare('SELECT * FROM customers WHERE id = ?'),
+    listCustomers: db.prepare(`
+      SELECT * FROM customers
+      ORDER BY datetime(last_seen_at) DESC, datetime(updated_at) DESC, id DESC
+      LIMIT @limit
+    `),
     insertCustomer: db.prepare(`
       INSERT INTO customers (telegram_user_id, telegram_chat_id, username, first_name, last_name, phone, created_at, updated_at, last_seen_at)
       VALUES (@telegram_user_id, @telegram_chat_id, @username, @first_name, @last_name, @phone, @created_at, @updated_at, @last_seen_at)
@@ -566,6 +598,7 @@ function prepareStatements(db) {
     `),
     getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
     getLastOrder: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT 1'),
+    getOrdersByCustomerId: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC'),
     updateOrder: db.prepare(`
       UPDATE orders
       SET product = @product,
@@ -642,6 +675,26 @@ function mapMessageRow(row) {
     telegramMessageId: row.telegram_message_id || '',
     traceId: row.trace_id || '',
     createdAt: row.created_at || '',
+  };
+}
+
+function mapOrderRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    product: row.product || '',
+    size: row.size || '',
+    price: row.price || '',
+    fullName: row.full_name || '',
+    phone: row.phone || '',
+    deliveryAddress: row.delivery_address || '',
+    status: row.status || '',
+    paymentStatus: row.payment_status || '',
+    paymentCheckStatus: row.payment_check_status || '',
+    paymentCheckSummary: row.payment_check_summary || '',
+    proofReceivedAt: row.proof_received_at || '',
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
   };
 }
 
