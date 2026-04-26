@@ -1312,12 +1312,18 @@
         min-height: 33px;
         min-width: 0;
         white-space: nowrap;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .followup-toggle input {
         accent-color: var(--accent);
         flex: 0 0 auto;
+      }
+
+      .followup-toggle-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .mini-input {
@@ -2911,9 +2917,9 @@
                         <span>Очередь мягких напоминаний: черновики, ручная отправка, автоотправка и повторные продажи под контролем тумблеров.</span>
                       </div>
                       <div class="followup-controls">
-                        <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"> Главный тумблер</label>
-                        <label class="followup-toggle"><input id="followupWorkerEnabled" type="checkbox"> Готовить черновики</label>
-                        <label class="followup-toggle"><input id="followupAutoSendEnabled" type="checkbox"> Автоотправка</label>
+                        <label class="followup-toggle"><input id="followupMasterEnabled" type="checkbox"><span class="followup-toggle-text">Главный тумблер</span></label>
+                        <label class="followup-toggle"><input id="followupWorkerEnabled" type="checkbox"><span class="followup-toggle-text">Готовить черновики</span></label>
+                        <label class="followup-toggle"><input id="followupAutoSendEnabled" type="checkbox"><span class="followup-toggle-text">Автоотправка</span></label>
                         <select id="followupMode" class="mini-input followup-mode-select">
                           <option value="off">Выключено</option>
                           <option value="drafts">Черновики</option>
@@ -2925,7 +2931,7 @@
                         <label class="followup-toggle followup-time-group">Тишина <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
                         <label class="followup-toggle followup-interval-group">Мин. интервал <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1"> ч</label>
                         <label class="followup-toggle followup-interval-group">Лимит в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
-                        <label class="followup-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"> Повторные продажи</label>
+                        <label class="followup-toggle"><input id="followupRepeatSalesEnabled" type="checkbox"><span class="followup-toggle-text">Повторные продажи</span></label>
                       </div>
                       <div class="followup-controls secondary">
                         <label class="followup-toggle followup-interval-group">Повтор через <input id="followupRepeatSalesDays" class="mini-input" type="number" min="1" step="1"> дн</label>
