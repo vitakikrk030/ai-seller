@@ -1296,10 +1296,98 @@
 
       .followup-main-switches {
         display: grid;
-        grid-template-columns: minmax(240px, 1.15fr) minmax(220px, 0.85fr) minmax(240px, 1fr) minmax(110px, 130px);
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr);
         gap: 8px;
         align-items: stretch;
         width: 100%;
+      }
+
+      .followup-command-center {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .followup-current-card {
+        border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+        background:
+          radial-gradient(circle at 18% 10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 32%),
+          linear-gradient(135deg, color-mix(in srgb, var(--panel) 94%, transparent), color-mix(in srgb, var(--hover) 34%, var(--panel)));
+        border-radius: 20px;
+        padding: 14px 16px;
+        display: grid;
+        gap: 7px;
+        min-width: 0;
+        box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+
+      .followup-current-card .eyebrow,
+      .followup-section-label {
+        color: var(--muted);
+        font-size: 8px;
+        font-weight: 760;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .followup-current-card strong {
+        color: var(--text);
+        font-size: 18px;
+        line-height: 1.05;
+      }
+
+      .followup-current-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.45;
+        max-width: 740px;
+      }
+
+      .followup-current-badges {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+
+      .followup-current-badges span {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: color-mix(in srgb, var(--panel) 72%, transparent);
+        color: var(--muted);
+        font-size: 8px;
+        font-weight: 700;
+      }
+
+      .followup-current-badges .is-safe {
+        border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+        color: color-mix(in srgb, var(--accent) 72%, var(--text));
+        background: color-mix(in srgb, var(--hover) 58%, var(--panel));
+      }
+
+      .followup-current-badges .is-auto {
+        border-color: color-mix(in srgb, var(--warn) 44%, var(--border));
+        color: color-mix(in srgb, var(--warn) 72%, var(--text));
+        background: color-mix(in srgb, var(--warn) 54%, var(--panel));
+      }
+
+      .followup-command-actions {
+        display: grid;
+        gap: 8px;
+      }
+
+      .followup-command-actions button {
+        min-height: 48px;
+        justify-content: center;
+        width: 100%;
+      }
+
+      .followup-command-actions .button-primary {
+        font-size: 11px;
+        font-weight: 800;
       }
 
       .followup-controls.secondary {
@@ -1457,15 +1545,16 @@
 
       .followup-guide-step {
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 8px 10px;
+        border-radius: 18px;
+        padding: 12px;
         background: color-mix(in srgb, var(--panel) 62%, transparent);
         color: var(--muted);
-        font-size: 9px;
+        font-size: 10px;
         line-height: 1.35;
         text-align: left;
         cursor: pointer;
         transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        min-height: 86px;
       }
 
       button.followup-guide-step {
@@ -1475,21 +1564,41 @@
 
       .followup-guide-step:hover {
         border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-        background: color-mix(in srgb, var(--accent-soft) 42%, var(--panel));
+        background: color-mix(in srgb, var(--hover) 42%, var(--panel));
         transform: translateY(-1px);
       }
 
       .followup-guide-step.active {
         border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-        background: color-mix(in srgb, var(--accent-soft) 68%, var(--panel));
+        background: color-mix(in srgb, var(--hover) 68%, var(--panel));
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent) inset;
       }
 
       .followup-guide-step strong {
         display: block;
         color: var(--text);
-        font-size: 10px;
-        margin-bottom: 2px;
+        font-size: 12px;
+        margin-bottom: 5px;
+      }
+
+      .followup-guide-step small {
+        display: inline-flex;
+        align-items: center;
+        width: max-content;
+        border-radius: 999px;
+        padding: 3px 7px;
+        margin-bottom: 8px;
+        background: color-mix(in srgb, var(--hover) 64%, var(--panel));
+        color: color-mix(in srgb, var(--accent) 72%, var(--text));
+        font-size: 7px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .followup-guide-step[data-followup-preset="auto"] small {
+        background: color-mix(in srgb, var(--warn) 62%, var(--panel));
+        color: color-mix(in srgb, var(--warn) 72%, var(--text));
       }
 
       .hidden-control {
@@ -2109,6 +2218,14 @@
 
         .followup-main-switches {
           grid-template-columns: 1fr;
+        }
+
+        .followup-command-center {
+          grid-template-columns: 1fr;
+        }
+
+        .followup-current-card strong {
+          font-size: 16px;
         }
 
         .followup-daily-panel {
@@ -3160,19 +3277,40 @@
                     <div class="followup-panel-head">
                       <div class="followup-title">
                         <strong>Follow-up Autopilot</strong>
-                        <span>Раз в день открыл Inbox: смотри, кому пора написать, отправляй готовые черновики или включай аккуратную автоматику.</span>
+                        <span>Центр мягких напоминаний: AI готовит тексты, ты контролируешь отправку или включаешь аккуратную автоматику.</span>
                       </div>
                       <input id="followupWorkerEnabled" class="hidden-control" type="checkbox">
+                      <div class="followup-command-center">
+                        <div class="followup-current-card">
+                          <span class="eyebrow">Текущий режим</span>
+                          <strong id="followupCurrentModeTitle">Ручной контроль</strong>
+                          <p id="followupCurrentModeText">AI готовит черновики, а отправляешь их ты. Это самый безопасный режим для живых клиентов.</p>
+                          <div class="followup-current-badges">
+                            <span id="followupCurrentModeBadge" class="is-safe">Безопасно</span>
+                            <span id="followupPrimaryStep">Следующий шаг: проверить клиентов</span>
+                          </div>
+                        </div>
+                        <div class="followup-command-actions">
+                          <button id="runFollowupNow" class="button-secondary" type="button">Проверить клиентов сейчас</button>
+                          <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить настройки</button>
+                        </div>
+                      </div>
+                      <div class="followup-section-label">Выбери режим работы</div>
+                      <div class="followup-simple-guide">
+                        <button class="followup-guide-step" type="button" data-followup-preset="safe"><small>Рекомендую</small><strong>Ручной</strong>AI готовит текст в карточке клиента. Ты читаешь и сам нажимаешь «Отправить вручную».</button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="drafts"><small>Быстрее</small><strong>Полуавто</strong>AI сам ищет клиентов по базе и готовит черновики. Отправка всё равно под твоим контролем.</button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="auto"><small>Осторожно</small><strong>Авто</strong>AI сможет отправлять сам только при включённой защите автоотправки, лимитах и ночной паузе.</button>
+                      </div>
                       <div class="followup-main-switches">
                         <label class="followup-switch-card">
                           <input id="followupMasterEnabled" type="checkbox">
                           <span class="followup-switch-copy">
-                            <strong>1. Автоматика Inbox</strong>
+                            <strong>Система включена</strong>
                             <span>Главный стоп-кран. Выключено — ничего само не создаётся и не отправляется.</span>
                           </span>
                         </label>
                         <div class="followup-mode-card">
-                          <strong>2. Что делать</strong>
+                          <strong>Что делать</strong>
                           <select id="followupMode" class="mini-input followup-mode-select">
                             <option value="off">Ничего не делать</option>
                             <option value="drafts">Только готовить черновики</option>
@@ -3183,33 +3321,26 @@
                         <label class="followup-switch-card">
                           <input id="followupAutoSendEnabled" type="checkbox">
                           <span class="followup-switch-copy">
-                            <strong>3. Разрешить автоотправку</strong>
+                            <strong>Разрешить автоотправку</strong>
                             <span>Дополнительная защита. Без неё режим «Авто» всё равно не отправит клиенту сообщение.</span>
                           </span>
                         </label>
-                        <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить</button>
-                      </div>
-                      <div class="followup-simple-guide">
-                        <button class="followup-guide-step" type="button" data-followup-preset="safe"><strong>Безопасно</strong>Нажми сюда: AI готовит черновики, ты раз в день сам жмёшь «Отправить».</button>
-                        <button class="followup-guide-step" type="button" data-followup-preset="drafts"><strong>Полуавто</strong>Нажми сюда: AI ищет клиентов и готовит тексты после «Проверить сейчас».</button>
-                        <button class="followup-guide-step" type="button" data-followup-preset="auto"><strong>Полный авто</strong>Нажми сюда: AI сможет отправлять сам, если отдельно разрешить автоотправку.</button>
                       </div>
                       <div class="followup-daily-note">
-                        <strong>Как пользоваться без риска</strong>
-                        Оставь режим «Только готовить черновики», раз в день нажимай «Проверить сейчас», смотри текст в карточке клиента и отправляй только если всё нравится.
+                        <strong>Простая ежедневная схема</strong>
+                        Один раз в день открой Inbox, нажми «Проверить клиентов сейчас», посмотри готовые тексты в карточках и отправь только тем, где всё нравится.
                       </div>
                       <div class="followup-daily-panel">
-                        <button id="runFollowupNow" class="button-secondary" type="button">Проверить клиентов сейчас</button>
                         <label class="followup-toggle followup-time-group">Не писать ночью <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
                         <label class="followup-toggle followup-interval-group">Лимит авто-сообщений в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
+                        <label class="followup-repeat-card">
+                          <span class="followup-repeat-copy">
+                            <strong>Повторные предложения старым клиентам</strong>
+                            <span>Если клиент уже покупал, AI сможет мягко предложить новые варианты под его размер и стиль.</span>
+                          </span>
+                          <input id="followupRepeatSalesEnabled" type="checkbox">
+                        </label>
                       </div>
-                      <label class="followup-repeat-card">
-                        <span class="followup-repeat-copy">
-                          <strong>Повторные предложения старым клиентам</strong>
-                          <span>Если клиент уже покупал, AI сможет мягко предложить новые варианты под его размер и стиль.</span>
-                        </span>
-                        <input id="followupRepeatSalesEnabled" type="checkbox">
-                      </label>
                       <details class="followup-advanced">
                         <summary>
                           Расширенные настройки
@@ -3418,6 +3549,10 @@
       const followupRepeatSalesEnabled = document.getElementById('followupRepeatSalesEnabled');
       const followupMode = document.getElementById('followupMode');
       const followupModeHelp = document.getElementById('followupModeHelp');
+      const followupCurrentModeTitle = document.getElementById('followupCurrentModeTitle');
+      const followupCurrentModeText = document.getElementById('followupCurrentModeText');
+      const followupCurrentModeBadge = document.getElementById('followupCurrentModeBadge');
+      const followupPrimaryStep = document.getElementById('followupPrimaryStep');
       const followupPresetButtons = Array.from(document.querySelectorAll('[data-followup-preset]'));
       let selectedFollowupPreset = '';
       const followupQuietStart = document.getElementById('followupQuietStart');
@@ -3768,6 +3903,7 @@
       function syncFollowupModeUi() {
         if (!followupModeHelp) return;
         const mode = followupMode.value || 'off';
+        const masterOn = Boolean(followupMasterEnabled && followupMasterEnabled.checked);
         if (mode === 'auto') {
           followupModeHelp.textContent = 'Полный авто: AI готовит и может отправлять сам, но только если включено «Разрешить автоотправку».';
         } else if (mode === 'drafts') {
@@ -3776,20 +3912,51 @@
           followupModeHelp.textContent = 'Автоматика ничего не делает. Обычный AI Control продолжает отвечать клиентам как раньше.';
         }
         if (followupWorkerEnabled) {
-          followupWorkerEnabled.checked = followupMasterEnabled.checked && mode !== 'off';
+          followupWorkerEnabled.checked = masterOn && mode !== 'off';
         }
         if (followupAutoSendEnabled) {
           followupAutoSendEnabled.disabled = mode !== 'auto';
           if (mode !== 'auto') followupAutoSendEnabled.checked = false;
         }
-        if (!followupMasterEnabled.checked || mode === 'off') {
+        if (!masterOn || mode === 'off') {
           selectedFollowupPreset = '';
         } else if (!selectedFollowupPreset || mode === 'auto' || selectedFollowupPreset === 'auto') {
           selectedFollowupPreset = mode === 'auto' ? 'auto' : 'safe';
         }
+        const autoAllowed = Boolean(followupAutoSendEnabled && followupAutoSendEnabled.checked);
+        let title = 'Автоматика выключена';
+        let text = 'AI Control продолжает отвечать клиентам как раньше. Follow-up ничего сам не готовит и не отправляет.';
+        let badge = 'Спокойно';
+        let badgeClass = 'is-safe';
+        let step = 'Чтобы начать: выбери ручной режим и сохрани';
+        if (masterOn && mode === 'drafts') {
+          const isSemi = selectedFollowupPreset === 'drafts';
+          title = isSemi ? 'Полуавто: AI ищет и готовит' : 'Ручной контроль';
+          text = isSemi
+            ? 'AI помогает найти клиентов, которым пора мягко напомнить, и готовит тексты. Отправка остаётся за тобой.'
+            : 'Самый безопасный режим: ты нажимаешь проверку, читаешь черновик в карточке клиента и сам отправляешь.';
+          badge = isSemi ? 'Контроль отправки' : 'Безопасно';
+          step = isSemi ? 'Следующий шаг: проверить клиентов сейчас' : 'Следующий шаг: раз в день проверить клиентов';
+        } else if (masterOn && mode === 'auto') {
+          title = autoAllowed ? 'Авто: отправка разрешена' : 'Авто подготовлено';
+          text = autoAllowed
+            ? 'AI сможет готовить и отправлять напоминания сам, но только с лимитом, ночной паузой и защитами.'
+            : 'Режим авто выбран, но отправка клиентам заблокирована, пока не включена отдельная галочка автоотправки.';
+          badge = autoAllowed ? 'Авто включено' : 'Нужна галочка';
+          badgeClass = 'is-auto';
+          step = autoAllowed ? 'Следующий шаг: наблюдать Inbox' : 'Следующий шаг: включить «Разрешить автоотправку», если точно готов';
+        }
+        if (followupCurrentModeTitle) followupCurrentModeTitle.textContent = title;
+        if (followupCurrentModeText) followupCurrentModeText.textContent = text;
+        if (followupCurrentModeBadge) {
+          followupCurrentModeBadge.textContent = badge;
+          followupCurrentModeBadge.classList.toggle('is-safe', badgeClass === 'is-safe');
+          followupCurrentModeBadge.classList.toggle('is-auto', badgeClass === 'is-auto');
+        }
+        if (followupPrimaryStep) followupPrimaryStep.textContent = step;
         followupPresetButtons.forEach((button) => {
           const preset = button.dataset.followupPreset || '';
-          button.classList.toggle('active', followupMasterEnabled.checked && preset === selectedFollowupPreset);
+          button.classList.toggle('active', masterOn && preset === selectedFollowupPreset);
         });
       }
 
