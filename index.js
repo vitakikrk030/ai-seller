@@ -620,6 +620,20 @@ function getBusinessConnectionByUserChatId(chatId) {
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
 }
 
+function rememberBusinessConnectionChat(businessConnectionId, chatId) {
+  const id = String(businessConnectionId || '').trim();
+  const userChatId = String(chatId || '').trim();
+  if (!id || !userChatId) return null;
+  const existing = getBusinessConnectionById(id) || {};
+  return upsertBusinessConnection({
+    id,
+    userId: existing.userId || '',
+    user_chat_id: userChatId,
+    is_enabled: existing.isEnabled !== false,
+    rights: existing.rights || null,
+  });
+}
+
 function setDialogAiMode(chatId, mode, source = '') {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId || !mode) return null;
@@ -2884,6 +2898,17 @@ function getTelegramApiUrl(config, method) {
   return `https://api.telegram.org/bot${config.telegram_token}/${method}`;
 }
 
+function getTelegramRequestError(e) {
+  const data = e?.response?.data;
+  const description = data?.description || e?.message || 'unknown error';
+  const code = data?.error_code || e?.response?.status || '';
+  return {
+    message: code ? `${description} (${code})` : description,
+    description,
+    code,
+  };
+}
+
 async function fetchTelegramBusinessConnection(config, businessConnectionId) {
   const id = String(businessConnectionId || '').trim();
   if (!config.telegram_token || !id) return null;
@@ -4837,6 +4862,7 @@ async function sendTelegramMessage(config, context, text) {
     businessConnectionId: context.businessConnectionId || '',
     messageType: context.messageType,
   })) {
+    context.telegramError = 'Telegram token не настроен';
     return;
   }
 
@@ -4890,6 +4916,8 @@ async function sendTelegramMessage(config, context, text) {
     });
     return result;
   } catch (e) {
+    const telegramError = getTelegramRequestError(e);
+    context.telegramError = telegramError.message;
     if (replyToMessageId) {
       logEvent('ERROR', {
         traceId: context.traceId,
@@ -4902,7 +4930,9 @@ async function sendTelegramMessage(config, context, text) {
         replyToMessageId,
         duration: Date.now() - startedAt,
         status: 'error',
-        error: e.message,
+        error: telegramError.message,
+        telegramDescription: telegramError.description,
+        telegramErrorCode: telegramError.code,
       });
 
       return sendTelegramMessage(config, { ...context, useReply: false }, text);
@@ -4918,7 +4948,9 @@ async function sendTelegramMessage(config, context, text) {
       messageType: context.messageType,
       duration: Date.now() - startedAt,
       status: 'error',
-      error: e.message,
+      error: telegramError.message,
+      telegramDescription: telegramError.description,
+      telegramErrorCode: telegramError.code,
     });
   return null;
   }
@@ -5787,7 +5819,14 @@ async function sendFollowupJob(jobId, options = {}) {
     useReply: false,
   };
   const sent = await sendTelegramMessage(config, context, job.draftText);
-  if (!sent) return { ok: false, error: 'Telegram не принял сообщение' };
+  if (!sent) {
+    return {
+      ok: false,
+      error: context.telegramError
+        ? `Telegram не принял сообщение: ${context.telegramError}`
+        : 'Telegram не принял сообщение',
+    };
+  }
 
   appendMemoryMessage(context, 'assistant', job.draftText);
   const updated = safeCustomerStoreCall('followup.job.sent', (store) => store.upsertFollowupJob({
@@ -6475,6 +6514,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
   setImmediate(async () => {
     try {
+      if (updateContext.businessConnectionId) {
+        rememberBusinessConnectionChat(updateContext.businessConnectionId, chatId);
+      }
       const sourceInfo = await classifyTelegramMessageSource(config, updateContext, message);
       const input = await normalizeTelegramMessage(config, {
         traceId,
