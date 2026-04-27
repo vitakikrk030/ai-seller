@@ -3835,10 +3835,10 @@
             ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Создать черновик</button>
-              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить вручную</button>` : '<button class="button-primary" type="button" disabled>Отправить вручную</button>'}
+              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить вручную</button>` : draft ? `<button class="button-primary" type="button" data-followup-action="send-draft" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Отправить вручную</button>` : '<button class="button-primary" type="button" disabled>Отправить вручную</button>'}
               ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Пропустить</button>` : ''}
             </div>
-            <div class="followup-action-help">${job.id ? 'Черновик сохранён. Можно отправить вручную или пропустить.' : 'Чтобы появилась рабочая кнопка отправки, сначала нажмите «Создать черновик».'}</div>
+            <div class="followup-action-help">${job.id ? 'Черновик сохранён. Можно отправить вручную или пропустить.' : draft ? 'Текст уже готов. При отправке система сначала сохранит черновик, потом отправит его клиенту.' : 'Чтобы появилась рабочая кнопка отправки, сначала нажмите «Создать черновик».'}</div>
             ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
           </div>
         `;
@@ -5030,6 +5030,13 @@
         return result;
       }
 
+      async function sendGeneratedFollowupDraft(chatId) {
+        const generated = await generateFollowupDraft(chatId);
+        const jobId = generated?.job?.id;
+        if (!jobId) throw new Error('Черновик не сохранился, отправлять нечего');
+        return sendFollowupDraft(jobId);
+      }
+
       async function skipFollowupDraft(jobId) {
         if (!jobId) throw new Error('Черновик не выбран');
         const result = await fetchJSON(`/followups/${encodeURIComponent(jobId)}/skip`, {
@@ -5633,6 +5640,7 @@
         button.disabled = true;
         if (action === 'generate') button.textContent = 'Создаю...';
         if (action === 'send') button.textContent = 'Отправляю...';
+        if (action === 'send-draft') button.textContent = 'Создаю и отправляю...';
         if (action === 'skip') button.textContent = 'Пропускаю...';
         try {
           if (action === 'generate') {
@@ -5643,6 +5651,10 @@
           if (action === 'send') {
             await sendFollowupDraft(button.dataset.jobId);
             showSaveToast('ok', 'Напоминание отправлено');
+          }
+          if (action === 'send-draft') {
+            await sendGeneratedFollowupDraft(button.dataset.chatId || currentInboxChatId);
+            showSaveToast('ok', 'Черновик создан и отправлен');
           }
           if (action === 'skip') {
             await skipFollowupDraft(button.dataset.jobId);
