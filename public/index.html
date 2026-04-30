@@ -3337,11 +3337,6 @@
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
-                  <div class="logs-toolbar">
-                    <div class="logs-toolbar-actions">
-                      <button id="refreshInbox" class="button-primary" type="button">Обновить</button>
-                    </div>
-                  </div>
                   <div class="followup-panel">
                     <div class="followup-panel-head">
                       <div class="followup-title">
@@ -3461,7 +3456,7 @@
                     <div class="inbox-column">
                       <div class="inbox-column-head">
                         <div class="inbox-column-title">Клиенты</div>
-                        <div class="inbox-column-subtitle">Сначала нажми «Проверить клиентов», потом выбери карточку.</div>
+                        <div class="inbox-column-subtitle">Диалоги появляются автоматически. Выбери карточку, чтобы открыть детали.</div>
                       </div>
                       <div id="inboxList" class="inbox-chat-list" style="margin-top: 10px;">
                         <div class="status-output muted">Диалоги появятся здесь.</div>
@@ -3678,7 +3673,6 @@
       const logTraceFilter = document.getElementById('logTraceFilter');
       const logLimitFilter = document.getElementById('logLimitFilter');
       const logAutoRefresh = document.getElementById('logAutoRefresh');
-      const refreshInboxButton = document.getElementById('refreshInbox');
       const saveInstructionButton = document.getElementById('saveInstruction');
       const saveCoreRulesButton = document.getElementById('saveCoreRules');
       const saveFactRulesButton = document.getElementById('saveFactRules');
@@ -3709,6 +3703,7 @@
 
       let currentStatus = null;
       let logsRefreshTimer = null;
+      let inboxRefreshTimer = null;
       let currentTraceId = '';
       let currentInboxChatId = '';
       let currentInboxFilter = 'all';
@@ -5691,14 +5686,29 @@
         renderInboxChats(chats);
       }
 
+      function startInboxAutoRefresh() {
+        stopInboxAutoRefresh();
+        if (!views.inbox.classList.contains('active')) return;
+        inboxRefreshTimer = window.setInterval(() => {
+          if (views.inbox.classList.contains('active')) {
+            loadInbox();
+          }
+        }, 5000);
+      }
+
+      function stopInboxAutoRefresh() {
+        if (inboxRefreshTimer) {
+          window.clearInterval(inboxRefreshTimer);
+          inboxRefreshTimer = null;
+        }
+      }
+
       function startLogsAutoRefresh() {
         stopLogsAutoRefresh();
         if (!logAutoRefresh.checked) return;
         logsRefreshTimer = window.setInterval(() => {
           if (views.logs.classList.contains('active')) {
             loadLogs();
-          } else if (views.inbox.classList.contains('active')) {
-            loadInbox();
           }
         }, 4000);
       }
@@ -5739,17 +5749,20 @@
           headerTitle.textContent = 'Integrations';
           headerSubtitle.textContent = 'Подключения, инфраструктура и проверка готовности цепочки.';
         } else if (view === 'logs') {
+          stopInboxAutoRefresh();
           headerTitle.textContent = 'Logs';
           headerSubtitle.textContent = 'Поток webhook, AI и Telegram в реальном времени.';
           loadLogs();
           startLogsAutoRefresh();
         } else if (view === 'inbox') {
+          stopLogsAutoRefresh();
           headerTitle.textContent = 'Inbox';
           headerSubtitle.textContent = 'Просмотр диалогов пользователей с AI как в мессенджере.';
           loadInbox();
-          startLogsAutoRefresh();
+          startInboxAutoRefresh();
         } else {
           stopLogsAutoRefresh();
+          stopInboxAutoRefresh();
           headerTitle.textContent = 'AI Control';
           headerSubtitle.textContent = 'Настройка живого менеджера IWAK без лишних prompt-слоёв и без изменения магистрали.';
         }
@@ -5884,7 +5897,6 @@
         button.addEventListener('click', () => applyFollowupPreset(button.dataset.followupPreset || 'safe'));
       });
       runFollowupNowButton.addEventListener('click', runFollowupNow);
-      refreshInboxButton.addEventListener('click', loadInbox);
       document.getElementById('refreshLogs').addEventListener('click', loadLogs);
       document.getElementById('clearLogs').addEventListener('click', clearLogs);
       logAutoRefresh.addEventListener('change', startLogsAutoRefresh);
