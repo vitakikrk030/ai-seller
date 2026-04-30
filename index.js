@@ -620,6 +620,27 @@ function getBusinessConnectionByUserChatId(chatId) {
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
 }
 
+function getBusinessConnectionForFollowupChat(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return null;
+
+  const storedConnection = getBusinessConnectionByUserChatId(cleanChatId);
+  if (storedConnection?.id) return storedConnection;
+
+  const logConnectionId = getMergedLogs()
+    .filter((item) => (
+      String(item.chatId || item.userId || '').trim() === cleanChatId
+      && String(item.businessConnectionId || '').trim()
+    ))
+    .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0))[0]?.businessConnectionId || '';
+
+  if (!logConnectionId) return null;
+
+  return rememberBusinessConnectionChat(logConnectionId, cleanChatId)
+    || getBusinessConnectionById(logConnectionId)
+    || { id: logConnectionId, userChatId: cleanChatId, isEnabled: true };
+}
+
 function rememberBusinessConnectionChat(businessConnectionId, chatId) {
   const id = String(businessConnectionId || '').trim();
   const userChatId = String(chatId || '').trim();
@@ -5848,7 +5869,7 @@ async function sendFollowupJob(jobId, options = {}) {
     return { ok: false, error: safety.blocked.join(' · '), safety };
   }
 
-  const connection = getBusinessConnectionByUserChatId(job.chatId);
+  const connection = getBusinessConnectionForFollowupChat(job.chatId);
   const context = {
     traceId: createTraceId(),
     chatId: job.chatId,
