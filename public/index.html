@@ -1738,6 +1738,11 @@
         min-width: 132px;
       }
 
+      .followup-actions .button-copy {
+        border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+        color: var(--accent-strong);
+      }
+
       .followup-action-help {
         color: var(--muted);
         font-size: 8px;
@@ -4064,13 +4069,22 @@
             ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Пока нет текста для отправки.</div>'}
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Подготовить текст</button>
+              ${draft ? '<button class="button-secondary button-copy" type="button" data-followup-action="copy-draft">Скопировать текст</button>' : ''}
               ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить клиенту</button>` : draft ? `<button class="button-primary" type="button" data-followup-action="send-draft" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Отправить клиенту</button>` : '<button class="button-primary" type="button" disabled>Отправить клиенту</button>'}
               ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Не писать</button>` : ''}
             </div>
             <div class="followup-action-help">${job.id ? 'Текст готов. Проверь его и нажми «Отправить клиенту», если всё нравится.' : draft ? 'Текст уже есть. Нажми «Отправить клиенту», если он подходит.' : 'Нажми «Подготовить текст», система аккуратно напишет напоминание.'}</div>
+            ${draft && !chat.businessConnectionId ? '<div class="crm-message-item">Если Telegram не даст отправить из S.AI, нажмите «Скопировать текст» и отправьте его вручную в Telegram. После нового сообщения клиента связь обычно сохранится автоматически.</div>' : ''}
             ${blocked.length ? `<div class="crm-message-item">Подсказка: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
           </div>
         `;
+      }
+
+      async function copyFollowupDraft(button) {
+        const card = button.closest('.followup-card');
+        const draft = card?.querySelector('.followup-draft')?.textContent || '';
+        if (!draft.trim()) throw new Error('Текст ещё не подготовлен');
+        await navigator.clipboard.writeText(draft.trim());
       }
 
       function formatFollowupBlocks(blocked) {
@@ -5879,6 +5893,7 @@
         const defaultLabel = button.textContent.trim();
         button.disabled = true;
         if (action === 'generate') button.textContent = 'Готовлю...';
+        if (action === 'copy-draft') button.textContent = 'Копирую...';
         if (action === 'send') button.textContent = 'Отправляю...';
         if (action === 'send-draft') button.textContent = 'Готовлю и отправляю...';
         if (action === 'skip') button.textContent = 'Не пишу...';
@@ -5887,6 +5902,10 @@
             const result = await generateFollowupDraft(button.dataset.chatId || currentInboxChatId);
             const blocked = result?.safety?.blocked || [];
             showSaveToast(blocked.length ? 'error' : 'ok', blocked.length ? `Текст подготовлен, но есть подсказка: ${formatFollowupBlocks(blocked)}` : 'Текст подготовлен');
+          }
+          if (action === 'copy-draft') {
+            await copyFollowupDraft(button);
+            showSaveToast('ok', 'Текст скопирован');
           }
           if (action === 'send') {
             await sendFollowupDraft(button.dataset.jobId);

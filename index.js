@@ -2909,6 +2909,36 @@ function getTelegramRequestError(e) {
   };
 }
 
+function isTelegramInitiationForbidden(error = {}) {
+  const text = `${error.message || ''} ${error.description || ''}`.toLowerCase();
+  return String(error.code || '') === '403'
+    && (
+      text.includes("can't initiate conversation")
+      || text.includes('bot can\'t initiate conversation')
+    );
+}
+
+function getFollowupTelegramErrorMessage(error = {}, context = {}) {
+  if (isTelegramInitiationForbidden(error)) {
+    return [
+      'Telegram не разрешил отправить это напоминание из S.AI.',
+      'Так бывает у старых диалогов или клиентов без сохранённой Telegram Business-связи.',
+      'Готовый текст можно скопировать и отправить вручную в Telegram; когда клиент напишет снова, S.AI запомнит связь для следующих отправок.',
+    ].join(' ');
+  }
+
+  if (!context.businessConnectionId) {
+    return [
+      'Telegram не принял сообщение: для этого клиента нет сохранённой Telegram Business-связи.',
+      'Скопируйте готовый текст и отправьте его вручную в Telegram.',
+    ].join(' ');
+  }
+
+  return error.message
+    ? `Telegram не принял сообщение: ${error.message}`
+    : 'Telegram не принял сообщение';
+}
+
 async function fetchTelegramBusinessConnection(config, businessConnectionId) {
   const id = String(businessConnectionId || '').trim();
   if (!config.telegram_token || !id) return null;
@@ -4918,6 +4948,7 @@ async function sendTelegramMessage(config, context, text) {
   } catch (e) {
     const telegramError = getTelegramRequestError(e);
     context.telegramError = telegramError.message;
+    context.telegramErrorInfo = telegramError;
     if (replyToMessageId) {
       logEvent('ERROR', {
         traceId: context.traceId,
@@ -5829,11 +5860,26 @@ async function sendFollowupJob(jobId, options = {}) {
   };
   const sent = await sendTelegramMessage(config, context, job.draftText);
   if (!sent) {
+    const telegramError = context.telegramErrorInfo || { message: context.telegramError || '' };
+    const friendlyError = getFollowupTelegramErrorMessage(telegramError, context);
+    safeCustomerStoreCall('followup.event.telegram_failed', (store) => store.insertFollowupEvent({
+      jobId: job.id,
+      customerId: job.customerId,
+      chatId: job.chatId,
+      event: 'SEND_FAILED',
+      message: friendlyError,
+      metadata: {
+        telegramError,
+        businessConnectionId: context.businessConnectionId || '',
+      },
+    }));
     return {
       ok: false,
-      error: context.telegramError
-        ? `Telegram не принял сообщение: ${context.telegramError}`
-        : 'Telegram не принял сообщение',
+      error: friendlyError,
+      reason: isTelegramInitiationForbidden(telegramError)
+        ? 'telegram_business_connection_required'
+        : 'telegram_send_failed',
+      businessConnectionRequired: isTelegramInitiationForbidden(telegramError) || !context.businessConnectionId,
     };
   }
 
