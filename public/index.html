@@ -1304,7 +1304,7 @@
 
       .followup-command-center {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
         gap: 10px;
         align-items: stretch;
       }
@@ -1395,6 +1395,11 @@
       .followup-command-actions .button-primary {
         font-size: 11px;
         font-weight: 800;
+      }
+
+      .followup-mode-picker-label,
+      .followup-simple-guide {
+        display: none;
       }
 
       .followup-controls.secondary {
@@ -1506,6 +1511,11 @@
         display: grid;
         gap: 8px;
         padding: 0 10px 10px;
+      }
+
+      .followup-advanced-save {
+        min-height: 40px;
+        justify-content: center;
       }
 
       .followup-switch-card {
@@ -3315,8 +3325,8 @@
                   <div class="followup-panel">
                     <div class="followup-panel-head">
                       <div class="followup-title">
-                        <strong>Ежедневные напоминания</strong>
-                        <span>Простой рабочий стол: один раз в день проверяешь клиентов, читаешь готовый текст и сам решаешь, кому написать.</span>
+                        <strong>Напоминания клиентам</strong>
+                        <span>Один раз в день открыл Inbox, нажал проверку, выбрал клиента и сам отправил готовый текст.</span>
                       </div>
                       <input id="followupWorkerEnabled" class="hidden-control" type="checkbox">
                       <div class="followup-command-center">
@@ -3330,11 +3340,10 @@
                           </div>
                         </div>
                         <div class="followup-command-actions">
-                          <button id="runFollowupNow" class="button-secondary" type="button">1. Проверить клиентов</button>
-                          <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить настройки</button>
+                          <button id="runFollowupNow" class="button-primary" type="button">Проверить клиентов</button>
                         </div>
                       </div>
-                      <div class="followup-section-label">Выбери режим одним кликом</div>
+                      <div class="followup-section-label followup-mode-picker-label">Выбери режим одним кликом</div>
                       <div class="followup-simple-guide">
                         <button class="followup-guide-step" type="button" data-followup-preset="safe"><small>Рекомендую</small><strong>Ручной</strong>Ничего не запускается само. Ты нажимаешь «Проверить клиентов», выбираешь карточку и сам отправляешь текст.<span class="guide-note">API тратится только по твоей кнопке.</span></button>
                         <button class="followup-guide-step" type="button" data-followup-preset="drafts"><small>Быстрее</small><strong>Полуавто</strong>Система сама ищет, кому пора напомнить, и готовит тексты. Отправку всё равно подтверждаешь ты.<span class="guide-note">Может тратить API фоном.</span></button>
@@ -3366,13 +3375,13 @@
                         </label>
                       </div>
                       <div class="followup-daily-note">
-                        <strong>Безопасный сценарий на каждый день</strong>
-                        Нажал «Проверить клиентов» → выбрал клиента слева → прочитал текст справа → нажал «Отправить клиенту», если всё нравится.
+                        <strong>Как пользоваться</strong>
+                        Нажал «Проверить клиентов» → выбрал клиента слева → справа нажал «Подготовить текст» → прочитал → «Отправить клиенту».
                       </div>
                       <details class="followup-advanced">
                         <summary>
-                          Дополнительно: лимиты и расписание
-                          <span>Обычно сюда не нужно заходить. Это настройки для полуавто и авто.</span>
+                          Дополнительно
+                          <span>Обычно не трогать. Тут только лимиты, расписание и будущая автоматизация.</span>
                         </summary>
                         <div class="followup-advanced-body">
                           <div class="followup-daily-panel">
@@ -3414,6 +3423,7 @@
                               <div class="followup-rule-fields"><label>Напомнить через, ч<input id="followupChoosingHours" class="mini-input" type="number" min="0.25" step="0.25"></label><label>Сколько раз<input id="followupChoosingMax" class="mini-input" type="number" min="1" step="1"></label></div>
                             </div>
                           </div>
+                          <button id="saveFollowupSettings" class="button-primary followup-advanced-save" type="button">Сохранить дополнительные настройки</button>
                         </div>
                       </details>
                     </div>
@@ -3971,11 +3981,11 @@
           followupWorkerEnabled.checked = masterOn && (mode === 'auto' || selectedFollowupPreset === 'drafts');
         }
         const autoAllowed = Boolean(followupAutoSendEnabled && followupAutoSendEnabled.checked);
-        let title = 'Напоминания выключены';
-        let text = 'Этот блок сейчас ничего не делает и не тратит API фоном. Новым клиентам отвечает обычный AI Control.';
+        let title = 'Ручная проверка';
+        let text = 'Фон выключен. Система сама ничего не запускает и не тратит API. Когда нужно, нажми «Проверить клиентов» и сам реши, кому написать.';
         let badge = 'Спокойно';
         let badgeClass = 'is-safe';
-        let step = 'Без фоновых AI-запросов';
+        let step = 'API только по кнопке';
         if (masterOn && mode === 'drafts') {
           const isSemi = selectedFollowupPreset === 'drafts';
           title = isSemi ? 'Полуавто: ищет клиентов' : 'Ручной режим';
