@@ -5646,6 +5646,7 @@ function buildFollowupJobCandidate(profile = {}, config = runtimeConfig) {
 function buildFollowupSafety(candidate = {}, config = runtimeConfig, job = null, action = 'prepare') {
   const blocked = [];
   const mode = getFollowupMode(config);
+  const manualPrepare = action === 'manual_prepare';
   const statusKey = candidate.status?.key || '';
   const rule = candidate.rule || getInboxRuleConfig(statusKey, config);
   const lastOutgoingHours = hoursBetweenNow(candidate.lastOutgoing?.createdAt);
@@ -5653,7 +5654,7 @@ function buildFollowupSafety(candidate = {}, config = runtimeConfig, job = null,
   const profile = candidate.profile || {};
 
   if (!parseConfigBoolean(config.followup_master_enabled, false)) blocked.push('главный тумблер выключен');
-  if (!parseConfigBoolean(config.followup_worker_enabled, false)) blocked.push('автоматика Inbox выключена');
+  if (!manualPrepare && !parseConfigBoolean(config.followup_worker_enabled, false)) blocked.push('автоматика Inbox выключена');
   if (mode === 'off') blocked.push('режим follow-up выключен');
   if (action === 'auto_send' && !parseConfigBoolean(config.followup_auto_send_enabled, false)) blocked.push('автоотправка выключена отдельным тумблером');
   if (!rule) blocked.push('для статуса нет правила');
@@ -5740,9 +5741,17 @@ async function prepareFollowupJob(profile = {}, config = runtimeConfig, options 
   const candidate = buildFollowupJobCandidate(profile, config);
   const chatId = profile.customer?.chatId || '';
   const existing = safeCustomerStoreCall('followup.job.get_open', (store) => store.getOpenFollowupJobByChat(chatId));
-  const safety = buildFollowupSafety(candidate, config, existing, 'prepare');
+  const action = options.manualRun === true ? 'manual_prepare' : 'prepare';
+  const safety = buildFollowupSafety(candidate, config, existing, action);
   const shouldForce = options.force === true;
   const dueTimeReached = !candidate.dueAt || new Date(candidate.dueAt).getTime() <= Date.now();
+  const existingIsFresh = existing?.draftText
+    && existing.lastClientMessageAt
+    && candidate.lastClient?.createdAt
+    && existing.lastClientMessageAt === candidate.lastClient.createdAt;
+  if (!shouldForce && existingIsFresh) {
+    return { job: existing, candidate, safety, created: false };
+  }
   if (!shouldForce && (!safety.ok || !dueTimeReached)) {
     return { job: existing, candidate, safety, created: false };
   }
@@ -5859,17 +5868,29 @@ async function runFollowupWorker(options = {}) {
   const config = getRuntimeSnapshot();
   const startedAt = Date.now();
   const result = { scanned: 0, created: 0, sent: 0, blocked: 0, skipped: 0 };
-  if (!parseConfigBoolean(config.followup_master_enabled, false) || !parseConfigBoolean(config.followup_worker_enabled, false)) {
+  const manualRun = options.manualRun === true;
+  if (!parseConfigBoolean(config.followup_master_enabled, false)) {
+    return { ...result, disabled: true };
+  }
+  if (!manualRun && !parseConfigBoolean(config.followup_worker_enabled, false)) {
     return { ...result, disabled: true };
   }
   const mode = getFollowupMode(config);
   if (mode === 'off') return { ...result, disabled: true };
 
   const profiles = safeCustomerStoreCall('followup.worker.inbox', (store) => store.getInboxCustomers({ limit: 300 })) || [];
+  const dailyLimit = Math.max(1, Number(config.followup_daily_limit) || 20);
   for (const profile of profiles) {
+    if (!manualRun && result.created >= dailyLimit) {
+      result.skipped += 1;
+      break;
+    }
     result.scanned += 1;
     try {
-      const prepared = await prepareFollowupJob(profile, config, { force: options.forceDrafts === true });
+      const prepared = await prepareFollowupJob(profile, config, {
+        force: options.forceDrafts === true,
+        manualRun,
+      });
       if (prepared.created) result.created += 1;
       if (!prepared.safety?.ok) {
         result.blocked += 1;
@@ -5962,7 +5983,10 @@ app.get('/followups', (req, res) => {
 });
 
 app.post('/followups/run', async (req, res) => {
-  const result = await runFollowupWorker({ forceDrafts: req.body?.forceDrafts === true });
+  const result = await runFollowupWorker({
+    forceDrafts: req.body?.forceDrafts === true,
+    manualRun: req.body?.manualRun === true,
+  });
   res.json({ ok: true, result });
 });
 
@@ -5978,7 +6002,7 @@ app.post('/followups/generate', async (req, res) => {
     res.status(404).json({ ok: false, error: 'Клиент не найден' });
     return;
   }
-  const prepared = await prepareFollowupJob(profile, config, { force: true });
+  const prepared = await prepareFollowupJob(profile, config, { force: true, manualRun: true });
   res.json({ ok: !!prepared.job, job: prepared.job, safety: prepared.safety });
 });
 

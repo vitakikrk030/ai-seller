@@ -3911,9 +3911,6 @@
         } else {
           followupModeHelp.textContent = 'Автоматика ничего не делает. Обычный AI Control продолжает отвечать клиентам как раньше.';
         }
-        if (followupWorkerEnabled) {
-          followupWorkerEnabled.checked = masterOn && mode !== 'off';
-        }
         if (followupAutoSendEnabled) {
           followupAutoSendEnabled.disabled = mode !== 'auto';
           if (mode !== 'auto') followupAutoSendEnabled.checked = false;
@@ -3921,7 +3918,12 @@
         if (!masterOn || mode === 'off') {
           selectedFollowupPreset = '';
         } else if (!selectedFollowupPreset || mode === 'auto' || selectedFollowupPreset === 'auto') {
-          selectedFollowupPreset = mode === 'auto' ? 'auto' : 'safe';
+          selectedFollowupPreset = mode === 'auto'
+            ? 'auto'
+            : (followupWorkerEnabled && followupWorkerEnabled.checked ? 'drafts' : 'safe');
+        }
+        if (followupWorkerEnabled) {
+          followupWorkerEnabled.checked = masterOn && (mode === 'auto' || selectedFollowupPreset === 'drafts');
         }
         const autoAllowed = Boolean(followupAutoSendEnabled && followupAutoSendEnabled.checked);
         let title = 'Автоматика выключена';
@@ -3965,8 +3967,13 @@
         followupMasterEnabled.checked = true;
         if (preset === 'auto') {
           followupMode.value = 'auto';
+          if (followupWorkerEnabled) followupWorkerEnabled.checked = true;
+        } else if (preset === 'drafts') {
+          followupMode.value = 'drafts';
+          if (followupWorkerEnabled) followupWorkerEnabled.checked = true;
         } else {
           followupMode.value = 'drafts';
+          if (followupWorkerEnabled) followupWorkerEnabled.checked = false;
         }
         syncFollowupModeUi();
         setSaveButtonState(saveFollowupSettingsButton, 'dirty');
@@ -5132,7 +5139,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               followup_master_enabled: followupMasterEnabled.checked,
-              followup_worker_enabled: followupMasterEnabled.checked && followupMode.value !== 'off',
+              followup_worker_enabled: followupMasterEnabled.checked && (followupMode.value === 'auto' || selectedFollowupPreset === 'drafts'),
               followup_auto_send_enabled: followupMode.value === 'auto' && followupAutoSendEnabled.checked,
               followup_repeat_sales_enabled: followupRepeatSalesEnabled.checked,
               followup_mode: followupMode.value,
@@ -5169,7 +5176,7 @@
           await fetchJSON('/followups/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ forceDrafts: false }),
+            body: JSON.stringify({ forceDrafts: false, manualRun: true }),
           });
           await loadInbox();
         });
