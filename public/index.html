@@ -1295,7 +1295,7 @@
       }
 
       .followup-main-switches {
-        display: grid;
+        display: none;
         grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr);
         gap: 8px;
         align-items: stretch;
@@ -1304,7 +1304,7 @@
 
       .followup-command-center {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+        grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
         gap: 10px;
         align-items: stretch;
       }
@@ -1383,6 +1383,13 @@
         min-height: 48px;
         justify-content: center;
         width: 100%;
+      }
+
+      .followup-command-actions .button-secondary {
+        border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+        background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+        color: var(--text);
+        font-weight: 760;
       }
 
       .followup-command-actions .button-primary {
@@ -1581,6 +1588,14 @@
         margin-bottom: 5px;
       }
 
+      .followup-guide-step .guide-note {
+        display: block;
+        margin-top: 8px;
+        color: color-mix(in srgb, var(--muted) 78%, var(--text));
+        font-size: 8px;
+        font-weight: 720;
+      }
+
       .followup-guide-step small {
         display: inline-flex;
         align-items: center;
@@ -1709,6 +1724,10 @@
         opacity: 0.55;
       }
 
+      .followup-actions .button-primary {
+        min-width: 132px;
+      }
+
       .followup-action-help {
         color: var(--muted);
         font-size: 8px;
@@ -1790,6 +1809,26 @@
         min-height: 470px;
         max-height: none;
         overflow: hidden;
+      }
+
+      .inbox-column-head {
+        display: grid;
+        gap: 2px;
+        margin-bottom: 8px;
+      }
+
+      .inbox-column-title {
+        color: var(--muted);
+        font-size: 8px;
+        font-weight: 760;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .inbox-column-subtitle {
+        color: color-mix(in srgb, var(--muted) 78%, transparent);
+        font-size: 8px;
+        line-height: 1.35;
       }
 
       .inbox-resize-bar {
@@ -3276,30 +3315,30 @@
                   <div class="followup-panel">
                     <div class="followup-panel-head">
                       <div class="followup-title">
-                        <strong>Напоминания клиентам</strong>
-                        <span>Этот блок нужен только для дожима: напомнить тем, кто пропал, не оплатил или не прислал данные. Обычные ответы клиентам живут отдельно в AI Control.</span>
+                        <strong>Ежедневные напоминания</strong>
+                        <span>Простой рабочий стол: один раз в день проверяешь клиентов, читаешь готовый текст и сам решаешь, кому написать.</span>
                       </div>
                       <input id="followupWorkerEnabled" class="hidden-control" type="checkbox">
                       <div class="followup-command-center">
                         <div class="followup-current-card">
-                          <span class="eyebrow">Текущий режим</span>
+                          <span class="eyebrow">Сейчас работает</span>
                           <strong id="followupCurrentModeTitle">Всё выключено</strong>
-                          <p id="followupCurrentModeText">Напоминания сейчас ничего не делают. Клиентам по новым сообщениям отвечает обычный AI Control.</p>
+                          <p id="followupCurrentModeText">Напоминания сейчас ничего не делают. Обычные ответы клиентам идут через AI Control как раньше.</p>
                           <div class="followup-current-badges">
                             <span id="followupCurrentModeBadge" class="is-safe">Безопасно</span>
                             <span id="followupPrimaryStep">Без фоновых AI-запросов</span>
                           </div>
                         </div>
                         <div class="followup-command-actions">
-                          <button id="runFollowupNow" class="button-secondary" type="button">Проверить клиентов сейчас</button>
+                          <button id="runFollowupNow" class="button-secondary" type="button">1. Проверить клиентов</button>
                           <button id="saveFollowupSettings" class="button-primary" type="button">Сохранить настройки</button>
                         </div>
                       </div>
-                      <div class="followup-section-label">Выбери простой режим</div>
+                      <div class="followup-section-label">Выбери режим одним кликом</div>
                       <div class="followup-simple-guide">
-                        <button class="followup-guide-step" type="button" data-followup-preset="safe"><small>Рекомендую</small><strong>Ручной</strong>Сам ничего не запускает. Ты сам нажимаешь «Проверить» или «Создать черновик». API тратится только по твоей кнопке.</button>
-                        <button class="followup-guide-step" type="button" data-followup-preset="drafts"><small>Быстрее</small><strong>Полуавто</strong>Система сама ищет клиентов и готовит черновики. Отправку всё равно подтверждаешь ты. API может тратиться фоном.</button>
-                        <button class="followup-guide-step" type="button" data-followup-preset="auto"><small>Осторожно</small><strong>Авто</strong>Система сможет сама готовить и отправлять напоминания. Использовать только когда всё проверено и включены лимиты.</button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="safe"><small>Рекомендую</small><strong>Ручной</strong>Ничего не запускается само. Ты нажимаешь «Проверить клиентов», выбираешь карточку и сам отправляешь текст.<span class="guide-note">API тратится только по твоей кнопке.</span></button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="drafts"><small>Быстрее</small><strong>Полуавто</strong>Система сама ищет, кому пора напомнить, и готовит тексты. Отправку всё равно подтверждаешь ты.<span class="guide-note">Может тратить API фоном.</span></button>
+                        <button class="followup-guide-step" type="button" data-followup-preset="auto"><small>Осторожно</small><strong>Авто</strong>Система сможет сама готовить и отправлять напоминания по лимитам. Включать только после тестов.<span class="guide-note">Самый рискованный режим.</span></button>
                       </div>
                       <div class="followup-main-switches">
                         <label class="followup-switch-card">
@@ -3327,26 +3366,26 @@
                         </label>
                       </div>
                       <div class="followup-daily-note">
-                        <strong>Как пользоваться безопасно</strong>
-                        Держи режим «Ручной»: раз в день открыл Inbox, нажал «Проверить клиентов сейчас», посмотрел карточки и отправил только те тексты, которые нравятся.
-                      </div>
-                      <div class="followup-daily-panel">
-                        <label class="followup-toggle followup-time-group">Ночная пауза <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
-                        <label class="followup-toggle followup-interval-group">Лимит авто-сообщений в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
-                        <label class="followup-repeat-card">
-                          <span class="followup-repeat-copy">
-                            <strong>Предлагать старым клиентам</strong>
-                            <span>Если клиент уже покупал, можно мягко предложить новые варианты под его размер и стиль.</span>
-                          </span>
-                          <input id="followupRepeatSalesEnabled" type="checkbox">
-                        </label>
+                        <strong>Безопасный сценарий на каждый день</strong>
+                        Нажал «Проверить клиентов» → выбрал клиента слева → прочитал текст справа → нажал «Отправить клиенту», если всё нравится.
                       </div>
                       <details class="followup-advanced">
                         <summary>
-                          Расширенные настройки
-                          <span>Обычно сюда не нужно заходить. Это тонкая настройка сроков и количества напоминаний.</span>
+                          Дополнительно: лимиты и расписание
+                          <span>Обычно сюда не нужно заходить. Это настройки для полуавто и авто.</span>
                         </summary>
                         <div class="followup-advanced-body">
+                          <div class="followup-daily-panel">
+                            <label class="followup-toggle followup-time-group">Не писать ночью <input id="followupQuietStart" class="mini-input" type="time"> - <input id="followupQuietEnd" class="mini-input" type="time"></label>
+                            <label class="followup-toggle followup-interval-group">Лимит авто-сообщений в день <input id="followupDailyLimit" class="mini-input" type="number" min="1" step="1"></label>
+                            <label class="followup-repeat-card">
+                              <span class="followup-repeat-copy">
+                                <strong>Предлагать старым клиентам</strong>
+                                <span>Если клиент уже покупал, можно мягко предложить новые варианты под его размер и стиль.</span>
+                              </span>
+                              <input id="followupRepeatSalesEnabled" type="checkbox">
+                            </label>
+                          </div>
                           <div class="followup-controls secondary">
                             <label class="followup-toggle followup-interval-group">Пауза между сообщениями <input id="followupMinIntervalHours" class="mini-input" type="number" min="0" step="1"> ч</label>
                             <label class="followup-toggle followup-interval-group">Повторная покупка через <input id="followupRepeatSalesDays" class="mini-input" type="number" min="1" step="1"> дн</label>
@@ -3390,13 +3429,19 @@
                   </div>
                   <div class="inbox-workspace">
                     <div class="inbox-column">
-                      <div class="trace-title">Chats</div>
+                      <div class="inbox-column-head">
+                        <div class="inbox-column-title">Клиенты</div>
+                        <div class="inbox-column-subtitle">Сначала нажми «Проверить клиентов», потом выбери карточку.</div>
+                      </div>
                       <div id="inboxList" class="inbox-chat-list" style="margin-top: 10px;">
                         <div class="status-output muted">Диалоги появятся здесь.</div>
                       </div>
                     </div>
                     <div class="inbox-column">
-                      <div class="trace-title">Conversation</div>
+                      <div class="inbox-column-head">
+                        <div class="inbox-column-title">Что делать</div>
+                        <div class="inbox-column-subtitle">Здесь будет готовый текст и кнопка отправки клиенту.</div>
+                      </div>
                       <div id="inboxThread" class="status-output muted" style="margin-top: 10px;">Выберите чат слева, чтобы открыть диалог.</div>
                     </div>
                   </div>
@@ -3905,11 +3950,11 @@
         const mode = followupMode.value || 'off';
         const masterOn = Boolean(followupMasterEnabled && followupMasterEnabled.checked);
         if (mode === 'auto') {
-          followupModeHelp.textContent = 'Полный авто: AI готовит и может отправлять сам, но только если включено «Разрешить автоотправку».';
+          followupModeHelp.textContent = 'Авто: система готовит и может отправлять сама, только если включена отдельная защита автоотправки.';
         } else if (mode === 'drafts') {
-          followupModeHelp.textContent = 'Самый безопасный режим: AI пишет текст, ты видишь его в Inbox и сам нажимаешь «Отправить».';
+          followupModeHelp.textContent = 'Ручной/полуавто: текст готовится, но отправку подтверждаешь ты.';
         } else {
-          followupModeHelp.textContent = 'Автоматика ничего не делает. Обычный AI Control продолжает отвечать клиентам как раньше.';
+          followupModeHelp.textContent = 'Напоминания ничего не делают. Обычный AI Control продолжает отвечать клиентам как раньше.';
         }
         if (followupAutoSendEnabled) {
           followupAutoSendEnabled.disabled = mode !== 'auto';
@@ -3933,12 +3978,12 @@
         let step = 'Без фоновых AI-запросов';
         if (masterOn && mode === 'drafts') {
           const isSemi = selectedFollowupPreset === 'drafts';
-          title = isSemi ? 'Полуавто: сам ищет клиентов' : 'Ручной режим';
+          title = isSemi ? 'Полуавто: ищет клиентов' : 'Ручной режим';
           text = isSemi
-            ? 'Система может фоном искать клиентов и готовить черновики. Отправка остаётся за тобой, но API может расходоваться фоном.'
-            : 'Самый безопасный режим: ничего не запускается само. Черновики появляются только после твоего клика.';
-          badge = isSemi ? 'API может тратиться фоном' : 'API только по кнопке';
-          step = isSemi ? 'Следующий шаг: проверять готовые черновики' : 'Следующий шаг: нажать «Проверить клиентов сейчас»';
+            ? 'Система может сама искать клиентов и готовить тексты. Отправка остаётся за тобой, но API может расходоваться фоном.'
+            : 'Самый безопасный режим: ничего не запускается само. Нажал кнопку — система проверила клиентов и подготовила текст.';
+          badge = isSemi ? 'Фоновые проверки включены' : 'API только по кнопке';
+          step = isSemi ? 'Следующий шаг: смотреть готовые тексты' : 'Следующий шаг: нажать «Проверить клиентов»';
         } else if (masterOn && mode === 'auto') {
           title = autoAllowed ? 'Авто: отправка разрешена' : 'Авто без отправки';
           text = autoAllowed
@@ -3978,11 +4023,11 @@
         syncFollowupModeUi();
         setSaveButtonState(saveFollowupSettingsButton, 'dirty');
         if (preset === 'auto') {
-          showSaveToast('ok', 'Выбран полный авто. Проверь галочку автоотправки и нажми «Сохранить».');
+          showSaveToast('ok', 'Выбран авто. Нажми «Сохранить настройки», если точно хочешь этот режим.');
         } else if (preset === 'drafts') {
-          showSaveToast('ok', 'Выбран полуавто. Нажми «Сохранить», потом «Проверить сейчас».');
+          showSaveToast('ok', 'Выбран полуавто. Нажми «Сохранить настройки».');
         } else {
-          showSaveToast('ok', 'Выбран безопасный режим. Нажми «Сохранить».');
+          showSaveToast('ok', 'Выбран ручной режим. Нажми «Сохранить настройки».');
         }
       }
 
@@ -3991,29 +4036,29 @@
         const job = chat.followupJob || {};
         const status = chat.status || {};
         const blocked = Array.isArray(followup.blocked) ? followup.blocked : [];
-        const modeText = followup.mode === 'auto' ? 'авто' : followup.mode === 'drafts' ? 'черновики' : 'выключено';
+        const modeText = followup.mode === 'auto' ? 'авто' : followup.mode === 'drafts' ? 'ручной текст' : 'выключено';
         const draft = job.draftText || followup.draft || '';
-        const jobState = job.state ? `Черновик: ${job.state}` : 'Черновик ещё не создан';
+        const jobState = job.state ? `Готовый текст: ${job.state}` : 'Готовый текст ещё не создан';
         return `
           <div class="followup-card">
             <div class="followup-card-title">
-              <span>Follow-up</span>
+              <span>Напоминание клиенту</span>
               <span class="status-pill ${followup.needsAttention ? 'attention' : 'muted'}">${followup.needsAttention ? 'нужно внимание' : 'спокойно'}</span>
             </div>
             <div class="chat-submeta">
-              <span>Статус: ${escapeHtml(status.label || '—')}</span>
-              <span>Простой: ${escapeHtml(followup.idleLabel || '—')}</span>
+              <span>Этап: ${escapeHtml(status.label || '—')}</span>
+              <span>Клиент молчит: ${escapeHtml(followup.idleLabel || '—')}</span>
               <span>Режим: ${escapeHtml(modeText)}</span>
             </div>
             <div class="followup-job-meta">${escapeHtml(jobState)}${job.updatedAt ? ' · обновлён ' + escapeHtml(formatShortDate(job.updatedAt)) : ''}</div>
-            ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Черновик пока не нужен.</div>'}
+            ${draft ? `<div class="followup-draft">${escapeHtml(draft)}</div>` : '<div class="crm-message-item">Пока нет текста для отправки.</div>'}
             <div class="followup-actions">
-              <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Создать черновик</button>
-              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить вручную</button>` : draft ? `<button class="button-primary" type="button" data-followup-action="send-draft" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Отправить вручную</button>` : '<button class="button-primary" type="button" disabled>Отправить вручную</button>'}
-              ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Пропустить</button>` : ''}
+              <button class="button-secondary" type="button" data-followup-action="generate" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Подготовить текст</button>
+              ${job.id ? `<button class="button-primary" type="button" data-followup-action="send" data-job-id="${escapeHtml(job.id)}">Отправить клиенту</button>` : draft ? `<button class="button-primary" type="button" data-followup-action="send-draft" data-chat-id="${escapeHtml(chat.customer?.chatId || '')}">Отправить клиенту</button>` : '<button class="button-primary" type="button" disabled>Отправить клиенту</button>'}
+              ${job.id ? `<button class="button-secondary" type="button" data-followup-action="skip" data-job-id="${escapeHtml(job.id)}">Не писать</button>` : ''}
             </div>
-            <div class="followup-action-help">${job.id ? 'Черновик сохранён. Можно отправить вручную или пропустить.' : draft ? 'Текст уже готов. При отправке система сначала сохранит черновик, потом отправит его клиенту.' : 'Чтобы появилась рабочая кнопка отправки, сначала нажмите «Создать черновик».'}</div>
-            ${blocked.length ? `<div class="crm-message-item">Ограничения: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
+            <div class="followup-action-help">${job.id ? 'Текст готов. Проверь его и нажми «Отправить клиенту», если всё нравится.' : draft ? 'Текст уже есть. Нажми «Отправить клиенту», если он подходит.' : 'Нажми «Подготовить текст», система аккуратно напишет напоминание.'}</div>
+            ${blocked.length ? `<div class="crm-message-item">Подсказка: ${escapeHtml(formatFollowupBlocks(blocked))}</div>` : ''}
           </div>
         `;
       }
@@ -4021,6 +4066,17 @@
       function formatFollowupBlocks(blocked) {
         return blocked.map((item) => {
           const text = String(item || '');
+          if (/главный тумблер/i.test(text)) return 'напоминания выключены в верхнем блоке';
+          if (/режим follow-up выключен/i.test(text)) return 'выбран режим "ничего не делать"';
+          if (/автоматика Inbox выключена/i.test(text)) return 'фоновые проверки выключены, это нормально для ручного режима';
+          if (/для статуса нет правила|для этого статуса нет правила/i.test(text)) return 'для этого этапа напоминание не настроено';
+          if (/правило.*выключено/i.test(text)) return 'напоминание для этого этапа выключено в дополнительных настройках';
+          if (/диалог ведёт менеджер вручную/i.test(text)) return 'диалог сейчас ведётся вручную';
+          if (/статус не требует напоминания/i.test(text)) return 'по этому клиенту сейчас не нужно напоминание';
+          if (/нет текста черновика/i.test(text)) return 'пока нет текста для отправки';
+          if (/сейчас тихие часы/i.test(text)) return 'ночью автоотправка не работает';
+          if (/клиент уже ответил после создания черновика/i.test(text)) return 'клиент уже ответил, старый текст лучше не отправлять';
+          if (/лимит касаний исчерпан/i.test(text)) return 'лимит напоминаний этому клиенту уже исчерпан';
           const outgoingMatch = text.match(/последнее исходящее было ([\d.]+) ч назад/i);
           if (outgoingMatch) {
             const hours = Number(outgoingMatch[1]);
@@ -5812,27 +5868,27 @@
         const action = button.dataset.followupAction || '';
         const defaultLabel = button.textContent.trim();
         button.disabled = true;
-        if (action === 'generate') button.textContent = 'Создаю...';
+        if (action === 'generate') button.textContent = 'Готовлю...';
         if (action === 'send') button.textContent = 'Отправляю...';
-        if (action === 'send-draft') button.textContent = 'Создаю и отправляю...';
-        if (action === 'skip') button.textContent = 'Пропускаю...';
+        if (action === 'send-draft') button.textContent = 'Готовлю и отправляю...';
+        if (action === 'skip') button.textContent = 'Не пишу...';
         try {
           if (action === 'generate') {
             const result = await generateFollowupDraft(button.dataset.chatId || currentInboxChatId);
             const blocked = result?.safety?.blocked || [];
-            showSaveToast(blocked.length ? 'error' : 'ok', blocked.length ? `Черновик создан, но есть ограничение: ${blocked.join(' · ')}` : 'Черновик создан');
+            showSaveToast(blocked.length ? 'error' : 'ok', blocked.length ? `Текст подготовлен, но есть подсказка: ${formatFollowupBlocks(blocked)}` : 'Текст подготовлен');
           }
           if (action === 'send') {
             await sendFollowupDraft(button.dataset.jobId);
-            showSaveToast('ok', 'Напоминание отправлено');
+            showSaveToast('ok', 'Сообщение отправлено клиенту');
           }
           if (action === 'send-draft') {
             await sendGeneratedFollowupDraft(button.dataset.chatId || currentInboxChatId);
-            showSaveToast('ok', 'Черновик создан и отправлен');
+            showSaveToast('ok', 'Сообщение отправлено клиенту');
           }
           if (action === 'skip') {
             await skipFollowupDraft(button.dataset.jobId);
-            showSaveToast('ok', 'Черновик пропущен');
+            showSaveToast('ok', 'Ок, этому клиенту не пишем');
           }
         } catch (error) {
           showSaveToast('error', error.message || 'Не удалось выполнить действие');
