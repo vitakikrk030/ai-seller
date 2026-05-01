@@ -5163,7 +5163,17 @@
       }
 
       async function fetchJSON(url, options) {
-        const res = await fetch(url, options);
+        const requestOptions = { ...(options || {}) };
+        if (
+          typeof requestOptions.body === 'string'
+          && !(requestOptions.headers && Object.keys(requestOptions.headers).some((key) => key.toLowerCase() === 'content-type'))
+        ) {
+          requestOptions.headers = {
+            ...(requestOptions.headers || {}),
+            'Content-Type': 'application/json',
+          };
+        }
+        const res = await fetch(url, requestOptions);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error || data.message || `Ошибка запроса ${res.status}`);
