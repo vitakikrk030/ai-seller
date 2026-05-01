@@ -2090,6 +2090,20 @@
         background: color-mix(in srgb, var(--panel) 88%, transparent);
       }
 
+      .training-fragment-details {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+        padding: 7px 9px;
+      }
+
+      .training-fragment-details summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
       .training-coach-input-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -4834,9 +4848,6 @@
       function renderTrainingCard(chat) {
         const pair = getTrainingPair(chat);
         const draft = getTrainingDraft(chat);
-        const categoryOptions = TRAINING_CATEGORIES.map(([value, label]) => (
-          `<option value="${escapeAttr(value)}"${draft.category === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
-        )).join('');
         if (!pair) {
           return `
             <div class="followup-card training-card">
@@ -4849,58 +4860,38 @@
         return `
           <div class="followup-card training-card" data-training-card>
             <div class="followup-card-title">
-              <span>Учебная сессия S.AI</span>
-              <span class="status-pill attention">чат-наставник</span>
+              <span>Чат с S.AI по обучению</span>
+              <span class="status-pill attention">${pair.manual ? `фрагмент ${escapeHtml(String(pair.count || 0))}` : 'последняя пара'}</span>
             </div>
-            <div class="crm-message-item">${pair.manual ? `Выбран фрагмент: ${escapeHtml(String(pair.count || 0))} сообщ.` : 'Сейчас взята последняя пара. Можно кликнуть по нужным сообщениям ниже и собрать фрагмент.'} Объясни S.AI обычным языком, он перескажет вывод и подготовит урок.</div>
-            <div class="training-source-grid">
-              <div class="chat-detail">
-                <div class="chat-detail-label">Фрагмент</div>
+            <details class="training-fragment-details">
+              <summary>Фрагмент, который сейчас разбираем</summary>
+              <div class="chat-detail wide">
                 <div class="chat-detail-value" data-training-context>${escapeHtml(pair.contextText || '')}</div>
               </div>
-              <div class="chat-detail">
-                <div class="chat-detail-label">Клиент</div>
-                <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
-              </div>
-              <div class="chat-detail">
-                <div class="chat-detail-label">Ответ AI/менеджера</div>
-                <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
-              </div>
-            </div>
-            <div class="training-learning-grid">
-              <div class="field">
-                <div class="field-label">Чат обучения</div>
-                <div class="training-coach-chat" data-training-coach-chat>${renderTrainingCoachMessages(draft.coachMessages)}</div>
-                <div class="training-coach-input-row">
-                  <textarea data-training-coach-input placeholder="Объясни S.AI как наставник: что он понял неправильно, как надо рассуждать и как отвечать в следующий раз."></textarea>
-                  <button class="button-primary" type="button" data-training-action="coach">Объяснить</button>
-                </div>
-              </div>
-              <div class="training-conclusion">
-                <div class="field">
-                  <div class="field-label">Что S.AI запомнит</div>
-                  <input data-training-note value="${escapeAttr(draft.note)}" placeholder="Короткий вывод появится после объяснения" />
-                </div>
-                <div class="field">
-                  <div class="field-label">Как отвечать верно</div>
-                  <textarea data-training-corrected placeholder="S.AI предложит правильный ответ. Ты можешь поправить перед сохранением.">${escapeHtml(draft.correctedText)}</textarea>
-                </div>
-                <div class="field">
-                  <div class="field-label">Категория</div>
-                  <select data-training-category>${categoryOptions}</select>
-                </div>
-                <div class="field">
-                  <div class="field-label">Разбор</div>
-                  <div class="status-output muted" data-training-explanation>Можно спросить “Почему так ответил?” или сразу объяснить, как надо.</div>
-                </div>
-              </div>
+            </details>
+            <div class="training-coach-chat" data-training-coach-chat>${renderTrainingCoachMessages(draft.coachMessages)}</div>
+            <div class="training-coach-input-row">
+              <textarea data-training-coach-input placeholder="Напиши как мне: что S.AI сделал не так, почему, как надо думать и как отвечать дальше."></textarea>
+              <button class="button-primary" type="button" data-training-action="coach">Отправить</button>
             </div>
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-training-action="explain">Почему так ответил?</button>
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
               <button class="button-primary" type="button" data-training-action="bad">Запомнить вывод</button>
             </div>
-            <div class="followup-action-help" data-training-status>Сначала S.AI должен пересказать, что понял. После твоего подтверждения вывод сохранится как урок и будет подбираться по смыслу следующих диалогов.</div>
+            <div class="followup-action-help" data-training-status>Общайся с S.AI как в обычном чате. Когда он правильно пересказал вывод, нажми “Запомнить вывод”.</div>
+            <div hidden>
+              <div data-training-client>${escapeHtml(pair.clientText)}</div>
+              <div data-training-ai>${escapeHtml(pair.aiText)}</div>
+              <input data-training-note value="${escapeAttr(draft.note)}" />
+              <textarea data-training-corrected>${escapeHtml(draft.correctedText)}</textarea>
+              <select data-training-category>
+                ${TRAINING_CATEGORIES.map(([value, label]) => (
+                  `<option value="${escapeAttr(value)}"${draft.category === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+                )).join('')}
+              </select>
+              <div data-training-explanation></div>
+            </div>
           </div>
         `;
       }
@@ -5162,7 +5153,7 @@
                   coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
                   coachChat.scrollTop = coachChat.scrollHeight;
                 }
-                if (explanation) explanation.textContent = 'S.AI сформировал вывод. Проверь поля ниже и сохрани урок, если всё верно.';
+                if (explanation) explanation.textContent = 'S.AI сформировал вывод в чате. Если всё верно, нажми “Запомнить вывод”.';
                 showSaveToast('ok', 'Вывод готов');
               } catch (error) {
                 draft.coachMessages.push({ role: 'assistant', text: error.message || 'Не смог продолжить обучение.' });
@@ -5175,13 +5166,17 @@
               return;
             }
             if (action === 'explain') {
+              const draft = getTrainingDraft(chat);
               const explanation = card?.querySelector('[data-training-explanation]');
+              const coachChat = card?.querySelector('[data-training-coach-chat]');
               const categoryInput = card?.querySelector('[data-training-category]');
               const correctedInput = card?.querySelector('[data-training-corrected]');
               const noteInput = card?.querySelector('[data-training-note]');
               button.disabled = true;
               button.textContent = 'Разбираю...';
-              if (explanation) explanation.textContent = 'Смотрю фрагмент, ответ и правила AI Control...';
+              draft.coachMessages.push({ role: 'user', text: 'Почему ты так ответил? Разбери этот фрагмент и скажи, что понял.' });
+              if (coachChat) coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
+              if (explanation) explanation.textContent = 'S.AI разбирает фрагмент...';
               try {
                 const data = await fetchJSON('/training/explain', {
                   method: 'POST',
@@ -5197,21 +5192,29 @@
                 });
                 if (data.category && categoryInput) {
                   categoryInput.value = data.category;
-                  getTrainingDraft(chat).category = data.category;
+                  draft.category = data.category;
                 }
                 if (data.note && noteInput && !noteInput.value.trim()) {
                   noteInput.value = data.note;
-                  getTrainingDraft(chat).note = data.note;
+                  draft.note = data.note;
                 }
                 if (data.correctedText && correctedInput && !correctedInput.value.trim()) {
                   correctedInput.value = data.correctedText;
-                  getTrainingDraft(chat).correctedText = data.correctedText;
+                  draft.correctedText = data.correctedText;
                 }
-                if (explanation) {
-                  explanation.textContent = data.explanation || 'Разбор готов. Проверь категорию, причину и правильный вариант перед сохранением.';
+                draft.coachMessages.push({
+                  role: 'assistant',
+                  text: data.explanation || 'Разобрал фрагмент. Сформировал вывод, который можно обсудить дальше или запомнить.',
+                });
+                if (coachChat) {
+                  coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
+                  coachChat.scrollTop = coachChat.scrollHeight;
                 }
+                if (explanation) explanation.textContent = 'Разбор добавлен в чат. Можно уточнить или нажать “Запомнить вывод”.';
                 showSaveToast('ok', 'Разбор готов');
               } catch (error) {
+                draft.coachMessages.push({ role: 'assistant', text: error.message || 'Не удалось разобрать ответ' });
+                if (coachChat) coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
                 if (explanation) explanation.textContent = error.message || 'Не удалось разобрать ответ';
                 showSaveToast('error', error.message || 'Не удалось разобрать ответ');
               } finally {
@@ -5281,6 +5284,15 @@
           categoryInput.addEventListener('change', () => {
             const draft = getTrainingDraft(chat);
             draft.category = categoryInput.value || 'auto';
+          });
+        }
+        const coachInput = inboxThread.querySelector('[data-training-coach-input]');
+        const coachSend = inboxThread.querySelector('[data-training-action="coach"]');
+        if (coachInput && coachSend) {
+          coachInput.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' || event.shiftKey) return;
+            event.preventDefault();
+            coachSend.click();
           });
         }
       }
