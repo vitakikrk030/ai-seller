@@ -2070,29 +2070,30 @@
 
       .sai-gpt-shell {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 0.34fr);
-        gap: 14px;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.32fr);
+        gap: 10px;
         align-items: stretch;
+        height: min(560px, calc(100vh - 210px));
+        min-height: 460px;
       }
 
       .sai-gpt-chat {
-        min-height: 560px;
+        min-height: 0;
         display: grid;
         grid-template-rows: minmax(0, 1fr) auto;
-        gap: 12px;
+        gap: 8px;
       }
 
       .sai-gpt-messages {
-        min-height: 420px;
-        max-height: 62vh;
+        min-height: 0;
         overflow: auto;
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
+        border-radius: 12px;
+        padding: 10px;
         background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
       }
 
       .sai-gpt-empty {
@@ -2106,12 +2107,12 @@
         width: fit-content;
         max-width: min(760px, 92%);
         border: 1px solid var(--border);
-        border-radius: 13px;
-        padding: 10px 12px;
+        border-radius: 12px;
+        padding: 8px 10px;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        font-size: 14px;
-        line-height: 1.45;
+        font-size: 13px;
+        line-height: 1.4;
       }
 
       .sai-gpt-bubble.user {
@@ -2127,7 +2128,7 @@
 
       .sai-gpt-compose {
         display: grid;
-        gap: 10px;
+        gap: 7px;
       }
 
       .sai-gpt-attach-row {
@@ -2148,29 +2149,68 @@
       }
 
       .sai-gpt-compose textarea {
-        min-height: 118px;
+        min-height: 82px;
+        max-height: 120px;
         resize: vertical;
       }
 
       .sai-gpt-side {
         display: grid;
         align-content: start;
-        gap: 14px;
+        gap: 8px;
+        max-height: 100%;
+        overflow: auto;
+        padding-right: 3px;
+        scrollbar-gutter: stable;
+      }
+
+      .sai-gpt-side .subsection {
+        margin-top: 9px;
+        padding-top: 9px;
+      }
+
+      .sai-gpt-side .subsection-text {
+        margin-bottom: 6px;
+        line-height: 1.32;
+      }
+
+      .sai-gpt-side .field {
+        gap: 3px;
+      }
+
+      .sai-gpt-side .field + .field {
+        margin-top: 4px;
+      }
+
+      .sai-gpt-side input,
+      .sai-gpt-side select {
+        min-height: 34px;
+        padding: 6px 8px;
+      }
+
+      .sai-gpt-side textarea {
+        min-height: 62px;
+        padding: 7px 8px;
+        font-size: 13px;
+      }
+
+      #saiGptLessonCorrected {
+        min-height: 74px;
       }
 
       .sai-gpt-access-list {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 5px;
       }
 
       .sai-gpt-access-list span {
         border: 1px solid var(--border);
         border-radius: 999px;
-        padding: 7px 10px;
+        padding: 5px 8px;
         color: var(--muted);
         background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
       }
 
@@ -2334,6 +2374,16 @@
         .sai-gpt-shell,
         .training-coach-input-row {
           grid-template-columns: 1fr;
+        }
+
+        .sai-gpt-shell {
+          height: auto;
+          min-height: 0;
+        }
+
+        .sai-gpt-side {
+          max-height: none;
+          overflow: visible;
         }
       }
 
