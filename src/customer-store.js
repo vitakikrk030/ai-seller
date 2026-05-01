@@ -307,13 +307,14 @@ function createCustomerStore(options = {}) {
 
   function getInboxCustomers(options = {}) {
     const limit = Math.max(1, Math.min(500, Number(options.limit) || 200));
+    const messageLimit = Math.max(50, Math.min(300, Number(options.messageLimit) || 150));
     return statements.listCustomers.all({ limit }).map((customerRow) => {
       const facts = getFactMapByCustomerId(customerRow.id, statements);
       const stateRow = statements.getDialogState.get(customerRow.id);
       const orders = statements.getOrdersByCustomerId.all(customerRow.id).map(mapOrderRow);
       const recentMessages = statements.getRecentMessages.all({
         customer_id: customerRow.id,
-        limit: 50,
+        limit: messageLimit,
       }).reverse().map((row) => ({
         ...mapMessageRow(row),
         chatId: customerRow.telegram_chat_id || '',

@@ -7057,8 +7057,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
       if (memoryEnabled) {
         updateCustomerMemoryFromInput(input);
-        appendMemoryMessage(input, 'user', memoryText);
       }
+      appendMemoryMessage(input, 'user', memoryText);
       markLatestClientTrace(input);
 
       if (!parseConfigBoolean(config.auto_reply_enabled, true)) {
