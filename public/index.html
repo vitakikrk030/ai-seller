@@ -4544,11 +4544,26 @@
         return trainingSelection;
       }
 
-      function formatTrainingMessage(message) {
+      function formatTrainingPause(previousMessage, message) {
+        const previousTime = previousMessage?.time ? new Date(previousMessage.time).getTime() : 0;
+        const currentTime = message?.time ? new Date(message.time).getTime() : 0;
+        if (!previousTime || !currentTime || currentTime <= previousTime) return '';
+        const diffMinutes = Math.round((currentTime - previousTime) / 60000);
+        if (diffMinutes < 10) return '';
+        if (diffMinutes < 60) return `пауза ${diffMinutes} мин`;
+        const hours = Math.floor(diffMinutes / 60);
+        const minutes = diffMinutes % 60;
+        return `пауза ${hours} ч${minutes ? ` ${minutes} мин` : ''}`;
+      }
+
+      function formatTrainingMessage(message, previousMessage = null) {
         const role = message.type === 'out'
           ? (message.source === 'manager' ? 'Менеджер' : 'AI')
           : 'Клиент';
-        return `${role}: ${String(message.text || '').trim()}`;
+        const time = formatDateTimeLabel(message.time);
+        const pause = formatTrainingPause(previousMessage, message);
+        const prefix = [time, pause].filter((part) => part && part !== '—').join(` · `);
+        return `${prefix ? `${prefix} · ` : ''}${role}: ${String(message.text || '').trim()}`;
       }
 
       function renderMessageMedia(message) {
@@ -4592,7 +4607,9 @@
           const clientMessages = selectedMessages.filter((message) => message.type === 'in');
           const responseMessages = selectedMessages.filter((message) => message.type === 'out');
           return {
-            contextText: selectedMessages.map(formatTrainingMessage).join('\n'),
+            contextText: selectedMessages.map((message, index) => (
+              formatTrainingMessage(message, selectedMessages[index - 1] || null)
+            )).join('\n'),
             clientText: clientMessages.map((message) => message.text || '').join('\n\n'),
             aiText: responseMessages.map((message) => message.text || '').join('\n\n'),
             manual: true,
@@ -4613,7 +4630,7 @@
             aiText: selectedAi.text || '',
             contextText: [
               formatTrainingMessage(selectedClient),
-              formatTrainingMessage(selectedAi),
+              formatTrainingMessage(selectedAi, selectedClient),
             ].join('\n'),
             manual: true,
             count: 2,
@@ -4634,7 +4651,7 @@
           aiText: lastAiIndex.message.text || '',
           contextText: [
             formatTrainingMessage(client),
-            formatTrainingMessage(lastAiIndex.message),
+            formatTrainingMessage(lastAiIndex.message, client),
           ].join('\n'),
           manual: false,
           count: 2,

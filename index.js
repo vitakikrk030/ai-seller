@@ -527,6 +527,16 @@ function normalizeTrainingText(value, limit = 1000) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
+function normalizeTrainingBlock(value, limit = 1800) {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, limit);
+}
+
 function getTrainingCategory(key) {
   return TRAINING_CATEGORIES[key] ? key : 'other';
 }
@@ -580,7 +590,7 @@ function addTrainingExample(input = {}) {
     createdAt: new Date().toISOString(),
     chatId: String(input.chatId || '').trim(),
     category: inferTrainingCategory(input),
-    contextText: normalizeTrainingText(input.contextText, 1800),
+    contextText: normalizeTrainingBlock(input.contextText, 2200),
     clientText: normalizeTrainingText(input.clientText, 900),
     aiText: normalizeTrainingText(input.aiText, 1200),
     correctedText: normalizeTrainingText(input.correctedText, 1200),
@@ -708,6 +718,7 @@ function getTrainingExamplesGuidance(queryText = '', memoryContext = null) {
     'Обучение на диалогах IWAK:',
     '- Эти уроки важнее общего стиля, если есть конфликт.',
     '- Подбирай уроки по смыслу текущего диалога: не тащи правило в неподходящую ситуацию.',
+    '- Если во фрагменте есть время или паузы между сообщениями, учитывай темп диалога: не торопи клиента и не игнорируй долгую паузу.',
     '- Если в уроке показано, что факт был выдуман, не повторять этот факт и честно просить уточнение.',
     '- Если урок говорит, что клиент уже дал данные, не спрашивай их повторно.',
     '- Хорошие ответы использовать как ориентир, плохие ответы не копировать.',
