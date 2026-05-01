@@ -5375,10 +5375,16 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
   const codeSnippets = buildSaiGptCodeSnippets(query);
   const projectMap = buildSaiGptProjectMap();
   const inboxDeepMatches = buildSaiGptInboxDeepMatches(inbox, query, selectedChatId);
+  const saiGptConfig = getSaiGptConfig();
   const snapshot = {
     now: new Date().toISOString(),
     mode: 'read_only_internal_agent',
     customerReplyPipeline: 'untouched',
+    saiGptRuntime: {
+      model: saiGptConfig.model || '',
+      baseUrl: saiGptConfig.url || '',
+      note: 'Это модель текущего внутреннего S.AI GPT. Не путать с aiControl.model для клиентских автоответов.',
+    },
     aiControl: {
       model: runtimeConfig.model || '',
       autoReply: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
@@ -5467,6 +5473,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Если владелец просто здоровается, отвечает коротко и спокойно, без аудита, без списка рисков и без разбора логов. Например: "Привет, на связи. Что смотрим?".',
     'Не запускай полный аудит сам. Давай аудит, оценки, риски и списки проблем только когда владелец прямо просит проверить состояние, диалог, ошибку, качество или код.',
     'Строго разделяй внутренний S.AI GPT и клиентскую магистраль. Ошибки scope=sai_gpt.chat относятся к этому внутреннему агенту и сами по себе НЕ означают, что клиентский AI отправляет техошибки клиентам.',
+    'Если владелец спрашивает "ты на какой модели" или "какая модель у тебя", отвечай по snapshot.saiGptRuntime.model. Не называй aiControl.model, потому что это модель клиентского автоответчика.',
     'Не пиши, что "бот может отправлять клиенту сырую ошибку", если в логах нет ошибок клиентского AI/Telegram-send или прямого факта отправки такой ошибки клиенту. Формулируй как "вижу внутреннюю ошибку S.AI GPT", если scope=sai_gpt.chat.',
     'Если делаешь вывод из косвенных признаков, помечай его как предположение, а не факт.',
     'В снимке системы есть карта файлов projectMap, релевантные фрагменты codeSnippets, список последних диалогов и deepMatches — глубокие совпадения Inbox по текущему вопросу. Используй их как рабочую память.',
