@@ -4523,6 +4523,95 @@ async function explainTrainingAnswer(input = {}) {
   };
 }
 
+async function coachTrainingAnswer(input = {}) {
+  const config = input.config || getRuntimeSnapshot();
+  if (logMissingConfig('training.coach', config, ['ai_key', 'ai_url', 'model'], {
+    chatId: input.chatId || '',
+  })) {
+    throw new Error('AI не настроен');
+  }
+
+  const contextText = normalizeTrainingBlock(input.contextText, 2200);
+  const clientText = normalizeTrainingText(input.clientText, 900);
+  const aiText = normalizeTrainingText(input.aiText, 1200);
+  const correctedText = normalizeTrainingText(input.correctedText, 1200);
+  const note = normalizeTrainingText(input.note, 600);
+  const userMessage = normalizeTrainingText(input.message, 900);
+  const coachMessages = Array.isArray(input.coachMessages)
+    ? input.coachMessages.slice(-8).map((message) => ({
+      role: message?.role === 'assistant' ? 'assistant' : 'user',
+      text: normalizeTrainingText(message?.text, 900),
+    })).filter((message) => message.text)
+    : [];
+
+  if (!contextText && (!clientText || !aiText)) {
+    throw new Error('Нужен фрагмент диалога или пара клиент + AI');
+  }
+  if (!userMessage) {
+    throw new Error('Напишите, что именно объяснить или как надо отвечать');
+  }
+
+  const categories = Object.entries(TRAINING_CATEGORIES)
+    .map(([key, meta]) => `${key}: ${meta.label} — ${meta.rule}`)
+    .join('\n');
+  const controlPrompt = buildSystemPrompt(config, null, clientText || contextText).slice(0, 7000);
+  const messages = [
+    {
+      role: 'system',
+      content: [
+        'Ты внутренний ученик S.AI, которого менеджер обучает на конкретном диалоге.',
+        'Отвечай как ученик: коротко признай, что понял, сформулируй вывод и как будешь отвечать в будущем.',
+        'Не спорь с менеджером. Не сохраняй факты, которых нет в диалоге, AI Control или сообщении менеджера.',
+        'Верни только JSON без markdown.',
+        'Формат: {"reply":"...","category":"...","note":"...","correctedText":"..."}',
+        'reply — живой ответ менеджеру от первого лица: "Понял..."',
+        'note — короткая причина/правило урока.',
+        'correctedText — правильный вариант ответа клиенту по смыслу, если он нужен.',
+        'category должен быть одним из ключей ниже.',
+        categories,
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: [
+        `AI Control:\n${controlPrompt}`,
+        contextText && `Фрагмент диалога:\n${contextText}`,
+        clientText && `Сообщение клиента:\n${clientText}`,
+        aiText && `Ответ AI/менеджера:\n${aiText}`,
+        correctedText && `Текущий черновик правильного ответа:\n${correctedText}`,
+        note && `Текущая причина урока:\n${note}`,
+        coachMessages.length && `Предыдущий диалог обучения:\n${coachMessages.map((message) => `${message.role === 'assistant' ? 'S.AI' : 'Менеджер'}: ${message.text}`).join('\n')}`,
+        `Новое наставление менеджера:\n${userMessage}`,
+      ].filter(Boolean).join('\n\n'),
+    },
+  ];
+
+  const response = await httpClient.post(
+    `${config.ai_url.replace(/\/$/, '')}/chat/completions`,
+    {
+      model: config.model,
+      messages,
+      temperature: 0.2,
+      response_format: isOpenAiChatApi(config.ai_url) ? { type: 'json_object' } : undefined,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.ai_key}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    }
+  );
+  const parsed = parseAiJsonObject(extractAiReply(response.data?.choices?.[0]?.message?.content));
+  const category = getTrainingCategory(String(parsed.category || input.category || '').trim());
+  return {
+    reply: normalizeTrainingText(parsed.reply || parsed.explanation || 'Понял. Сформировал вывод для урока.', 900),
+    category,
+    note: normalizeTrainingText(parsed.note || '', 600),
+    correctedText: normalizeTrainingText(parsed.correctedText || '', 1200),
+  };
+}
+
 function getCreativityTemperature(creativity) {
   const map = {
     precise: 0.2,
@@ -6008,6 +6097,28 @@ app.post('/training/explain', async (req, res) => {
       error: error.message,
     });
     res.status(400).json({ success: false, error: error.message || 'Не удалось разобрать ответ' });
+  }
+});
+
+app.post('/training/coach', async (req, res) => {
+  try {
+    const result = await coachTrainingAnswer({
+      ...(req.body || {}),
+      config: getRuntimeSnapshot(),
+    });
+    logEvent('TRAINING_COACH', {
+      status: 'ok',
+      chatId: req.body?.chatId || '',
+      category: result.category,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'training.coach',
+      status: 'error',
+      error: error.message,
+    });
+    res.status(400).json({ success: false, error: error.message || 'Не удалось продолжить обучение' });
   }
 });
 

@@ -2068,6 +2068,44 @@
         font-size: 13px;
       }
 
+      .training-coach-chat {
+        display: grid;
+        gap: 7px;
+        max-height: 220px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px;
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+      }
+
+      .training-coach-message {
+        display: grid;
+        gap: 3px;
+        width: min(88%, 620px);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 7px 9px;
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.35;
+        white-space: pre-wrap;
+      }
+
+      .training-coach-message.assistant {
+        justify-self: end;
+        border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+        background: color-mix(in srgb, var(--accent) 10%, var(--panel-alt));
+      }
+
+      .training-coach-role {
+        color: color-mix(in srgb, var(--muted) 78%, transparent);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
       .training-console {
         display: grid;
         gap: 12px;
@@ -4675,9 +4713,22 @@
       function getTrainingDraft(chat) {
         const chatId = chat?.chatId || '';
         if (trainingDraft.chatId !== chatId) {
-          trainingDraft = { chatId, correctedText: '', note: '', category: 'auto' };
+          trainingDraft = { chatId, correctedText: '', note: '', category: 'auto', coachMessages: [] };
         }
+        if (!Array.isArray(trainingDraft.coachMessages)) trainingDraft.coachMessages = [];
         return trainingDraft;
+      }
+
+      function renderTrainingCoachMessages(messages = []) {
+        if (!messages.length) {
+          return '<div class="status-output muted">Напиши S.AI, что именно он понял неправильно и как надо рассуждать. Он ответит выводом, который можно сохранить как урок.</div>';
+        }
+        return messages.map((message) => `
+          <div class="training-coach-message ${message.role === 'assistant' ? 'assistant' : 'user'}">
+            <div class="training-coach-role">${message.role === 'assistant' ? 'S.AI понял' : 'Ты объяснил'}</div>
+            <div>${escapeHtml(message.text || '')}</div>
+          </div>
+        `).join('');
       }
 
       function getTrainingPair(chat) {
@@ -4792,8 +4843,17 @@
               <div class="field-label">Разбор ответа</div>
               <div class="status-output muted" data-training-explanation>Нажми “Почему так ответил?”, чтобы получить разбор причины и черновик правки.</div>
             </div>
+            <div class="field">
+              <div class="field-label">Диалог с S.AI по этому уроку</div>
+              <div class="training-coach-chat" data-training-coach-chat>${renderTrainingCoachMessages(draft.coachMessages)}</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Объяснить как наставник</div>
+              <textarea data-training-coach-input placeholder="Например: ты не должен был объединять две разные темы в один ответ. Сначала ответь про доставку, потом отдельно про знакомство. И не выдумывай сроки."></textarea>
+            </div>
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-training-action="explain">Почему так ответил?</button>
+              <button class="button-secondary" type="button" data-training-action="coach">Объяснить и сделать вывод</button>
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
               <button class="button-primary" type="button" data-training-action="bad">Сохранить исправление</button>
             </div>
@@ -5008,6 +5068,69 @@
             const correctedText = card?.querySelector('[data-training-corrected]')?.value || '';
             const note = card?.querySelector('[data-training-note]')?.value || '';
             const originalLabel = button.textContent;
+            if (action === 'coach') {
+              const draft = getTrainingDraft(chat);
+              const coachInput = card?.querySelector('[data-training-coach-input]');
+              const coachChat = card?.querySelector('[data-training-coach-chat]');
+              const explanation = card?.querySelector('[data-training-explanation]');
+              const categoryInput = card?.querySelector('[data-training-category]');
+              const correctedInput = card?.querySelector('[data-training-corrected]');
+              const noteInput = card?.querySelector('[data-training-note]');
+              const message = coachInput?.value || '';
+              if (!message.trim()) {
+                showSaveToast('error', 'Напиши объяснение для S.AI');
+                if (explanation) explanation.textContent = 'Напиши, что именно S.AI понял неправильно или как надо отвечать.';
+                return;
+              }
+              button.disabled = true;
+              button.textContent = 'Думаю...';
+              draft.coachMessages.push({ role: 'user', text: message.trim() });
+              if (coachInput) coachInput.value = '';
+              if (coachChat) coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
+              try {
+                const data = await fetchJSON('/training/coach', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    chatId: chat.chatId,
+                    contextText,
+                    clientText,
+                    aiText,
+                    category,
+                    correctedText,
+                    note,
+                    message,
+                    coachMessages: draft.coachMessages,
+                  }),
+                });
+                draft.coachMessages.push({ role: 'assistant', text: data.reply || 'Понял. Обновил вывод по уроку.' });
+                if (data.category && categoryInput) {
+                  categoryInput.value = data.category;
+                  draft.category = data.category;
+                }
+                if (data.note && noteInput) {
+                  noteInput.value = data.note;
+                  draft.note = data.note;
+                }
+                if (data.correctedText && correctedInput) {
+                  correctedInput.value = data.correctedText;
+                  draft.correctedText = data.correctedText;
+                }
+                if (coachChat) {
+                  coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
+                  coachChat.scrollTop = coachChat.scrollHeight;
+                }
+                if (explanation) explanation.textContent = 'S.AI сформировал вывод. Проверь поля ниже и сохрани урок, если всё верно.';
+                showSaveToast('ok', 'Вывод готов');
+              } catch (error) {
+                draft.coachMessages.push({ role: 'assistant', text: error.message || 'Не смог продолжить обучение.' });
+                if (coachChat) coachChat.innerHTML = renderTrainingCoachMessages(draft.coachMessages);
+                showSaveToast('error', error.message || 'Не удалось продолжить обучение');
+              } finally {
+                button.disabled = false;
+                button.textContent = originalLabel;
+              }
+              return;
+            }
             if (action === 'explain') {
               const explanation = card?.querySelector('[data-training-explanation]');
               const categoryInput = card?.querySelector('[data-training-category]');
@@ -5081,7 +5204,7 @@
                 : 'Готово: исправление сохранено и будет учитываться в следующих ответах.';
               showSaveToast('ok', 'Урок сохранён');
               trainingSelection = { chatId: chat.chatId, clientIndex: null, aiIndex: null, indexes: [] };
-              trainingDraft = { chatId: chat.chatId, correctedText: '', note: '', category: 'auto' };
+              trainingDraft = { chatId: chat.chatId, correctedText: '', note: '', category: 'auto', coachMessages: [] };
               if (action !== 'good') {
                 const corrected = card?.querySelector('[data-training-corrected]');
                 if (corrected) corrected.value = '';
@@ -6631,6 +6754,7 @@
         const hasTrainingDraft = Boolean(
           String(trainingDraft.correctedText || '').trim()
           || String(trainingDraft.note || '').trim()
+          || (Array.isArray(trainingDraft.coachMessages) && trainingDraft.coachMessages.length > 0)
           || (trainingDraft.category && trainingDraft.category !== 'auto')
         );
         return hasTrainingSelection || hasTrainingDraft;
