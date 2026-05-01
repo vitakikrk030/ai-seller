@@ -1708,6 +1708,21 @@ function extractOrderPrice(text) {
   return currency ? currency[1] : '';
 }
 
+function extractPaymentProofAmount(text) {
+  const source = String(text || '');
+  const patterns = [
+    /(?:сумма|итого|оплачено|перевод|плат[её]ж|к\s+оплате|amount|total)\s*[:\-]?\s*(\d[\d\s]{2,8})(?:[.,]\d{1,2})?\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?|rub)?/i,
+    /(\d[\d\s]{2,8})(?:[.,]\d{1,2})?\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?|rub)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (!match) continue;
+    const amount = Number(String(match[1] || '').replace(/\s+/g, ''));
+    if (amount >= 300 && amount <= 500000) return String(amount);
+  }
+  return '';
+}
+
 function extractDeliveryService(text) {
   const source = String(text || '').toLowerCase();
   if (!source) return '';
@@ -1866,6 +1881,9 @@ function updateCustomerMemoryFromInput(input) {
   const chatId = getMemoryChatId(input);
   const source = input.text || getMemoryMessageText(input);
   if (!chatId) return;
+  const profileSnapshot = getCustomerProfileSnapshot(chatId) || {};
+  const lastOrderSnapshot = profileSnapshot.lastOrder || {};
+  const factsSnapshot = profileSnapshot.facts || memoryStore.facts[chatId] || {};
 
   const phone = extractPhone(input.text);
   if (phone) upsertMemoryFact(chatId, 'phone', phone, source);
@@ -1896,6 +1914,15 @@ function updateCustomerMemoryFromInput(input) {
 
   const lastProduct = extractLastProduct(input.text);
   if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
+  const orderPrice = extractOrderPrice(source) || extractPaymentProofAmount(source);
+  const commonOrderPatch = {
+    product: lastProduct || lastOrderSnapshot.product || (factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
+    size: size || lastOrderSnapshot.size || factsSnapshot.size?.value || factsSnapshot.shoeSize?.value || '',
+    price: orderPrice || lastOrderSnapshot.price || '',
+    fullName: fullName || lastOrderSnapshot.fullName || lastOrderSnapshot.full_name || factsSnapshot.fullName?.value || '',
+    phone: phone || lastOrderSnapshot.phone || factsSnapshot.phone?.value || '',
+    deliveryAddress: pickupPoint || deliveryAddress || lastOrderSnapshot.deliveryAddress || lastOrderSnapshot.delivery_address || factsSnapshot.pickupPoint?.value || factsSnapshot.deliveryAddress?.value || '',
+  };
 
   const slotContextText = [lastProduct, memoryStore.facts[chatId]?.lastProduct?.value, memoryStore.facts[chatId]?.interest?.value, input.text].filter(Boolean).join(' ');
   if (detectShoeContextFromText(slotContextText)) {
@@ -1912,23 +1939,32 @@ function updateCustomerMemoryFromInput(input) {
 
   if (isPaymentIntentText(input.text)) {
     safeCustomerStoreCall('customer.order.payment_requested', (store) => store.upsertOrder(chatId, {
-      product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
-      size: size || memoryStore.facts[chatId]?.size?.value || memoryStore.facts[chatId]?.shoeSize?.value || '',
-      fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
-      phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
-      deliveryAddress: pickupPoint || deliveryAddress || memoryStore.facts[chatId]?.pickupPoint?.value || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      ...commonOrderPatch,
       status: 'waiting_payment',
       paymentStatus: 'payment_details_sent',
     }));
   }
 
+  if (isPaymentProofInput(input)) {
+    const paymentAmount = extractPaymentProofAmount(source) || extractOrderPrice(source) || commonOrderPatch.price;
+    safeCustomerStoreCall('customer.order.payment_proof', (store) => store.upsertOrder(chatId, {
+      ...commonOrderPatch,
+      price: paymentAmount || commonOrderPatch.price,
+      status: 'waiting_payment_check',
+      paymentStatus: 'proof_received',
+      paymentCheckStatus: 'proof_received',
+      paymentCheckSummary: [
+        paymentAmount && `Сумма из чека/контекста: ${formatMoneyAmount(paymentAmount)}`,
+        input.messageType && `Тип сообщения: ${input.messageType}`,
+        input.hasMedia && 'Клиент приложил медиа/файл',
+      ].filter(Boolean).join('. '),
+      proofReceivedAt: new Date().toISOString(),
+    }));
+  }
+
   if (stage === 'ready_to_buy' || stage === 'collecting_order_info') {
     safeCustomerStoreCall('customer.order.draft', (store) => store.upsertOrder(chatId, {
-      product: lastProduct || (memoryStore.facts[chatId]?.lastProduct?.value || memoryStore.facts[chatId]?.interest?.value || ''),
-      size: size || memoryStore.facts[chatId]?.size?.value || memoryStore.facts[chatId]?.shoeSize?.value || '',
-      fullName: fullName || memoryStore.facts[chatId]?.fullName?.value || '',
-      phone: phone || memoryStore.facts[chatId]?.phone?.value || '',
-      deliveryAddress: pickupPoint || deliveryAddress || memoryStore.facts[chatId]?.pickupPoint?.value || memoryStore.facts[chatId]?.deliveryAddress?.value || '',
+      ...commonOrderPatch,
       status: stage === 'ready_to_buy' ? 'draft' : 'collecting_info',
     }));
   }
@@ -7521,8 +7557,18 @@ function isConfirmedOrder(order = {}) {
   return values.some((value) => /paid|confirmed|оплачен|подтвержден|подтверждён|shipped|done|completed/.test(value));
 }
 
+function isPaidOrProofReceivedOrder(order = {}) {
+  if (isConfirmedOrder(order)) return true;
+  const values = [
+    order.status,
+    order.paymentStatus,
+    order.paymentCheckStatus,
+  ].map((value) => String(value || '').toLowerCase());
+  return Boolean(order.proofReceivedAt) || values.some((value) => /proof_received|waiting_payment_check|check_received|receipt/.test(value));
+}
+
 function buildInboxMoneyStats(orders = []) {
-  const confirmedOrders = orders.filter(isConfirmedOrder);
+  const confirmedOrders = orders.filter(isPaidOrProofReceivedOrder);
   const confirmedSpend = confirmedOrders.reduce((sum, order) => sum + parseMoneyAmount(order.price), 0);
   const potentialSpend = orders.reduce((sum, order) => sum + parseMoneyAmount(order.price), 0);
   return {
