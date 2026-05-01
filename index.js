@@ -25,6 +25,8 @@ const SLOT_WAIT_INTERVAL_MS = 25;
 const HTTP_BODY_LIMIT = '2mb';
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase();
 const LOG_TEXT_LIMIT = 1200;
+const AI_DECISION_TRACE_TEXT_LIMIT = 12000;
+const AI_DECISION_TRACE_SHORT_LIMIT = 3000;
 const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_ARCHIVES = 5;
 const STT_TIMEOUT_MS = 30000;
@@ -396,6 +398,14 @@ function logEvent(event, payload) {
 
 function truncateLogText(text) {
   return String(text || '').slice(0, LOG_TEXT_LIMIT);
+}
+
+function truncateTraceText(value, limit = AI_DECISION_TRACE_TEXT_LIMIT) {
+  return redactSensitiveText(String(value || '')).slice(0, limit);
+}
+
+function hashTraceText(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 16);
 }
 
 function normalizeInstructionConfigValue(value) {
@@ -2787,7 +2797,18 @@ async function processInputBatch(inputs) {
       const reply = await requestAi(batchInput);
       if (typeof reply === 'string') {
         const finalReply = finalizeAiReply(batchInput, reply);
-        if (!finalReply) return;
+        batchInput.aiDecisionTrace = {
+          ...batchInput.aiDecisionTrace,
+          finalReply,
+          finalizeChanged: String(reply || '').trim() !== finalReply,
+        };
+        if (!finalReply) {
+          logAiDecisionTrace(batchInput, {
+            status: 'skipped',
+            skippedReason: 'empty_final_reply',
+          });
+          return;
+        }
         const dialogState = getDialogState(batchInput.chatId);
         const managerLastMessageAt = dialogState?.managerLastMessageAt
           ? new Date(dialogState.managerLastMessageAt).getTime()
@@ -2808,6 +2829,11 @@ async function processInputBatch(inputs) {
             messageStatus: 'ai_reply_skipped_manager_takeover',
             status: 'ok',
           });
+          logAiDecisionTrace(batchInput, {
+            status: 'skipped',
+            skippedReason: 'manager_takeover',
+            finalReply,
+          });
           return;
         }
         const sent = await sendHumanizedTelegramReply(batchInput.config, batchInput, finalReply);
@@ -2822,8 +2848,18 @@ async function processInputBatch(inputs) {
             messageStatus: 'ai_reply_skipped_newer_client_input',
             status: 'ok',
           });
+          logAiDecisionTrace(batchInput, {
+            status: 'skipped',
+            skippedReason: 'newer_client_input',
+            finalReply,
+          });
           return;
         }
+        logAiDecisionTrace(batchInput, {
+          status: 'ok',
+          finalReply,
+          sentReply: finalReply,
+        });
         appendMemoryMessage(batchInput, 'assistant', finalReply);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
@@ -6666,6 +6702,69 @@ function buildAiMessages(input) {
   return messages;
 }
 
+function buildAiDecisionTrace(input, payload, messages) {
+  const systemPrompt = messages.find((message) => message.role === 'system')?.content || '';
+  const selectedTraining = selectTrainingExamples(input.text, input.memoryContext).map((item) => ({
+    id: item.id,
+    type: item.type || '',
+    category: getTrainingCategory(item.category),
+    active: item.active !== false,
+    note: truncateTraceText(item.note || '', 700),
+    ruleText: truncateTraceText(item.ruleText || buildTrainingRuleText(item), 1200),
+    contextText: truncateTraceText(item.contextText || '', 1600),
+    clientText: truncateTraceText(item.clientText || '', 1000),
+    aiText: truncateTraceText(item.aiText || '', 1000),
+    correctedText: truncateTraceText(item.correctedText || '', 1200),
+  }));
+
+  return {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
+    messageType: input.messageType,
+    model: payload.model,
+    temperature: payload.temperature,
+    images: Array.isArray(input.images) ? input.images.length : 0,
+    hasMedia: !!input.hasMedia,
+    hasLinkInput: !!input.hasLinkInput,
+    inputText: truncateTraceText(input.text, AI_DECISION_TRACE_SHORT_LIMIT),
+    promptHash: hashTraceText(systemPrompt),
+    systemPromptPreview: truncateTraceText(systemPrompt),
+    memorySummaryPreview: truncateTraceText(input.memoryContext?.summary || '', 5000),
+    memoryHistoryCount: input.memoryContext?.history?.length || 0,
+    memoryFacts: input.memoryContext?.facts || {},
+    memoryStage: input.memoryContext?.state?.stage || '',
+    closedSlots: input.memoryContext?.slotSnapshot?.closedSlots || [],
+    nextBlockingSlot: input.memoryContext?.slotSnapshot?.nextBlockingSlot || '',
+    selectedTraining,
+    appliedControls: getVisibleControlState(input.config, input.memoryContext),
+    status: 'process',
+  };
+}
+
+function logAiDecisionTrace(input, patch = {}) {
+  if (!input?.traceId) return;
+  const base = input.aiDecisionTrace || {};
+  const entry = {
+    ...base,
+    ...patch,
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
+    messageType: input.messageType,
+  };
+  if (entry.rawAiReply) entry.rawAiReply = truncateTraceText(entry.rawAiReply, AI_DECISION_TRACE_SHORT_LIMIT);
+  if (entry.finalReply) entry.finalReply = truncateTraceText(entry.finalReply, AI_DECISION_TRACE_SHORT_LIMIT);
+  if (entry.sentReply) entry.sentReply = truncateTraceText(entry.sentReply, AI_DECISION_TRACE_SHORT_LIMIT);
+  if (entry.error) entry.error = truncateTraceText(entry.error, LOG_TEXT_LIMIT);
+  input.aiDecisionTrace = entry;
+  logEvent('AI_DECISION_TRACE', entry);
+}
+
 async function requestAi(input) {
   if (logMissingConfig('ai.request', input.config, ['ai_key', 'ai_url', 'model'], {
     traceId: input.traceId,
@@ -6703,11 +6802,13 @@ async function requestAi(input) {
     return null;
   }
 
+  const messages = buildAiMessages(input);
   const payload = {
     model: input.config.model,
-    messages: buildAiMessages(input),
+    messages,
     temperature: getCreativityTemperature(input.config.creativity),
   };
+  input.aiDecisionTrace = buildAiDecisionTrace(input, payload, messages);
 
     logEvent('AI_REQUEST', {
       traceId: input.traceId,
@@ -6768,6 +6869,11 @@ async function requestAi(input) {
 
     const reply = extractAiReply(aiResponse.data?.choices?.[0]?.message?.content);
     if (typeof reply !== 'string' || !reply.trim()) {
+      logAiDecisionTrace(input, {
+        status: 'error',
+        error: 'AI returned empty or invalid reply',
+        duration: Date.now() - startedAt,
+      });
       logEvent('ERROR', {
         traceId: input.traceId,
         userId: input.userId,
@@ -6782,6 +6888,13 @@ async function requestAi(input) {
       return null;
     }
 
+    input.aiDecisionTrace = {
+      ...input.aiDecisionTrace,
+      rawAiReply: reply,
+      duration: Date.now() - startedAt,
+      status: 'process',
+    };
+
     logEvent('AI_REPLY', {
       traceId: input.traceId,
       userId: input.userId,
@@ -6795,6 +6908,11 @@ async function requestAi(input) {
     });
     return reply;
   } catch (e) {
+    logAiDecisionTrace(input, {
+      status: 'error',
+      error: e.message,
+      duration: Date.now() - startedAt,
+    });
     logEvent('ERROR', {
       traceId: input.traceId,
       userId: input.userId,
@@ -8477,10 +8595,21 @@ app.post('/config/test-ai', async (req, res) => {
 
   const finalReply = finalizeAiReply(input, reply);
   if (!finalReply) {
+    logAiDecisionTrace(input, {
+      status: 'skipped',
+      skippedReason: 'empty_final_reply',
+      finalReply,
+    });
     res.json({ ok: false, reply: '', error: 'AI returned empty reply after normalization' });
     return;
   }
 
+  logAiDecisionTrace(input, {
+    status: 'ok',
+    finalReply,
+    sentReply: '',
+    skippedReason: 'test_only_not_sent',
+  });
   res.json({ ok: true, reply: finalReply });
 });
 
@@ -8536,6 +8665,11 @@ app.post('/config/scenario-test', async (req, res) => {
 
   const finalReply = finalizeAiReply(input, reply);
   if (!finalReply) {
+    logAiDecisionTrace(input, {
+      status: 'skipped',
+      skippedReason: 'empty_final_reply',
+      finalReply,
+    });
     res.json({
       ok: false,
       reply: '',
@@ -8548,6 +8682,12 @@ app.post('/config/scenario-test', async (req, res) => {
   }
 
   const diagnostic = evaluateScenarioReply(finalReply, scenario, config);
+  logAiDecisionTrace(input, {
+    status: 'ok',
+    finalReply,
+    sentReply: '',
+    skippedReason: 'scenario_test_not_sent',
+  });
   res.json({
     ok: true,
     reply: finalReply,

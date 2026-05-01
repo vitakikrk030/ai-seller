@@ -5277,6 +5277,7 @@
                 ${renderMessageMedia(message)}
                 <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
                 <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
+                ${message.type === 'out' && message.source !== 'manager' && message.traceId ? `<button class="mini-button" type="button" data-open-trace="${escapeAttr(message.traceId)}">Почему?</button>` : ''}
                 ${pickText ? `<div class="training-pick">${escapeHtml(pickText)}</div>` : ''}
               </div>
             `;
@@ -5320,6 +5321,16 @@
             await loadInbox();
           });
         }
+
+        inboxThread.querySelectorAll('[data-open-trace]').forEach((button) => {
+          button.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const traceId = button.dataset.openTrace || '';
+            if (!traceId) return;
+            switchView('logs');
+            await loadTrace(traceId);
+          });
+        });
 
         inboxThread.querySelectorAll('[data-message-index]').forEach((bubble) => {
           bubble.addEventListener('click', () => {
@@ -5920,6 +5931,54 @@
       }
 
       function formatTraceText(item) {
+        if (item.event === 'AI_DECISION_TRACE') {
+          const lessons = Array.isArray(item.selectedTraining) ? item.selectedTraining : [];
+          const lessonText = lessons.length
+            ? lessons.map((lesson, index) => [
+              `${index + 1}. ${lesson.category || 'other'} / ${lesson.type || 'lesson'} / ${lesson.id || '—'}`,
+              lesson.ruleText ? `   Правило: ${lesson.ruleText}` : '',
+              lesson.correctedText ? `   Как надо: ${lesson.correctedText}` : '',
+            ].filter(Boolean).join('\n')).join('\n')
+            : 'нет';
+          const appliedControls = item.appliedControls
+            ? Object.entries(item.appliedControls).map(([key, value]) => `${key}: ${value ? 'on' : 'off'}`).join(', ')
+            : '—';
+          return [
+            'Что спросил клиент:',
+            item.inputText || '—',
+            '',
+            'Модель:',
+            `${item.model || '—'}${typeof item.temperature === 'number' ? `, temperature ${item.temperature}` : ''}`,
+            '',
+            'Какие правила были включены:',
+            appliedControls,
+            '',
+            'Какие уроки попали в prompt:',
+            lessonText,
+            '',
+            'Память/факты:',
+            `История: ${item.memoryHistoryCount || 0} сообщений`,
+            item.memoryStage ? `Этап: ${item.memoryStage}` : '',
+            item.nextBlockingSlot ? `Следующий шаг: ${item.nextBlockingSlot}` : '',
+            Array.isArray(item.closedSlots) && item.closedSlots.length ? `Закрытые поля: ${item.closedSlots.join(', ')}` : '',
+            '',
+            'Сырой ответ модели:',
+            item.rawAiReply || '—',
+            '',
+            'Финальный ответ после guard:',
+            item.finalReply || '—',
+            '',
+            'Что реально ушло клиенту:',
+            item.sentReply || (item.skippedReason ? `Не отправлено: ${item.skippedReason}` : '—'),
+            '',
+            'Prompt hash:',
+            item.promptHash || '—',
+            '',
+            'Prompt preview:',
+            item.systemPromptPreview || '—',
+          ].filter((line) => line !== '').join('\n');
+        }
+
         if (item.event === 'AI_REQUEST') {
           const parts = [];
           if (item.instructionPreview) parts.push('Инструкция: ' + item.instructionPreview);
