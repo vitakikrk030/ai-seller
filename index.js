@@ -5425,6 +5425,163 @@ function buildSaiGptProjectMap() {
     .slice(0, 260);
 }
 
+function buildSaiGptRuntimeSnapshot(config = runtimeConfig) {
+  return {
+    now: new Date().toISOString(),
+    mode: 'read_only_internal_agent_with_confirmed_actions',
+    customerReplyPipeline: 'untouched',
+    providers: {
+      customerAi: {
+        configured: Boolean(config.ai_key && config.ai_url && config.model),
+        baseUrl: config.ai_url || '',
+        model: config.model || '',
+      },
+      saiGpt: {
+        configured: Boolean(config.sai_gpt_key && config.sai_gpt_url && config.sai_gpt_model),
+        baseUrl: config.sai_gpt_url || '',
+        model: config.sai_gpt_model || '',
+      },
+      stt: {
+        configured: Boolean(config.stt_api_key && config.stt_base_url && config.stt_model),
+        baseUrl: config.stt_base_url || '',
+        model: config.stt_model || '',
+      },
+      telegramBusiness: config.telegram_token ? 'configured' : 'missing',
+    },
+    timeouts: {
+      aiRequestMs: AI_REQUEST_TIMEOUT_MS,
+      batchDebounceMs: getConfigBatchDebounceMs(config),
+      managerReturnDelayMs: getConfigManagerReturnDelayMs(config),
+    },
+    featureFlags: {
+      autoReply: parseConfigBoolean(config.auto_reply_enabled, true),
+      memory: parseConfigBoolean(config.memory_enabled, true),
+      managerTakeover: parseConfigBoolean(config.manager_takeover_enabled, true),
+      payment: parseConfigBoolean(config.payment_enabled, false),
+      delivery: parseConfigBoolean(config.delivery_rules_enabled, true),
+      receiptCheck: parseConfigBoolean(config.receipt_check_enabled, true),
+      responseGuard: parseConfigBoolean(config.response_guard_enabled, true),
+      contacts: parseConfigBoolean(config.contacts_enabled, true),
+      followupMaster: parseConfigBoolean(config.followup_master_enabled, false),
+      followupWorker: parseConfigBoolean(config.followup_worker_enabled, false),
+      followupAutoSend: parseConfigBoolean(config.followup_auto_send_enabled, false),
+    },
+    replyPolicy: {
+      replyMode: normalizeReplyMode(config.reply_mode),
+      humanTypingMode: normalizeHumanTypingMode(config.human_typing_mode),
+      mediaBehavior: config.media_behavior || 'answer_from_media',
+      responseLength: config.response_length || 'medium',
+      creativity: config.creativity || 'balanced',
+    },
+  };
+}
+
+function buildSaiGptTrainingSnapshot(queryText = '') {
+  const all = (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES);
+  const promptItems = selectTrainingExamples(queryText, null);
+  const promptIds = new Set(promptItems.map((item) => item.id));
+  return {
+    total: all.length,
+    active: all.filter((item) => item.active !== false).length,
+    disabled: all.filter((item) => item.active === false).length,
+    promptLimit: TRAINING_PROMPT_EXAMPLES,
+    promptSelectedIds: Array.from(promptIds),
+    categories: Object.fromEntries(Object.entries(TRAINING_CATEGORIES).map(([key, meta]) => [key, meta.label])),
+    items: all.map((item) => ({
+      id: item.id,
+      type: item.type,
+      category: getTrainingCategory(item.category),
+      active: item.active !== false,
+      inPromptForCurrentQuery: promptIds.has(item.id),
+      createdAt: item.createdAt || '',
+      updatedAt: item.updatedAt || '',
+      chatId: item.chatId || '',
+      ruleText: item.ruleText || buildTrainingRuleText(item),
+      contextText: item.contextText || '',
+      clientText: item.clientText || '',
+      aiText: item.aiText || '',
+      correctedText: item.correctedText || '',
+      note: item.note || '',
+    })),
+  };
+}
+
+function scoreSaiGptLogEntry(entry = {}, query = '') {
+  const tokens = tokenizeSaiGptQuery(query);
+  const source = [
+    entry.event,
+    entry.status,
+    entry.scope,
+    entry.route,
+    entry.traceId,
+    entry.userId,
+    entry.chatId,
+    entry.error,
+    entry.message,
+    entry.providerError,
+    entry.text,
+    entry.replyText,
+  ].join(' ').toLowerCase();
+  let score = entry.event === 'ERROR' || entry.status === 'error' ? 20 : 0;
+  tokens.forEach((token) => {
+    if (source.includes(token)) score += 5;
+  });
+  if (String(entry.scope || '').includes('sai_gpt')) score += 3;
+  return score;
+}
+
+function buildSaiGptLogSnapshot(query = '') {
+  const logs = getMergedLogs().slice(0, 1000);
+  const errors = logs.filter((entry) => entry.event === 'ERROR' || entry.status === 'error').slice(0, 80);
+  const relevant = logs
+    .map((entry) => ({ entry, score: scoreSaiGptLogEntry(entry, query) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 80)
+    .map((item) => item.entry);
+  const byScope = {};
+  errors.forEach((entry) => {
+    const scope = entry.scope || entry.event || 'unknown';
+    byScope[scope] = (byScope[scope] || 0) + 1;
+  });
+  return {
+    totalLoaded: logs.length,
+    errorsByScope: byScope,
+    recentErrors: errors,
+    relevant,
+  };
+}
+
+function buildSaiGptOnDemandCapabilities() {
+  return {
+    code: [
+      'projectMap lists files and line counts.',
+      'codeSnippets are selected by current question tokens.',
+      'Ask by file path, route, function name, error scope, or feature name to pull more relevant snippets next turn.',
+    ],
+    inbox: [
+      'dialogIndex lists available chats.',
+      'deepMatches auto-loads matching chats by name, username, chatId, product, facts, or phrase.',
+      'selectedChat loads the open Inbox chat when available.',
+      'Ask by name/chatId/username/phrase to pull that dialog instead of requesting manual history.',
+    ],
+    training: [
+      'trainingFull contains active and disabled lessons.',
+      'promptSelectedIds shows which lessons would enter the prompt for the current question.',
+      'Confirmed actions can create a training lesson or toggle lesson active state.',
+    ],
+    logs: [
+      'recentErrors and relevant logs are available with scope, traceId, status, and provider details when logged.',
+      'Separate scope=sai_gpt.* from customer AI and Telegram send pipeline before making claims.',
+    ],
+    boundaries: [
+      'Never expose secrets.',
+      'Do not change customer-facing settings without explicit confirmation.',
+      'Customer reply pipeline is read/analyze only unless owner explicitly confirms a supported action.',
+    ],
+  };
+}
+
 function scoreSaiGptInboxProfile(profile = {}, query = '', selectedChatId = '') {
   const chatId = String(profile.customer?.chatId || '');
   if (selectedChatId && chatId === String(selectedChatId)) return 100000;
@@ -5475,8 +5632,6 @@ function buildSaiGptInboxDeepMatches(inbox = {}, query = '', selectedChatId = ''
 
 function buildSaiGptSystemContext(query, selectedChatId = '') {
   const aiControlPreview = buildAiControlPreview(getRuntimeSnapshot());
-  const trainingItems = (trainingStore.items || []).slice(0, 30);
-  const activeTrainingItems = trainingItems.filter((item) => item.active !== false);
   const logs = getMergedLogs().slice(0, 120);
   const recentErrors = logs
     .filter((item) => item.event === 'ERROR' || item.status === 'error')
@@ -5514,10 +5669,14 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
   const projectMap = buildSaiGptProjectMap();
   const inboxDeepMatches = buildSaiGptInboxDeepMatches(inbox, query, selectedChatId);
   const saiGptConfig = getSaiGptConfig();
+  const runtimeSnapshot = buildSaiGptRuntimeSnapshot();
+  const trainingSnapshot = buildSaiGptTrainingSnapshot(query);
+  const logSnapshot = buildSaiGptLogSnapshot(query);
   const snapshot = {
-    now: new Date().toISOString(),
-    mode: 'read_only_internal_agent',
-    customerReplyPipeline: 'untouched',
+    now: runtimeSnapshot.now,
+    mode: runtimeSnapshot.mode,
+    customerReplyPipeline: runtimeSnapshot.customerReplyPipeline,
+    runtimeSnapshot,
     saiGptRuntime: {
       model: saiGptConfig.model || '',
       baseUrl: saiGptConfig.url || '',
@@ -5529,22 +5688,10 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
       memory: parseConfigBoolean(runtimeConfig.memory_enabled, true),
       managerTakeover: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
       appliedControls: aiControlPreview.appliedControls,
-      promptPreview: redactSensitiveText(aiControlPreview.systemPrompt).slice(0, 7000),
+      fullPrompt: redactSensitiveText(aiControlPreview.systemPrompt),
+      capabilities: aiControlPreview.capabilities,
     },
-    training: {
-      total: trainingItems.length,
-      active: activeTrainingItems.length,
-      promptLimit: TRAINING_PROMPT_EXAMPLES,
-      latest: activeTrainingItems.slice(0, 12).map((item) => ({
-        id: item.id,
-        type: item.type,
-        category: item.category,
-        note: item.note || '',
-        ruleText: item.ruleText || '',
-        contextText: item.contextText || '',
-        correctedText: item.correctedText || '',
-      })),
-    },
+    trainingFull: trainingSnapshot,
     inbox: {
       summary: inbox.summary,
       recentDialogs,
@@ -5562,6 +5709,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
         : null,
     },
     recentErrors,
+    logs: logSnapshot,
     saiGptMemory: {
       total: Array.isArray(saiGptMemoryStore.messages) ? saiGptMemoryStore.messages.length : 0,
       pendingAction: describeSaiGptPendingAction(getSaiGptPendingAction()),
@@ -5575,6 +5723,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     },
     projectMap,
     codeSnippets,
+    onDemandCapabilities: buildSaiGptOnDemandCapabilities(),
   };
 
   return redactSensitiveText(JSON.stringify(snapshot, null, 2)).slice(0, SAI_GPT_CONTEXT_CHAR_LIMIT);
