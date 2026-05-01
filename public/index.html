@@ -2988,6 +2988,15 @@
                       <div class="field-label">Расположение доставки</div>
                       <textarea id="deliveryLayoutText" placeholder="Например: сначала бесплатная доставка, затем список служб, затем какие данные нужны."></textarea>
                     </div>
+                    <label class="toggle-line">
+                      <input id="deliveryTrackingEnabled" type="checkbox" />
+                      Давать инструкцию по отслеживанию в зависимости от службы доставки
+                    </label>
+                    <div class="field">
+                      <div class="field-label">Отслеживание</div>
+                      <div class="field-hint">Официальные сценарии для Яндекс Доставки, Ozon, CDEK и Почты России. AI выбирает нужный по службе доставки.</div>
+                      <textarea id="deliveryTrackingText"></textarea>
+                    </div>
                     <div class="field">
                       <label class="field-label" for="deliveryBoldMode">Жирный текст в доставке</label>
                       <select id="deliveryBoldMode">
@@ -3874,6 +3883,8 @@
       const deliveryRulesText = document.getElementById('deliveryRulesText');
       const deliveryStyleText = document.getElementById('deliveryStyleText');
       const deliveryLayoutText = document.getElementById('deliveryLayoutText');
+      const deliveryTrackingEnabled = document.getElementById('deliveryTrackingEnabled');
+      const deliveryTrackingText = document.getElementById('deliveryTrackingText');
       const deliveryBoldMode = document.getElementById('deliveryBoldMode');
       const deliveryExampleText = document.getElementById('deliveryExampleText');
       const qualityReplicaHonestyEnabled = document.getElementById('qualityReplicaHonestyEnabled');
@@ -5572,6 +5583,8 @@
         deliveryRulesText.value = data.delivery_rules_text || '';
         deliveryStyleText.value = data.delivery_style_text || '';
         deliveryLayoutText.value = data.delivery_layout_text || '';
+        deliveryTrackingEnabled.checked = data.delivery_tracking_enabled !== false;
+        deliveryTrackingText.value = data.delivery_tracking_text || '';
         deliveryBoldMode.value = data.delivery_bold_mode || 'off';
         deliveryExampleText.value = data.delivery_example_text || '';
         qualityReplicaHonestyEnabled.checked = data.quality_replica_honesty_enabled !== false;
@@ -6023,6 +6036,8 @@
               delivery_rules_text: deliveryRulesText.value,
               delivery_style_text: deliveryStyleText.value,
               delivery_layout_text: deliveryLayoutText.value,
+              delivery_tracking_enabled: deliveryTrackingEnabled.checked,
+              delivery_tracking_text: deliveryTrackingText.value,
               delivery_bold_mode: deliveryBoldMode.value,
               delivery_example_text: deliveryExampleText.value,
             }),
@@ -6673,6 +6688,8 @@
         deliveryRulesText,
         deliveryStyleText,
         deliveryLayoutText,
+        deliveryTrackingEnabled,
+        deliveryTrackingText,
         deliveryBoldMode,
         deliveryExampleText,
       ]);

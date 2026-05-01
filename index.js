@@ -40,6 +40,19 @@ const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'htt
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
 const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем.';
 const DEFAULT_CONTACTS_WEBSITE = 'https://iwak.ru';
+const DEFAULT_DELIVERY_TRACKING_TEXT = [
+  'Когда клиент спрашивает, как отследить заказ, сначала ориентируйся на выбранную службу доставки. Если служба еще не выбрана или заказ еще не отправлен, коротко объясни: после отправки дадим трек-номер, ссылку или уведомление службы доставки.',
+  '',
+  'Яндекс Доставка: получатель отслеживает доставку в приложении Яндекс Go или по ссылке из SMS/уведомления. По одному номеру заказа клиент обычно не отслеживает доставку сам; номер нужен поддержке. Если ссылки нет, попроси проверить SMS/уведомления или напиши, что менеджер пришлет ссылку после оформления отправки.',
+  '',
+  'Ozon: статус смотреть в личном кабинете Ozon в разделе Заказы. Если доставка идет через курьерскую службу, трек-номер находится на странице заказа; по нему можно отслеживать на стороне службы доставки. Для получения в ПВЗ/постамате нужен штрихкод или код из личного кабинета Ozon, а не номер телефона.',
+  '',
+  'CDEK/СДЭК: отслеживать по номеру накладной/трек-номеру на официальном сайте или в мобильном приложении CDEK. Если трек еще не появился, значит отправление могло быть только создано или еще не передано в СДЭК; не обещай точное время обновления, предложи проверить позже или дождаться сообщения менеджера.',
+  '',
+  'Почта России: отслеживать по трек-номеру на сайте или в мобильном приложении Почты России. Трек по России обычно состоит из 14 цифр, международный — из 13 символов с латинскими буквами и цифрами. Вводить без пробелов и скобок. Без трек-номера отследить по фамилии или адресу нельзя.',
+  '',
+  'Не выдумывай трек-номер, ссылку отслеживания, дату прибытия или статус. Если трека/ссылки еще нет в диалоге, честно скажи, что после передачи заказа в службу доставки менеджер пришлет данные для отслеживания.',
+].join('\n');
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -277,6 +290,8 @@ const runtimeConfig = {
   delivery_layout_text: process.env.DELIVERY_LAYOUT_TEXT || '',
   delivery_bold_mode: process.env.DELIVERY_BOLD_MODE || 'off',
   delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || '',
+  delivery_tracking_enabled: process.env.DELIVERY_TRACKING_ENABLED !== 'false',
+  delivery_tracking_text: process.env.DELIVERY_TRACKING_TEXT || DEFAULT_DELIVERY_TRACKING_TEXT,
   followup_master_enabled: process.env.FOLLOWUP_MASTER_ENABLED === 'true',
   followup_worker_enabled: process.env.FOLLOWUP_WORKER_ENABLED === 'true',
   followup_auto_send_enabled: process.env.FOLLOWUP_AUTO_SEND_ENABLED === 'true',
@@ -2814,6 +2829,8 @@ function getRuntimeSnapshot() {
     delivery_layout_text: runtimeConfig.delivery_layout_text,
     delivery_bold_mode: runtimeConfig.delivery_bold_mode,
     delivery_example_text: runtimeConfig.delivery_example_text,
+    delivery_tracking_enabled: parseConfigBoolean(runtimeConfig.delivery_tracking_enabled, true),
+    delivery_tracking_text: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
     followup_worker_enabled: parseConfigBoolean(runtimeConfig.followup_worker_enabled, false),
     followup_auto_send_enabled: parseConfigBoolean(runtimeConfig.followup_auto_send_enabled, false),
@@ -3027,6 +3044,7 @@ function applyConfigUpdate(body) {
     ['store_trust_safe_purchase_enabled', 'STORE_TRUST_SAFE_PURCHASE_ENABLED'],
     ['contacts_enabled', 'CONTACTS_ENABLED'],
     ['contacts_anti_scam_enabled', 'CONTACTS_ANTI_SCAM_ENABLED'],
+    ['delivery_tracking_enabled', 'DELIVERY_TRACKING_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   applyBooleanConfig(body, 'contacts_instagram_enabled', 'CONTACTS_INSTAGRAM_ENABLED', false);
@@ -3057,6 +3075,7 @@ function applyConfigUpdate(body) {
     ['delivery_style_text', 'DELIVERY_STYLE_TEXT'],
     ['delivery_layout_text', 'DELIVERY_LAYOUT_TEXT'],
     ['delivery_example_text', 'DELIVERY_EXAMPLE_TEXT'],
+    ['delivery_tracking_text', 'DELIVERY_TRACKING_TEXT'],
   ].forEach(([key, envKey]) => applyStringConfig(body, key, envKey));
 
   applyBooleanConfig(body, 'dialog_examples_enabled', 'DIALOG_EXAMPLES_ENABLED', false);
@@ -4704,10 +4723,14 @@ function getVisibleDeliveryGuidance(config) {
     return 'Доставка в AI Control выключена: не придумывайте условия, службы, сроки или стоимость доставки.';
   }
   const text = String(config.delivery_rules_text || '').trim();
-  if (!text) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
+  const trackingText = parseConfigBoolean(config.delivery_tracking_enabled, true)
+    ? String(config.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT).trim()
+    : '';
+  if (!text && !trackingText) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
   return [
     'Доставка из AI Control:',
-    text,
+    text && text,
+    trackingText && `Отслеживание доставки:\n${trackingText}`,
     String(config.delivery_style_text || '').trim() && `Стиль сообщения доставки: ${String(config.delivery_style_text).trim()}`,
     String(config.delivery_layout_text || '').trim() && `Расположение доставки: ${String(config.delivery_layout_text).trim()}`,
     getBoldModeGuidance('Жирный текст в доставке', config.delivery_bold_mode),
@@ -5696,6 +5719,8 @@ app.get('/config/status', async (req, res) => {
     delivery_layout_text: runtimeConfig.delivery_layout_text || '',
     delivery_bold_mode: runtimeConfig.delivery_bold_mode || 'off',
     delivery_example_text: runtimeConfig.delivery_example_text || '',
+    delivery_tracking_enabled: parseConfigBoolean(runtimeConfig.delivery_tracking_enabled, true),
+    delivery_tracking_text: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
     followup_worker_enabled: parseConfigBoolean(runtimeConfig.followup_worker_enabled, false),
     followup_auto_send_enabled: parseConfigBoolean(runtimeConfig.followup_auto_send_enabled, false),
@@ -7003,6 +7028,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.delivery_layout_text = '';
   runtimeConfig.delivery_bold_mode = 'off';
   runtimeConfig.delivery_example_text = '';
+  runtimeConfig.delivery_tracking_enabled = true;
+  runtimeConfig.delivery_tracking_text = DEFAULT_DELIVERY_TRACKING_TEXT;
   runtimeConfig.webhook_url = '';
 
   process.env.TELEGRAM_TOKEN = '';
@@ -7098,6 +7125,8 @@ app.delete('/config', (req, res) => {
   process.env.DELIVERY_BOLD_MODE = 'off';
   process.env.DELIVERY_EXAMPLE_TEXT = '';
   process.env.DELIVERY_RULES_TEXT = '';
+  process.env.DELIVERY_TRACKING_ENABLED = 'true';
+  process.env.DELIVERY_TRACKING_TEXT = DEFAULT_DELIVERY_TRACKING_TEXT;
   process.env.WEBHOOK_URL = '';
 
   savePersistedConfig();
