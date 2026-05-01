@@ -2235,6 +2235,38 @@
         gap: 3px;
       }
 
+      .chat-bubble.selectable {
+        cursor: pointer;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+      }
+
+      .chat-bubble.selectable:hover {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+      }
+
+      .chat-bubble.selected-training-client,
+      .chat-bubble.selected-training-ai {
+        border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+        box-shadow: var(--glow);
+      }
+
+      .training-pick {
+        display: inline-flex;
+        align-items: center;
+        width: max-content;
+        max-width: 100%;
+        margin-top: 4px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 7px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+      }
+
       .chat-bubble.in {
         justify-self: start;
       }
@@ -3722,6 +3754,7 @@
       let inboxChatsCache = [];
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
+      let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null };
       let isInstructionResizing = false;
       let instructionResizeStartY = 0;
       let instructionResizeStartHeight = 0;
@@ -4267,8 +4300,31 @@
         `;
       }
 
+      function getTrainingSelection(chat) {
+        if (!chat || trainingSelection.chatId !== chat.chatId) {
+          trainingSelection = { chatId: chat?.chatId || '', clientIndex: null, aiIndex: null };
+        }
+        return trainingSelection;
+      }
+
       function getTrainingPair(chat) {
         const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+        const selection = getTrainingSelection(chat);
+        const selectedClient = Number.isInteger(selection.clientIndex) ? messages[selection.clientIndex] : null;
+        const selectedAi = Number.isInteger(selection.aiIndex) ? messages[selection.aiIndex] : null;
+        if (
+          selectedClient?.type === 'in'
+          && selectedAi?.type === 'out'
+          && String(selectedClient.text || '').trim()
+          && String(selectedAi.text || '').trim()
+        ) {
+          return {
+            clientText: selectedClient.text || '',
+            aiText: selectedAi.text || '',
+            manual: true,
+          };
+        }
+
         const lastAiIndex = messages.map((message, index) => ({ message, index }))
           .reverse()
           .find((item) => item.message?.type === 'out' && String(item.message?.text || '').trim());
@@ -4281,6 +4337,7 @@
         return {
           clientText: client.text || '',
           aiText: lastAiIndex.message.text || '',
+          manual: false,
         };
       }
 
@@ -4301,7 +4358,7 @@
               <span>Обучение на диалоге</span>
               <span class="status-pill attention">анти-выдумки</span>
             </div>
-            <div class="crm-message-item">Сохрани хороший ответ или исправь плохой. Следующие ответы будут учитывать эти уроки.</div>
+            <div class="crm-message-item">${pair.manual ? 'Выбрана конкретная пара сообщений.' : 'Сейчас взята последняя пара. Можно кликнуть по нужному сообщению клиента и ответу AI ниже.'} Следующие ответы будут учитывать эти уроки.</div>
             <div class="chat-detail">
               <div class="chat-detail-label">Клиент</div>
               <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
@@ -4337,6 +4394,7 @@
         const displayName = buildChatDisplayName(chat);
         const secondaryMeta = buildChatSecondaryMeta(chat);
         const money = chat.money || {};
+        const selection = getTrainingSelection(chat);
 
         inboxThread.className = 'chat-view';
         inboxThread.innerHTML = `
@@ -4410,13 +4468,27 @@
             ${renderMemoryDetails(chat)}
           </div>
           <div class="chat-thread">
-            ${chat.messages.map((message) => `
-              <div class="chat-bubble ${message.type}">
+            ${chat.messages.map((message, index) => {
+              const selectable = message.type === 'in' || message.type === 'out';
+              const selectedClass = message.type === 'in' && selection.clientIndex === index
+                ? ' selected-training-client'
+                : message.type === 'out' && selection.aiIndex === index
+                  ? ' selected-training-ai'
+                  : '';
+              const pickText = message.type === 'in'
+                ? (selection.clientIndex === index ? 'Выбран как сообщение клиента' : 'Клик: выбрать клиента')
+                : message.type === 'out'
+                  ? (selection.aiIndex === index ? 'Выбран как ответ AI' : 'Клик: выбрать ответ AI')
+                  : '';
+              return `
+              <div class="chat-bubble ${message.type}${selectable ? ' selectable' : ''}${selectedClass}" data-message-index="${escapeHtml(String(index))}" data-message-type="${escapeHtml(message.type)}">
                 <div class="chat-bubble-role">${message.type === 'out' ? 'AI' : message.source === 'manager' ? 'Менеджер' : 'Пользователь'}</div>
                 <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
                 <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
+                ${pickText ? `<div class="training-pick">${escapeHtml(pickText)}</div>` : ''}
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
           ${renderTrainingCard(chat)}
         `;
@@ -4454,6 +4526,24 @@
             await loadInbox();
           });
         }
+
+        inboxThread.querySelectorAll('[data-message-index]').forEach((bubble) => {
+          bubble.addEventListener('click', () => {
+            const index = Number(bubble.dataset.messageIndex);
+            const type = bubble.dataset.messageType || '';
+            if (!Number.isInteger(index)) return;
+            const next = getTrainingSelection(chat);
+            if (type === 'in') {
+              next.clientIndex = next.clientIndex === index ? null : index;
+            } else if (type === 'out') {
+              next.aiIndex = next.aiIndex === index ? null : index;
+            } else {
+              return;
+            }
+            trainingSelection = next;
+            renderInboxThread(chat);
+          });
+        });
 
         inboxThread.querySelectorAll('[data-training-action]').forEach((button) => {
           button.addEventListener('click', async () => {
