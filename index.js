@@ -101,7 +101,10 @@ const LOG_FILE_PATH = path.join(logDir, 'runtime.jsonl');
 const dataDir = path.join(__dirname, 'data');
 const CONFIG_FILE_PATH = path.join(dataDir, 'runtime-config.json');
 const MEMORY_FILE_PATH = path.join(dataDir, 'memory.json');
+const TRAINING_FILE_PATH = path.join(dataDir, 'training-examples.json');
 const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
+const MAX_TRAINING_EXAMPLES = 200;
+const TRAINING_PROMPT_EXAMPLES = 10;
 fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
@@ -425,6 +428,7 @@ function readMemoryStore() {
 }
 
 let memoryStore = readMemoryStore();
+let trainingStore = readTrainingStore();
 let customerStore = null;
 
 try {
@@ -439,6 +443,103 @@ function saveMemoryStore() {
   const tempPath = `${MEMORY_FILE_PATH}.tmp`;
   fs.writeFileSync(tempPath, JSON.stringify(memoryStore, null, 2));
   fs.renameSync(tempPath, MEMORY_FILE_PATH);
+}
+
+function createEmptyTrainingStore() {
+  return {
+    version: 1,
+    items: [],
+  };
+}
+
+function readTrainingStore() {
+  if (!fs.existsSync(TRAINING_FILE_PATH)) return createEmptyTrainingStore();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TRAINING_FILE_PATH, 'utf8'));
+    return {
+      ...createEmptyTrainingStore(),
+      ...parsed,
+      items: Array.isArray(parsed.items) ? parsed.items.filter(Boolean) : [],
+    };
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'training.read',
+      status: 'error',
+      error: error.message,
+    });
+    return createEmptyTrainingStore();
+  }
+}
+
+function saveTrainingStore() {
+  const tempPath = `${TRAINING_FILE_PATH}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(trainingStore, null, 2));
+  fs.renameSync(tempPath, TRAINING_FILE_PATH);
+}
+
+function normalizeTrainingText(value, limit = 1000) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function addTrainingExample(input = {}) {
+  const type = input.type === 'good' ? 'good' : 'bad';
+  const item = {
+    id: crypto.randomUUID(),
+    type,
+    createdAt: new Date().toISOString(),
+    chatId: String(input.chatId || '').trim(),
+    clientText: normalizeTrainingText(input.clientText, 900),
+    aiText: normalizeTrainingText(input.aiText, 1200),
+    correctedText: normalizeTrainingText(input.correctedText, 1200),
+    note: normalizeTrainingText(input.note, 600),
+  };
+
+  if (!item.clientText || !item.aiText) {
+    throw new Error('Нужен текст клиента и ответ AI');
+  }
+  if (!item.note) {
+    throw new Error('Добавьте короткий комментарий: почему это хорошо или плохо');
+  }
+  if (type === 'bad' && !item.correctedText) {
+    throw new Error('Для плохого ответа нужен правильный вариант');
+  }
+
+  trainingStore.items.unshift(item);
+  trainingStore.items = trainingStore.items.slice(0, MAX_TRAINING_EXAMPLES);
+  saveTrainingStore();
+  return item;
+}
+
+function getTrainingExamplesGuidance() {
+  const items = (trainingStore.items || []).slice(0, TRAINING_PROMPT_EXAMPLES);
+  if (!items.length) return '';
+
+  const rows = items.map((item, index) => {
+    if (item.type === 'good') {
+      return [
+        `Урок ${index + 1}: хороший ответ. Использовать как ориентир по смыслу и тону, не копировать дословно.`,
+        `Клиент: ${item.clientText}`,
+        `Хороший ответ: ${item.aiText}`,
+        item.note && `Почему хорошо: ${item.note}`,
+      ].filter(Boolean).join('\n');
+    }
+
+    return [
+      `Урок ${index + 1}: плохой ответ. Не повторять ошибку, исправлять по правильному варианту.`,
+      `Клиент: ${item.clientText}`,
+      `Плохой ответ AI: ${item.aiText}`,
+      `Правильно отвечать так: ${item.correctedText}`,
+      item.note && `Причина: ${item.note}`,
+    ].filter(Boolean).join('\n');
+  });
+
+  return [
+    'Обучение на диалогах IWAK:',
+    '- Эти уроки важнее общего стиля, если есть конфликт.',
+    '- Если в уроке показано, что факт был выдуман, не повторять этот факт и честно просить уточнение.',
+    '- Хорошие ответы использовать как ориентир, плохие ответы не копировать.',
+    ...rows,
+  ].join('\n\n');
 }
 
 function getMemoryCutoff(days) {
@@ -4318,6 +4419,7 @@ function getVisibleControlState(config, memoryContext = null) {
     receiptCheck: Boolean(getReceiptCheckGuidance(config)),
     quality: Boolean(getQualityGuidance(config)),
     storeTrust: Boolean(getStoreTrustGuidance(config)),
+    training: Boolean((trainingStore.items || []).length),
     examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
     behavior: true,
@@ -4364,6 +4466,7 @@ function buildSystemPrompt(config, memoryContext = null) {
     getReceiptCheckGuidance(config),
     getQualityGuidance(config),
     getStoreTrustGuidance(config),
+    getTrainingExamplesGuidance(),
   ].forEach((section) => {
     if (section) control.push(section);
   });
@@ -5415,6 +5518,36 @@ app.get('/logs/:traceId', (req, res) => {
     traceId,
     items,
   });
+});
+
+app.get('/training', (req, res) => {
+  res.json({
+    items: (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES),
+    promptItems: Math.min((trainingStore.items || []).length, TRAINING_PROMPT_EXAMPLES),
+  });
+});
+
+app.post('/training', (req, res) => {
+  try {
+    const item = addTrainingExample(req.body || {});
+    logEvent('TRAINING_EXAMPLE', {
+      status: 'ok',
+      type: item.type,
+      chatId: item.chatId,
+      id: item.id,
+    });
+    res.json({ success: true, item });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message || 'Не удалось сохранить урок' });
+  }
+});
+
+app.delete('/training/:id', (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const before = trainingStore.items.length;
+  trainingStore.items = trainingStore.items.filter((item) => item.id !== id);
+  if (trainingStore.items.length !== before) saveTrainingStore();
+  res.json({ success: true });
 });
 
 function parseMoneyAmount(value) {

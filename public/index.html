@@ -2056,6 +2056,18 @@
         gap: 7px;
       }
 
+      .training-card {
+        border-color: color-mix(in srgb, var(--warn) 30%, var(--border));
+        background:
+          radial-gradient(circle at top left, color-mix(in srgb, var(--warn) 10%, transparent), transparent 34%),
+          color-mix(in srgb, var(--panel-alt) 94%, transparent);
+      }
+
+      .training-card textarea {
+        min-height: 74px;
+        font-size: 13px;
+      }
+
       .followup-card-title {
         display: flex;
         justify-content: space-between;
@@ -4255,6 +4267,66 @@
         `;
       }
 
+      function getTrainingPair(chat) {
+        const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+        const lastAiIndex = messages.map((message, index) => ({ message, index }))
+          .reverse()
+          .find((item) => item.message?.type === 'out' && String(item.message?.text || '').trim());
+        if (!lastAiIndex) return null;
+        const client = messages
+          .slice(0, lastAiIndex.index)
+          .reverse()
+          .find((message) => message.type === 'in' && String(message.text || '').trim());
+        if (!client) return null;
+        return {
+          clientText: client.text || '',
+          aiText: lastAiIndex.message.text || '',
+        };
+      }
+
+      function renderTrainingCard(chat) {
+        const pair = getTrainingPair(chat);
+        if (!pair) {
+          return `
+            <div class="followup-card training-card">
+              <div class="followup-card-title">Обучение на диалоге</div>
+              <div class="crm-message-item">Пока нет пары “клиент → ответ AI”, которую можно сохранить как урок.</div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="followup-card training-card" data-training-card>
+            <div class="followup-card-title">
+              <span>Обучение на диалоге</span>
+              <span class="status-pill attention">анти-выдумки</span>
+            </div>
+            <div class="crm-message-item">Сохрани хороший ответ или исправь плохой. Следующие ответы будут учитывать эти уроки.</div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Клиент</div>
+              <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
+            </div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Ответ AI</div>
+              <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Как надо было ответить, если AI ошибся</div>
+              <textarea data-training-corrected placeholder="Напиши правильный вариант. Особенно важно указать, что AI выдумал и как говорить вместо этого."></textarea>
+            </div>
+            <div class="field">
+              <div class="field-label">Короткая причина</div>
+              <input data-training-note placeholder="Например: выдумал срок доставки / повторно спросил размер / хороший тон" />
+            </div>
+            <div class="followup-actions">
+              <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
+              <button class="button-primary" type="button" data-training-action="bad">Сохранить исправление</button>
+            </div>
+            <div class="followup-action-help" data-training-status>Урок сохранится локально в S.AI и попадёт в prompt следующих ответов.</div>
+          </div>
+        `;
+      }
+
       function renderInboxThread(chat) {
         if (!chat) {
           inboxThread.className = 'status-output muted';
@@ -4346,6 +4418,7 @@
               </div>
             `).join('')}
           </div>
+          ${renderTrainingCard(chat)}
         `;
 
         const toggle = inboxThread.querySelector('[data-chat-details-toggle]');
@@ -4381,6 +4454,54 @@
             await loadInbox();
           });
         }
+
+        inboxThread.querySelectorAll('[data-training-action]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const card = button.closest('[data-training-card]');
+            const status = card?.querySelector('[data-training-status]');
+            const action = button.dataset.trainingAction || 'bad';
+            const clientText = card?.querySelector('[data-training-client]')?.textContent || '';
+            const aiText = card?.querySelector('[data-training-ai]')?.textContent || '';
+            const correctedText = card?.querySelector('[data-training-corrected]')?.value || '';
+            const note = card?.querySelector('[data-training-note]')?.value || '';
+            const originalLabel = button.textContent;
+            if (!note.trim()) {
+              if (status) status.textContent = 'Добавь короткий комментарий: почему это хорошо или плохо.';
+              showSaveToast('error', 'Нужен комментарий');
+              return;
+            }
+            button.disabled = true;
+            button.textContent = 'Сохраняю...';
+            if (status) status.textContent = 'Сохраняю урок...';
+            try {
+              await fetchJSON('/training', {
+                method: 'POST',
+                body: JSON.stringify({
+                  type: action === 'good' ? 'good' : 'bad',
+                  chatId: chat.chatId,
+                  clientText,
+                  aiText,
+                  correctedText,
+                  note,
+                }),
+              });
+              if (status) status.textContent = action === 'good'
+                ? 'Готово: хороший ответ сохранён вместе с комментарием.'
+                : 'Готово: исправление сохранено и будет учитываться в следующих ответах.';
+              showSaveToast('ok', 'Урок сохранён');
+              if (action !== 'good') {
+                const corrected = card?.querySelector('[data-training-corrected]');
+                if (corrected) corrected.value = '';
+              }
+            } catch (error) {
+              if (status) status.textContent = error.message || 'Не удалось сохранить урок';
+              showSaveToast('error', error.message || 'Не удалось сохранить урок');
+            } finally {
+              button.disabled = false;
+              button.textContent = originalLabel;
+            }
+          });
+        });
       }
 
       function renderInboxChats(chats) {
