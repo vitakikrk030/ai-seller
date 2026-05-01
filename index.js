@@ -127,7 +127,7 @@ const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
 const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
 const SAI_GPT_CODE_FILE_LIMIT = 500;
 const SAI_GPT_CODE_SNIPPET_LIMIT = 8;
-const SAI_GPT_CODE_CHAR_LIMIT = 14000;
+const SAI_GPT_CONTEXT_CHAR_LIMIT = 70000;
 const SAI_GPT_ALLOWED_CODE_EXTENSIONS = new Set(['.js', '.json', '.html', '.css', '.md', '.sql']);
 const SAI_GPT_CODE_EXCLUDE_DIRS = new Set(['.git', 'node_modules', 'data', 'logs', 'coverage', 'dist', 'build']);
 const TRAINING_CATEGORIES = {
@@ -5331,7 +5331,7 @@ function buildSaiGptInboxDeepMatches(inbox = {}, query = '', selectedChatId = ''
       facts: item.facts,
       lastOrder: item.lastOrder,
       orders: Array.isArray(item.orders) ? item.orders.slice(-5) : [],
-      recentMessages: (item.recentMessages || []).slice(-120),
+      recentMessages: (item.recentMessages || []).slice(-500),
     }));
 }
 
@@ -5351,7 +5351,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
       chatId: item.chatId || '',
       traceId: item.traceId || '',
     }));
-  const inbox = buildInboxPayload(120, 1000);
+  const inbox = buildInboxPayload(500, 2000);
   const selectedProfile = selectedChatId
     ? (inbox.items || []).find((item) => String(item.customer?.chatId || '') === String(selectedChatId))
     : null;
@@ -5361,6 +5361,16 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     status: item.status?.label || '',
     lastMessage: item.lastMessage?.text || '',
     messages: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
+  }));
+  const dialogIndex = (inbox.items || []).map((item) => ({
+    chatId: item.customer?.chatId || '',
+    telegramId: item.customer?.telegramId || '',
+    username: item.customer?.username || '',
+    name: [item.customer?.firstName, item.customer?.lastName].filter(Boolean).join(' ') || item.customer?.title || '',
+    status: item.status?.label || '',
+    messageCountLoaded: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
+    lastMessageAt: item.lastMessage?.createdAt || '',
+    lastMessage: item.lastMessage?.text || '',
   }));
   const codeSnippets = buildSaiGptCodeSnippets(query);
   const projectMap = buildSaiGptProjectMap();
@@ -5394,6 +5404,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     inbox: {
       summary: inbox.summary,
       recentDialogs,
+      dialogIndex,
       deepMatches: inboxDeepMatches,
       selectedChat: selectedProfile
         ? {
@@ -5402,7 +5413,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
           facts: selectedProfile.facts,
           lastOrder: selectedProfile.lastOrder,
           orders: Array.isArray(selectedProfile.orders) ? selectedProfile.orders.slice(-8) : [],
-          recentMessages: (selectedProfile.recentMessages || []).slice(-160),
+          recentMessages: (selectedProfile.recentMessages || []).slice(-800),
         }
         : null,
     },
@@ -5421,7 +5432,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     codeSnippets,
   };
 
-  return redactSensitiveText(JSON.stringify(snapshot, null, 2)).slice(0, SAI_GPT_CODE_CHAR_LIMIT + 14000);
+  return redactSensitiveText(JSON.stringify(snapshot, null, 2)).slice(0, SAI_GPT_CONTEXT_CHAR_LIMIT);
 }
 
 async function requestSaiGptChat({ messages, selectedChatId }) {
@@ -5459,7 +5470,10 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Не пиши, что "бот может отправлять клиенту сырую ошибку", если в логах нет ошибок клиентского AI/Telegram-send или прямого факта отправки такой ошибки клиенту. Формулируй как "вижу внутреннюю ошибку S.AI GPT", если scope=sai_gpt.chat.',
     'Если делаешь вывод из косвенных признаков, помечай его как предположение, а не факт.',
     'В снимке системы есть карта файлов projectMap, релевантные фрагменты codeSnippets, список последних диалогов и deepMatches — глубокие совпадения Inbox по текущему вопросу. Используй их как рабочую память.',
-    'Если владелец спрашивает про конкретного клиента по имени, username, chatId или фразе из переписки, сначала смотри inbox.deepMatches и selectedChat. Разбирай сообщения по ролям и времени, не выдумывай отсутствующие реплики.',
+    'В inbox.dialogIndex есть индекс доступных Inbox-диалогов. В inbox.deepMatches есть автоматически подтянутые глубокие истории по имени, username, chatId, товару, фактам или фразе из вопроса.',
+    'Если владелец спрашивает про конкретного клиента по имени, username, chatId или фразе из переписки, НЕ проси его открывать чат и НЕ проси прислать историю. Сначала используй inbox.dialogIndex, inbox.deepMatches и selectedChat. Если совпадений несколько — назови варианты и попроси уточнить, кого именно смотреть.',
+    'Если deepMatches содержит нужный чат, считай, что ты можешь читать этот диалог из Inbox в пределах переданных сообщений. Разбирай сообщения по ролям и времени, не выдумывай отсутствующие реплики.',
+    'Не говори "у меня нет полных историй всех диалогов" как финальный ответ. Правильнее: "Я не держу все 500 диалогов целиком одновременно, но могу подтянуть нужный по имени/chatId/фразе; сейчас вижу такие совпадения...".',
     'Если нужно действие в боевой системе, попроси подтверждение и опиши минимальный безопасный план.',
     'Не раскрывай секреты, токены и ключи. Если контекста не хватает, честно скажи, какой файл/лог/диалог нужно открыть.',
     'Если пользователь приложил скриншот, анализируй его как часть сообщения. Если модель/провайдер не поддерживает картинки, честно скажи, что нужен текстовый пересказ или другой vision-провайдер.',
