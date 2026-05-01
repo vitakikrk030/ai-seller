@@ -2707,6 +2707,30 @@ function buildSttHealth({ providerReachable }) {
   };
 }
 
+function buildSaiGptHealth({ providerReachable }) {
+  const missing = ['sai_gpt_key', 'sai_gpt_url', 'sai_gpt_model']
+    .filter((field) => !runtimeConfig[field] || !String(runtimeConfig[field]).trim());
+
+  if (missing.length) {
+    return {
+      status: 'warning',
+      label: 'S.AI GPT не настроен',
+    };
+  }
+
+  if (!providerReachable) {
+    return {
+      status: 'error',
+      label: 'S.AI GPT API недоступен',
+    };
+  }
+
+  return {
+    status: 'ok',
+    label: 'S.AI GPT API доступен',
+  };
+}
+
 function getSaiStatusLabel(saiStatus) {
   if (saiStatus.status === 'error') {
     return 'Runtime error';
@@ -6263,6 +6287,7 @@ app.get('/config/status', async (req, res) => {
   let telegramTokenValid = false;
   let aiProviderReachable = false;
   let sttProviderReachable = false;
+  let saiGptProviderReachable = false;
 
   if (runtimeConfig.telegram_token) {
     try {
@@ -6331,6 +6356,20 @@ app.get('/config/status', async (req, res) => {
     }
   }
 
+  if (runtimeConfig.sai_gpt_key && runtimeConfig.sai_gpt_url) {
+    try {
+      await httpClient.get(`${runtimeConfig.sai_gpt_url.replace(/\/$/, '')}/models`, {
+        headers: {
+          Authorization: `Bearer ${runtimeConfig.sai_gpt_key}`,
+        },
+        timeout: REQUEST_TIMEOUT_MS,
+      });
+      saiGptProviderReachable = true;
+    } catch (e) {
+      status.sai_gpt = e.response?.data?.error?.message || e.message;
+    }
+  }
+
   const telegramHealth = buildTelegramHealth({
     tokenValid: telegramTokenValid,
     webhookInfo: status.webhook,
@@ -6341,6 +6380,9 @@ app.get('/config/status', async (req, res) => {
   const sttHealth = buildSttHealth({
     providerReachable: sttProviderReachable,
   });
+  const saiGptHealth = buildSaiGptHealth({
+    providerReachable: saiGptProviderReachable,
+  });
 
   status.telegram_status = telegramHealth.status;
   status.telegram_label = telegramHealth.label;
@@ -6348,6 +6390,8 @@ app.get('/config/status', async (req, res) => {
   status.ai_label = aiHealth.label;
   status.stt_status = sttHealth.status;
   status.stt_label = sttHealth.label;
+  status.sai_gpt_status = saiGptHealth.status;
+  status.sai_gpt_label = saiGptHealth.label;
   status.sai_label = getSaiStatusLabel(status.sai);
 
   res.json(status);
@@ -7341,6 +7385,47 @@ app.post('/config/models', async (req, res) => {
     res.json(Array.isArray(response.data?.data) ? response.data.data.map((item) => item.id).filter(Boolean) : []);
   } catch (e) {
     res.json([]);
+  }
+});
+
+app.post('/sai-gpt/models', async (req, res) => {
+  const aiKey = req.body.sai_gpt_key || req.body.ai_key || runtimeConfig.sai_gpt_key || '';
+  const aiUrl = req.body.sai_gpt_url || req.body.ai_url || runtimeConfig.sai_gpt_url || '';
+
+  if (!aiKey || !aiUrl) {
+    res.json({
+      success: false,
+      status: 'warning',
+      label: 'Нужен API key и Base URL',
+      models: [],
+    });
+    return;
+  }
+
+  try {
+    const response = await httpClient.get(`${String(aiUrl).replace(/\/$/, '')}/models`, {
+      headers: {
+        Authorization: `Bearer ${aiKey}`,
+      },
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    const models = Array.isArray(response.data?.data)
+      ? response.data.data.map((item) => item.id).filter(Boolean)
+      : [];
+    res.json({
+      success: true,
+      status: 'ok',
+      label: models.length ? 'API доступен, модели загружены' : 'API доступен, но список моделей пустой',
+      models,
+    });
+  } catch (e) {
+    res.status(400).json({
+      success: false,
+      status: 'error',
+      label: 'API недоступен',
+      error: e.response?.data?.error?.message || e.message,
+      models: [],
+    });
   }
 });
 

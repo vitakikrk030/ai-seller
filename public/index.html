@@ -3607,10 +3607,14 @@
                         </div>
                         <div class="field">
                           <label class="field-label" for="saiGptModel">Model</label>
-                          <input id="saiGptModel" placeholder="gpt-4o-mini или custom-model" />
+                          <select id="saiGptModel">
+                            <option value="gpt-4o-mini">gpt-4o-mini</option>
+                          </select>
                         </div>
                         <div class="actions">
                           <button id="saveSaiGptSettings" class="button-primary" type="button">Сохранить</button>
+                          <button id="checkSaiGptApi" class="button-secondary" type="button">Проверить API</button>
+                          <button id="reloadSaiGptModels" class="button-secondary" type="button">Загрузить модели</button>
                         </div>
                         <div id="saiGptStatus" class="compact-status"><span class="status-dot"></span><span>Не настроено</span></div>
                       </div>
@@ -4320,6 +4324,8 @@
       const saiGptAttachmentNote = document.getElementById('saiGptAttachmentNote');
       const sendSaiGptButton = document.getElementById('sendSaiGpt');
       const clearSaiGptButton = document.getElementById('clearSaiGpt');
+      const checkSaiGptApiButton = document.getElementById('checkSaiGptApi');
+      const reloadSaiGptModelsButton = document.getElementById('reloadSaiGptModels');
       const navItems = Array.from(document.querySelectorAll('.nav-item[data-view]'));
       const views = {
         'ai-control': document.getElementById('view-ai-control'),
@@ -6072,8 +6078,8 @@
         sttBaseUrl.value = data.stt_base_url || 'https://api.openai.com/v1';
         sttModel.value = data.stt_model || 'gpt-4o-mini-transcribe';
         saiGptBaseUrl.value = data.sai_gpt_url || 'https://api.openai.com/v1';
-        saiGptModel.value = data.sai_gpt_model || 'gpt-4o-mini';
-        setCompactStatus(saiGptStatus, data.sai_gpt === 'подключен' ? 'Готов к анализу' : 'Нужен API key', data.sai_gpt === 'подключен' ? 'ok' : 'warning');
+        setSaiGptModelOptions([], data.sai_gpt_model || 'gpt-4o-mini');
+        setCompactStatus(saiGptStatus, data.sai_gpt_label || (data.sai_gpt === 'подключен' ? 'Готов к анализу' : 'Нужен API key'), data.sai_gpt_status || (data.sai_gpt === 'подключен' ? 'ok' : 'warning'));
         followupMasterEnabled.checked = data.followup_master_enabled === true;
         followupWorkerEnabled.checked = data.followup_worker_enabled === true;
         followupAutoSendEnabled.checked = data.followup_auto_send_enabled === true;
@@ -6169,6 +6175,55 @@
           if (currentModel === item) option.selected = true;
           selectNode.appendChild(option);
         });
+      }
+
+      function setSaiGptModelOptions(models, currentModel) {
+        const current = String(currentModel || saiGptModel.value || currentStatus?.sai_gpt_model || 'gpt-4o-mini').trim() || 'gpt-4o-mini';
+        const uniqueModels = Array.from(new Set([current, ...(Array.isArray(models) ? models : [])].filter(Boolean)));
+        saiGptModel.innerHTML = '';
+        uniqueModels.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item;
+          option.textContent = item;
+          if (item === current) option.selected = true;
+          saiGptModel.appendChild(option);
+        });
+      }
+
+      async function loadSaiGptModels(options = {}) {
+        const defaultLabel = reloadSaiGptModelsButton.textContent.trim();
+        const checkOnly = options.checkOnly === true;
+        if (!checkOnly) {
+          reloadSaiGptModelsButton.disabled = true;
+          reloadSaiGptModelsButton.textContent = 'Загружаю...';
+        }
+        checkSaiGptApiButton.disabled = true;
+        setCompactStatus(saiGptStatus, checkOnly ? 'Проверяю API...' : 'Загружаю модели...', 'warning');
+        try {
+          const payload = {
+            sai_gpt_url: saiGptBaseUrl.value,
+          };
+          if (String(saiGptApiKey.value || '').trim()) {
+            payload.sai_gpt_key = saiGptApiKey.value;
+          }
+          const data = await fetchJSON('/sai-gpt/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          setSaiGptModelOptions(data.models || [], saiGptModel.value || currentStatus?.sai_gpt_model);
+          setCompactStatus(saiGptStatus, data.label || 'API доступен', data.status || 'ok');
+          if (!checkOnly) showSaveToast('ok', 'Модели загружены');
+          return data;
+        } catch (error) {
+          setCompactStatus(saiGptStatus, error.message || 'API недоступен', 'error');
+          if (!checkOnly) showSaveToast('error', error.message || 'Не удалось загрузить модели');
+          return null;
+        } finally {
+          checkSaiGptApiButton.disabled = false;
+          reloadSaiGptModelsButton.disabled = false;
+          reloadSaiGptModelsButton.textContent = defaultLabel;
+        }
       }
 
       function renderSaiGptMessages() {
@@ -7358,6 +7413,8 @@
         saiGptMessages = [];
         renderSaiGptMessages();
       });
+      checkSaiGptApiButton.addEventListener('click', () => loadSaiGptModels({ checkOnly: true }));
+      reloadSaiGptModelsButton.addEventListener('click', () => loadSaiGptModels());
       saiGptInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
