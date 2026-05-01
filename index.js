@@ -118,8 +118,10 @@ const dataDir = path.join(__dirname, 'data');
 const CONFIG_FILE_PATH = path.join(dataDir, 'runtime-config.json');
 const MEMORY_FILE_PATH = path.join(dataDir, 'memory.json');
 const TRAINING_FILE_PATH = path.join(dataDir, 'training-examples.json');
+const SAI_GPT_MEMORY_FILE_PATH = path.join(dataDir, 'sai-gpt-memory.json');
 const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
 const MAX_TRAINING_EXAMPLES = 200;
+const SAI_GPT_MEMORY_MAX_MESSAGES = 200;
 const TRAINING_PROMPT_EXAMPLES = 10;
 const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
 const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
@@ -510,6 +512,7 @@ function readMemoryStore() {
 
 let memoryStore = readMemoryStore();
 let trainingStore = readTrainingStore();
+let saiGptMemoryStore = readSaiGptMemoryStore();
 let customerStore = null;
 
 try {
@@ -556,6 +559,56 @@ function saveTrainingStore() {
   const tempPath = `${TRAINING_FILE_PATH}.tmp`;
   fs.writeFileSync(tempPath, JSON.stringify(trainingStore, null, 2));
   fs.renameSync(tempPath, TRAINING_FILE_PATH);
+}
+
+function createEmptySaiGptMemoryStore() {
+  return {
+    version: 1,
+    messages: [],
+  };
+}
+
+function readSaiGptMemoryStore() {
+  if (!fs.existsSync(SAI_GPT_MEMORY_FILE_PATH)) return createEmptySaiGptMemoryStore();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SAI_GPT_MEMORY_FILE_PATH, 'utf8'));
+    return {
+      ...createEmptySaiGptMemoryStore(),
+      ...parsed,
+      messages: Array.isArray(parsed.messages) ? parsed.messages.filter(Boolean) : [],
+    };
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'sai_gpt.memory.read',
+      status: 'error',
+      error: error.message,
+    });
+    return createEmptySaiGptMemoryStore();
+  }
+}
+
+function saveSaiGptMemoryStore() {
+  const tempPath = `${SAI_GPT_MEMORY_FILE_PATH}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(saiGptMemoryStore, null, 2));
+  fs.renameSync(tempPath, SAI_GPT_MEMORY_FILE_PATH);
+}
+
+function appendSaiGptMemoryMessage(role, content, metadata = {}) {
+  const cleanRole = role === 'assistant' ? 'assistant' : 'user';
+  const cleanContent = sanitizeSaiGptText(content, 5000);
+  if (!cleanContent) return null;
+  const item = {
+    id: crypto.randomUUID(),
+    role: cleanRole,
+    content: cleanContent,
+    createdAt: new Date().toISOString(),
+    selectedChatId: String(metadata.selectedChatId || '').trim(),
+    imageCount: Math.max(0, Math.min(3, Number(metadata.imageCount) || 0)),
+  };
+  saiGptMemoryStore.messages.push(item);
+  saiGptMemoryStore.messages = saiGptMemoryStore.messages.slice(-SAI_GPT_MEMORY_MAX_MESSAGES);
+  saveSaiGptMemoryStore();
+  return item;
 }
 
 function normalizeTrainingText(value, limit = 1000) {
@@ -5199,7 +5252,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
       chatId: item.chatId || '',
       traceId: item.traceId || '',
     }));
-  const inbox = buildInboxPayload(80, 80);
+  const inbox = buildInboxPayload(120, 1000);
   const selectedProfile = selectedChatId
     ? (inbox.items || []).find((item) => String(item.customer?.chatId || '') === String(selectedChatId))
     : null;
@@ -5251,6 +5304,16 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
         : null,
     },
     recentErrors,
+    saiGptMemory: {
+      total: Array.isArray(saiGptMemoryStore.messages) ? saiGptMemoryStore.messages.length : 0,
+      recent: (saiGptMemoryStore.messages || []).slice(-30).map((message) => ({
+        role: message.role,
+        content: message.content,
+        selectedChatId: message.selectedChatId || '',
+        imageCount: message.imageCount || 0,
+        createdAt: message.createdAt || '',
+      })),
+    },
     codeSnippets,
   };
 
@@ -5275,6 +5338,12 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
   if (!latestUser) {
     throw new Error('Напиши вопрос для S.AI GPT.');
   }
+  const memoryMessages = (saiGptMemoryStore.messages || []).slice(-24).map((message) => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: sanitizeSaiGptText(message.content || '', 4000),
+    images: [],
+  })).filter((message) => message.content);
+  const promptMessages = (cleanMessages.length <= 2 ? [...memoryMessages, ...cleanMessages] : cleanMessages).slice(-24);
 
   const systemContent = [
     'Ты S.AI GPT — внутренний агент владельца S.AI/IWAK.',
@@ -5302,7 +5371,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
       model: config.model,
       messages: [
         { role: 'system', content: systemContent },
-        ...cleanMessages.map((message) => {
+        ...promptMessages.map((message) => {
           if (message.role !== 'user' || !message.images.length) {
             return { role: message.role, content: message.content };
           }
@@ -5341,6 +5410,11 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     duration: Date.now() - startedAt,
     replyText: reply,
   });
+  appendSaiGptMemoryMessage('user', latestUser.content, {
+    selectedChatId,
+    imageCount: latestUser.images.length,
+  });
+  appendSaiGptMemoryMessage('assistant', reply, { selectedChatId });
 
   return {
     reply,
@@ -5352,6 +5426,78 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
         line: item.line,
       })),
     },
+  };
+}
+
+async function requestSaiGptLessonDraft({ messages, selectedChatId }) {
+  const config = getSaiGptConfig();
+  if (!config.key || !config.url || !config.model) {
+    throw new Error('S.AI GPT API не настроен: сначала подключи API и модель.');
+  }
+  const cleanMessages = (Array.isArray(messages) ? messages : [])
+    .map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: sanitizeSaiGptText(message.content || message.text || '', 4000),
+    }))
+    .filter((message) => message.content)
+    .slice(-18);
+  const memoryMessages = (saiGptMemoryStore.messages || []).slice(-30).map((message) => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: sanitizeSaiGptText(message.content || '', 4000),
+  })).filter((message) => message.content);
+  const sourceMessages = (cleanMessages.length ? cleanMessages : memoryMessages).slice(-24);
+  if (!sourceMessages.length) {
+    throw new Error('Нет переписки, из которой можно собрать урок.');
+  }
+
+  const response = await httpClient.post(
+    `${config.url}/chat/completions`,
+    {
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'Ты готовишь черновик урока для обучения клиентского AI IWAK.',
+            'Верни только JSON без markdown.',
+            'Поля: category, note, correctedText, contextText, clientText, aiText.',
+            `category выбери из: ${Object.keys(TRAINING_CATEGORIES).join(', ')}.`,
+            'note: коротко почему это правило нужно.',
+            'correctedText: как правильно отвечать в похожем случае.',
+            'contextText: краткий фрагмент/суть диалога, на котором основан урок.',
+            'Не сохраняй урок сам. Это только черновик для подтверждения владельцем.',
+            '',
+            'Системный контекст:',
+            buildSaiGptSystemContext(sourceMessages.map((message) => message.content).join('\n'), selectedChatId),
+          ].join('\n'),
+        },
+        ...sourceMessages,
+        {
+          role: 'user',
+          content: 'Собери черновик одного полезного урока из нашей переписки и выбранного диалога. Если урок не нужен, всё равно предложи самый безопасный общий урок.',
+        },
+      ],
+      temperature: 0.2,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    }
+  );
+  const parsed = parseAiJsonObject(extractAiReply(response.data?.choices?.[0]?.message?.content));
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('S.AI GPT не смог собрать черновик урока.');
+  }
+  return {
+    category: getTrainingCategory(parsed.category || 'other'),
+    note: normalizeTrainingText(parsed.note || '', 600),
+    correctedText: normalizeTrainingText(parsed.correctedText || '', 1200),
+    contextText: normalizeTrainingBlock(parsed.contextText || '', 2200),
+    clientText: normalizeTrainingText(parsed.clientText || '', 900),
+    aiText: normalizeTrainingText(parsed.aiText || '', 1200),
   };
 }
 
@@ -6506,6 +6652,36 @@ app.post('/sai-gpt/chat', async (req, res) => {
       error: error.message,
     });
     res.status(400).json({ success: false, error: error.message || 'S.AI GPT не ответил' });
+  }
+});
+
+app.get('/sai-gpt/history', (req, res) => {
+  res.json({
+    success: true,
+    messages: (saiGptMemoryStore.messages || []).slice(-SAI_GPT_MEMORY_MAX_MESSAGES),
+  });
+});
+
+app.delete('/sai-gpt/history', (req, res) => {
+  saiGptMemoryStore = createEmptySaiGptMemoryStore();
+  saveSaiGptMemoryStore();
+  res.json({ success: true });
+});
+
+app.post('/sai-gpt/lesson-draft', async (req, res) => {
+  try {
+    const draft = await requestSaiGptLessonDraft({
+      messages: req.body?.messages || [],
+      selectedChatId: sanitizeSaiGptText(req.body?.selectedChatId || '', 120),
+    });
+    res.json({ success: true, draft });
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'sai_gpt.lesson_draft',
+      status: 'error',
+      error: error.message,
+    });
+    res.status(400).json({ success: false, error: error.message || 'Не удалось собрать урок' });
   }
 });
 

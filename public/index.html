@@ -3630,6 +3630,36 @@
                           <span>Read-only</span>
                         </div>
                       </div>
+                      <div class="subsection">
+                        <div class="subsection-title">Черновик урока</div>
+                        <div class="subsection-text">S.AI GPT может предложить урок, но в обучение он попадёт только после сохранения.</div>
+                        <div class="field">
+                          <label class="field-label" for="saiGptLessonCategory">Категория</label>
+                          <select id="saiGptLessonCategory">
+                            <option value="auto">AI сам выберет</option>
+                            <option value="hallucination">Выдумал факт</option>
+                            <option value="repeated_question">Повторно спросил</option>
+                            <option value="order_context">Не понял заказ</option>
+                            <option value="payment">Оплата</option>
+                            <option value="delivery">Доставка</option>
+                            <option value="tone">Тон</option>
+                            <option value="product">Товар</option>
+                            <option value="other">Другое</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label class="field-label" for="saiGptLessonNote">Почему</label>
+                          <textarea id="saiGptLessonNote" rows="3" placeholder="Коротко: какую ошибку исправляем или какой хороший паттерн закрепляем"></textarea>
+                        </div>
+                        <div class="field">
+                          <label class="field-label" for="saiGptLessonCorrected">Как отвечать правильно</label>
+                          <textarea id="saiGptLessonCorrected" rows="4" placeholder="Правильный ориентир ответа для похожей ситуации"></textarea>
+                        </div>
+                        <div class="actions">
+                          <button id="draftSaiGptLesson" class="button-secondary" type="button">Собрать урок</button>
+                          <button id="saveSaiGptLesson" class="button-primary" type="button">Сохранить урок</button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4326,6 +4356,11 @@
       const clearSaiGptButton = document.getElementById('clearSaiGpt');
       const checkSaiGptApiButton = document.getElementById('checkSaiGptApi');
       const reloadSaiGptModelsButton = document.getElementById('reloadSaiGptModels');
+      const draftSaiGptLessonButton = document.getElementById('draftSaiGptLesson');
+      const saveSaiGptLessonButton = document.getElementById('saveSaiGptLesson');
+      const saiGptLessonCategory = document.getElementById('saiGptLessonCategory');
+      const saiGptLessonNote = document.getElementById('saiGptLessonNote');
+      const saiGptLessonCorrected = document.getElementById('saiGptLessonCorrected');
       const navItems = Array.from(document.querySelectorAll('.nav-item[data-view]'));
       const views = {
         'ai-control': document.getElementById('view-ai-control'),
@@ -4348,6 +4383,7 @@
       let trainingCategoriesCache = [];
       let saiGptMessages = [];
       let saiGptPendingImages = [];
+      let saiGptLessonDraft = null;
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
       let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null, indexes: [] };
@@ -6248,6 +6284,20 @@
         saiGptMessagesNode.scrollTop = saiGptMessagesNode.scrollHeight;
       }
 
+      async function loadSaiGptHistory() {
+        try {
+          const data = await fetchJSON('/sai-gpt/history');
+          saiGptMessages = (data.messages || []).map((message) => ({
+            role: message.role === 'assistant' ? 'assistant' : 'user',
+            content: message.content || '',
+            images: [],
+          })).filter((message) => message.content);
+          renderSaiGptMessages();
+        } catch (error) {
+          showSaveToast('error', error.message || 'Не удалось загрузить память S.AI GPT');
+        }
+      }
+
       function updateSaiGptAttachmentNote() {
         if (!saiGptAttachmentNote) return;
         saiGptAttachmentNote.textContent = saiGptPendingImages.length
@@ -6340,6 +6390,64 @@
         } finally {
           sendSaiGptButton.disabled = false;
           renderSaiGptMessages();
+        }
+      }
+
+      async function draftSaiGptLesson() {
+        draftSaiGptLessonButton.disabled = true;
+        const defaultLabel = draftSaiGptLessonButton.textContent.trim();
+        draftSaiGptLessonButton.textContent = 'Собираю...';
+        try {
+          const data = await fetchJSON('/sai-gpt/lesson-draft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              selectedChatId: currentInboxChatId || '',
+              messages: saiGptMessages.slice(-18),
+            }),
+          });
+          saiGptLessonDraft = data.draft || null;
+          saiGptLessonCategory.value = saiGptLessonDraft?.category || 'auto';
+          saiGptLessonNote.value = saiGptLessonDraft?.note || '';
+          saiGptLessonCorrected.value = saiGptLessonDraft?.correctedText || '';
+          showSaveToast('ok', 'Черновик урока готов');
+        } catch (error) {
+          showSaveToast('error', error.message || 'Не удалось собрать урок');
+        } finally {
+          draftSaiGptLessonButton.disabled = false;
+          draftSaiGptLessonButton.textContent = defaultLabel;
+        }
+      }
+
+      async function saveSaiGptLesson() {
+        const note = String(saiGptLessonNote.value || '').trim();
+        const correctedText = String(saiGptLessonCorrected.value || '').trim();
+        if (!note || !correctedText) {
+          showSaveToast('error', 'Заполни почему и правильный ответ');
+          return;
+        }
+        const contextMessages = saiGptMessages.slice(-8).map((message) => `${message.role === 'assistant' ? 'S.AI GPT' : 'Владелец'}: ${message.content || ''}`).join('\n');
+        try {
+          await fetchJSON('/training', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'bad',
+              chatId: currentInboxChatId || '',
+              category: saiGptLessonCategory.value || 'auto',
+              contextText: saiGptLessonDraft?.contextText || contextMessages,
+              clientText: saiGptLessonDraft?.clientText || 'Урок создан из S.AI GPT',
+              aiText: saiGptLessonDraft?.aiText || contextMessages.slice(0, 1000),
+              correctedText,
+              note,
+            }),
+          });
+          saiGptLessonDraft = null;
+          saiGptLessonNote.value = '';
+          saiGptLessonCorrected.value = '';
+          showSaveToast('ok', 'Урок сохранён');
+        } catch (error) {
+          showSaveToast('error', error.message || 'Не удалось сохранить урок');
         }
       }
 
@@ -7253,7 +7361,7 @@
           stopInboxAutoRefresh();
           headerTitle.textContent = 'S.AI GPT';
           headerSubtitle.textContent = 'Внутренний агент для анализа системы, обучения, логов и кода без доступа к отправке клиентам.';
-          renderSaiGptMessages();
+          loadSaiGptHistory();
         } else if (view === 'logs') {
           stopInboxAutoRefresh();
           headerTitle.textContent = 'Logs';
@@ -7409,12 +7517,16 @@
       document.getElementById('deleteModel').addEventListener('click', deleteModelConfig);
       saveSaiGptSettingsButton.addEventListener('click', saveSaiGptSettings);
       sendSaiGptButton.addEventListener('click', sendSaiGptMessage);
-      clearSaiGptButton.addEventListener('click', () => {
+      clearSaiGptButton.addEventListener('click', async () => {
         saiGptMessages = [];
+        await fetchJSON('/sai-gpt/history', { method: 'DELETE' });
         renderSaiGptMessages();
+        showSaveToast('ok', 'Память S.AI GPT очищена');
       });
       checkSaiGptApiButton.addEventListener('click', () => loadSaiGptModels({ checkOnly: true }));
       reloadSaiGptModelsButton.addEventListener('click', () => loadSaiGptModels());
+      draftSaiGptLessonButton.addEventListener('click', draftSaiGptLesson);
+      saveSaiGptLessonButton.addEventListener('click', saveSaiGptLesson);
       saiGptInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
