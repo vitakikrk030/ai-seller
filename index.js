@@ -87,6 +87,8 @@ const TELEGRAM_ALLOWED_UPDATES = [
   'callback_query',
   'business_connection',
   'business_message',
+  'edited_business_message',
+  'deleted_business_messages',
 ];
 let activeAiRequests = 0;
 let activeGetFileRequests = 0;
@@ -3114,6 +3116,15 @@ function getTelegramMessageContext(update) {
     };
   }
 
+  if (update.edited_business_message) {
+    return {
+      message: update.edited_business_message,
+      updateType: 'edited_business_message',
+      businessConnectionId: update.edited_business_message.business_connection_id || '',
+      messageId: update.edited_business_message.message_id || '',
+    };
+  }
+
   if (update.message) {
     return {
       message: update.message,
@@ -3151,7 +3162,7 @@ function getTelegramMessageContext(update) {
   return {
     message: null,
     updateType: getTelegramUpdateType(update),
-    businessConnectionId: update.business_connection?.id || '',
+    businessConnectionId: update.business_connection?.id || update.deleted_business_messages?.business_connection_id || '',
   };
 }
 
@@ -6793,7 +6804,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       const managerTakeoverEnabled = parseConfigBoolean(config.manager_takeover_enabled, true);
 
       if (sourceInfo.source !== 'client') {
-        if (memoryEnabled && ['manager', 'manager_auto'].includes(sourceInfo.source)) {
+        if (['manager', 'manager_auto'].includes(sourceInfo.source)) {
           appendMemoryMessage(input, 'manager', memoryText);
         }
 
