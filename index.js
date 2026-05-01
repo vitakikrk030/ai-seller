@@ -107,6 +107,50 @@ const TRAINING_FILE_PATH = path.join(dataDir, 'training-examples.json');
 const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
 const MAX_TRAINING_EXAMPLES = 200;
 const TRAINING_PROMPT_EXAMPLES = 10;
+const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
+const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
+const TRAINING_CATEGORIES = {
+  hallucination: {
+    label: 'выдумал факт',
+    keywords: ['выдум', 'придум', 'факт', 'нет данных', 'не знает', 'ложн', 'обещал', 'срок'],
+    rule: 'Не выдумывать факты, сроки, цены, скидки, наличие, реквизиты и действия менеджера. Если данных нет, честно попросить уточнение.',
+  },
+  repeated_question: {
+    label: 'повторно спросил',
+    keywords: ['повтор', 'снова', 'уже написал', 'размер', 'фио', 'телефон', 'город', 'пвз', 'адрес'],
+    rule: 'Перед вопросом проверять контекст. Если клиент уже дал данные, не спрашивать их повторно, а переходить к следующему недостающему шагу.',
+  },
+  order_context: {
+    label: 'не понял заказ',
+    keywords: ['заказ', 'оформ', 'размер', 'стельк', 'фио', 'телефон', 'город', 'доставка', 'пвз', 'адрес'],
+    rule: 'Держать путь заказа: товар/размер, ФИО, телефон, город, служба доставки, ПВЗ или адрес, потом оплата и чек.',
+  },
+  payment: {
+    label: 'оплата',
+    keywords: ['оплат', 'чек', 'скрин', 'банк', 'карт', 'реквизит', 'получател', 'сумм'],
+    rule: 'Реквизиты брать только из AI Control. Не подтверждать оплату финально: чек принимает менеджер, при расхождении мягко попросить проверить.',
+  },
+  delivery: {
+    label: 'доставка',
+    keywords: ['достав', 'сдэк', 'cdek', 'озон', 'ozon', 'яндекс', 'почт', 'пвз', 'курьер', 'срок'],
+    rule: 'Условия доставки брать только из AI Control и контекста. Не обещать точные сроки, если они явно не указаны.',
+  },
+  tone: {
+    label: 'плохой тон',
+    keywords: ['тон', 'груб', 'робот', 'сух', 'шаблон', 'crm', 'довер', 'жив'],
+    rule: 'Писать как живой менеджер IWAK: коротко, спокойно, без CRM-канцелярита, давления и технических упоминаний AI.',
+  },
+  product: {
+    label: 'товар / наличие',
+    keywords: ['товар', 'модель', 'налич', 'размер', 'цвет', 'каталог', 'фото', 'реплик', 'оригинал'],
+    rule: 'Не придумывать товар, наличие, фото и свойства модели. Если клиент прислал конкретный товар, работать с ним, а не возвращать в каталог.',
+  },
+  other: {
+    label: 'другое',
+    keywords: [],
+    rule: 'Следовать сохраненному уроку по смыслу и не переносить его на неподходящие ситуации.',
+  },
+};
 fs.mkdirSync(logDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 let logStream = fs.createWriteStream(LOG_FILE_PATH, { flags: 'a' });
@@ -483,6 +527,50 @@ function normalizeTrainingText(value, limit = 1000) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
+function getTrainingCategory(key) {
+  return TRAINING_CATEGORIES[key] ? key : 'other';
+}
+
+function tokenizeTrainingText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .match(/[a-zа-я0-9]{3,}/g) || [];
+}
+
+function inferTrainingCategory(input = {}) {
+  const explicit = getTrainingCategory(String(input.category || '').trim());
+  if (explicit !== 'other') return explicit;
+  const haystack = [
+    input.note,
+    input.contextText,
+    input.clientText,
+    input.aiText,
+    input.correctedText,
+  ].join(' ').toLowerCase().replace(/ё/g, 'е');
+
+  let best = { key: 'other', score: 0 };
+  Object.entries(TRAINING_CATEGORIES).forEach(([key, meta]) => {
+    if (key === 'other') return;
+    const score = (meta.keywords || []).reduce((sum, keyword) => (
+      haystack.includes(String(keyword).toLowerCase().replace(/ё/g, 'е')) ? sum + 1 : sum
+    ), 0);
+    if (score > best.score) best = { key, score };
+  });
+  return best.key;
+}
+
+function buildTrainingRuleText(item) {
+  const category = getTrainingCategory(item.category);
+  const meta = TRAINING_CATEGORIES[category] || TRAINING_CATEGORIES.other;
+  const note = normalizeTrainingText(item.note, 360);
+  const corrected = normalizeTrainingText(item.correctedText, 420);
+  const parts = [meta.rule];
+  if (note) parts.push(`Причина из диалога: ${note}`);
+  if (item.type === 'bad' && corrected) parts.push(`Правильный ориентир: ${corrected}`);
+  return parts.join(' ');
+}
+
 function addTrainingExample(input = {}) {
   const type = input.type === 'good' ? 'good' : 'bad';
   const item = {
@@ -490,12 +578,14 @@ function addTrainingExample(input = {}) {
     type,
     createdAt: new Date().toISOString(),
     chatId: String(input.chatId || '').trim(),
+    category: inferTrainingCategory(input),
     contextText: normalizeTrainingText(input.contextText, 1800),
     clientText: normalizeTrainingText(input.clientText, 900),
     aiText: normalizeTrainingText(input.aiText, 1200),
     correctedText: normalizeTrainingText(input.correctedText, 1200),
     note: normalizeTrainingText(input.note, 600),
   };
+  item.ruleText = buildTrainingRuleText(item);
 
   if (!item.contextText && (!item.clientText || !item.aiText)) {
     throw new Error('Нужен фрагмент диалога или пара клиент + AI');
@@ -513,14 +603,59 @@ function addTrainingExample(input = {}) {
   return item;
 }
 
-function getTrainingExamplesGuidance() {
-  const items = (trainingStore.items || []).slice(0, TRAINING_PROMPT_EXAMPLES);
+function scoreTrainingExample(item, queryText = '', memoryContext = null) {
+  const source = [
+    queryText,
+    memoryContext?.summary,
+    ...(memoryContext?.history || []).slice(-6).map((message) => message.content || ''),
+  ].join(' ');
+  const queryTokens = new Set(tokenizeTrainingText(source));
+  if (!queryTokens.size) return 0;
+
+  const itemTokens = tokenizeTrainingText([
+    item.category,
+    item.note,
+    item.contextText,
+    item.clientText,
+    item.aiText,
+    item.correctedText,
+    item.ruleText,
+  ].join(' '));
+  const overlap = itemTokens.reduce((sum, token) => sum + (queryTokens.has(token) ? 1 : 0), 0);
+  const category = getTrainingCategory(item.category);
+  const categoryHit = (TRAINING_CATEGORIES[category]?.keywords || []).some((keyword) => (
+    String(source).toLowerCase().replace(/ё/g, 'е').includes(String(keyword).toLowerCase().replace(/ё/g, 'е'))
+  ));
+  return overlap + (categoryHit ? 3 : 0) + (item.type === 'bad' ? 1 : 0);
+}
+
+function selectTrainingExamples(queryText = '', memoryContext = null) {
+  const all = (trainingStore.items || []).filter(Boolean);
+  const relevant = all
+    .map((item, index) => ({ item, index, score: scoreTrainingExample(item, queryText, memoryContext) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, TRAINING_RELEVANT_PROMPT_EXAMPLES)
+    .map((entry) => entry.item);
+  const selectedIds = new Set(relevant.map((item) => item.id));
+  const recent = all
+    .filter((item) => !selectedIds.has(item.id))
+    .slice(0, TRAINING_RECENT_PROMPT_EXAMPLES);
+  return [...relevant, ...recent].slice(0, TRAINING_PROMPT_EXAMPLES);
+}
+
+function getTrainingExamplesGuidance(queryText = '', memoryContext = null) {
+  const items = selectTrainingExamples(queryText, memoryContext);
   if (!items.length) return '';
 
   const rows = items.map((item, index) => {
+    const category = getTrainingCategory(item.category);
+    const categoryLabel = TRAINING_CATEGORIES[category]?.label || TRAINING_CATEGORIES.other.label;
+    const ruleText = item.ruleText || buildTrainingRuleText({ ...item, category });
     if (item.type === 'good') {
       return [
-        `Урок ${index + 1}: хороший ответ. Использовать как ориентир по смыслу и тону, не копировать дословно.`,
+        `Урок ${index + 1}: хороший ответ. Категория: ${categoryLabel}. Использовать как ориентир по смыслу и тону, не копировать дословно.`,
+        ruleText && `Правило: ${ruleText}`,
         item.contextText ? `Фрагмент диалога:\n${item.contextText}` : `Клиент: ${item.clientText}`,
         item.aiText && `Хороший ответ: ${item.aiText}`,
         item.note && `Почему хорошо: ${item.note}`,
@@ -528,7 +663,8 @@ function getTrainingExamplesGuidance() {
     }
 
     return [
-      `Урок ${index + 1}: плохой ответ. Не повторять ошибку, исправлять по правильному варианту.`,
+      `Урок ${index + 1}: плохой ответ. Категория: ${categoryLabel}. Не повторять ошибку, исправлять по правильному варианту.`,
+      ruleText && `Правило: ${ruleText}`,
       item.contextText ? `Фрагмент диалога:\n${item.contextText}` : `Клиент: ${item.clientText}`,
       item.aiText && `Плохой ответ: ${item.aiText}`,
       `Правильно отвечать так: ${item.correctedText}`,
@@ -539,7 +675,9 @@ function getTrainingExamplesGuidance() {
   return [
     'Обучение на диалогах IWAK:',
     '- Эти уроки важнее общего стиля, если есть конфликт.',
+    '- Подбирай уроки по смыслу текущего диалога: не тащи правило в неподходящую ситуацию.',
     '- Если в уроке показано, что факт был выдуман, не повторять этот факт и честно просить уточнение.',
+    '- Если урок говорит, что клиент уже дал данные, не спрашивай их повторно.',
     '- Хорошие ответы использовать как ориентир, плохие ответы не копировать.',
     ...rows,
   ].join('\n\n');
@@ -4459,7 +4597,7 @@ function getCapabilitySnapshot(config) {
   };
 }
 
-function buildSystemPrompt(config, memoryContext = null) {
+function buildSystemPrompt(config, memoryContext = null, queryText = '') {
   const parts = [];
   const control = [
     'AI Control:',
@@ -4478,7 +4616,7 @@ function buildSystemPrompt(config, memoryContext = null) {
     getReceiptCheckGuidance(config),
     getQualityGuidance(config),
     getStoreTrustGuidance(config),
-    getTrainingExamplesGuidance(),
+    getTrainingExamplesGuidance(queryText, memoryContext),
   ].forEach((section) => {
     if (section) control.push(section);
   });
@@ -4688,7 +4826,7 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
     'Есть понятный следующий шаг',
     scenarioTextHasAny(lower, [
       /\?/,
-      /пришлите|напишите|подскажите|проверьте|можно\s+оплачивать|после\s+оплаты|чек|скрин/i,
+      /пришлите|напишите|подскажите|уточните|проверьте|можно\s+оплачивать|после\s+оплаты|чек|скрин/i,
     ]),
     'Клиенту должно быть понятно, что делать дальше.'
   );
@@ -4840,7 +4978,7 @@ function buildAiMessages(input) {
   });
 
   const messages = [];
-  const systemPrompt = buildSystemPrompt(input.config, input.memoryContext);
+  const systemPrompt = buildSystemPrompt(input.config, input.memoryContext, input.text);
   if (systemPrompt.trim()) {
     messages.push({
       role: 'system',
@@ -5536,6 +5674,11 @@ app.get('/training', (req, res) => {
   res.json({
     items: (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES),
     promptItems: Math.min((trainingStore.items || []).length, TRAINING_PROMPT_EXAMPLES),
+    categories: Object.entries(TRAINING_CATEGORIES).map(([key, meta]) => ({
+      key,
+      label: meta.label,
+      rule: meta.rule,
+    })),
   });
 });
 
@@ -5545,6 +5688,7 @@ app.post('/training', (req, res) => {
     logEvent('TRAINING_EXAMPLE', {
       status: 'ok',
       type: item.type,
+      category: item.category,
       chatId: item.chatId,
       id: item.id,
     });

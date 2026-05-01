@@ -3756,7 +3756,7 @@
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
       let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null, indexes: [] };
-      let trainingDraft = { chatId: '', correctedText: '', note: '' };
+      let trainingDraft = { chatId: '', correctedText: '', note: '', category: 'auto' };
       let isInstructionResizing = false;
       let instructionResizeStartY = 0;
       let instructionResizeStartHeight = 0;
@@ -3767,6 +3767,17 @@
       const saveButtonDefaults = new Map();
       const saveButtonTimers = new WeakMap();
       const UI_TIME_ZONE = 'Europe/Moscow';
+      const TRAINING_CATEGORIES = [
+        ['auto', 'AI сам выберет'],
+        ['hallucination', 'Выдумал факт'],
+        ['repeated_question', 'Повторно спросил'],
+        ['order_context', 'Не понял заказ'],
+        ['payment', 'Оплата'],
+        ['delivery', 'Доставка'],
+        ['tone', 'Плохой тон'],
+        ['product', 'Товар / наличие'],
+        ['other', 'Другое'],
+      ];
 
       function getStatusWeight(status) {
         if (status === 'error') return 3;
@@ -4320,7 +4331,7 @@
       function getTrainingDraft(chat) {
         const chatId = chat?.chatId || '';
         if (trainingDraft.chatId !== chatId) {
-          trainingDraft = { chatId, correctedText: '', note: '' };
+          trainingDraft = { chatId, correctedText: '', note: '', category: 'auto' };
         }
         return trainingDraft;
       }
@@ -4388,6 +4399,9 @@
       function renderTrainingCard(chat) {
         const pair = getTrainingPair(chat);
         const draft = getTrainingDraft(chat);
+        const categoryOptions = TRAINING_CATEGORIES.map(([value, label]) => (
+          `<option value="${escapeHtml(value)}"${draft.category === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+        )).join('');
         if (!pair) {
           return `
             <div class="followup-card training-card">
@@ -4417,6 +4431,10 @@
               <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
             </div>
             <div class="field">
+              <div class="field-label">Категория урока</div>
+              <select data-training-category>${categoryOptions}</select>
+            </div>
+            <div class="field">
               <div class="field-label">Как надо было ответить, если AI ошибся</div>
               <textarea data-training-corrected placeholder="Напиши правильный вариант. Особенно важно указать, что AI выдумал и как говорить вместо этого.">${escapeHtml(draft.correctedText)}</textarea>
             </div>
@@ -4428,7 +4446,7 @@
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
               <button class="button-primary" type="button" data-training-action="bad">Сохранить исправление</button>
             </div>
-            <div class="followup-action-help" data-training-status>Урок сохранится локально в S.AI и попадёт в prompt следующих ответов.</div>
+            <div class="followup-action-help" data-training-status>Урок сохранится локально в S.AI, превратится в правило и будет подбираться по смыслу следующих диалогов.</div>
           </div>
         `;
       }
@@ -4607,6 +4625,7 @@
             const contextText = card?.querySelector('[data-training-context]')?.textContent || '';
             const clientText = card?.querySelector('[data-training-client]')?.textContent || '';
             const aiText = card?.querySelector('[data-training-ai]')?.textContent || '';
+            const category = card?.querySelector('[data-training-category]')?.value || 'auto';
             const correctedText = card?.querySelector('[data-training-corrected]')?.value || '';
             const note = card?.querySelector('[data-training-note]')?.value || '';
             const originalLabel = button.textContent;
@@ -4627,6 +4646,7 @@
                   contextText,
                   clientText,
                   aiText,
+                  category,
                   correctedText,
                   note,
                 }),
@@ -4652,6 +4672,7 @@
 
         const correctedInput = inboxThread.querySelector('[data-training-corrected]');
         const noteInput = inboxThread.querySelector('[data-training-note]');
+        const categoryInput = inboxThread.querySelector('[data-training-category]');
         if (correctedInput) {
           correctedInput.addEventListener('input', () => {
             const draft = getTrainingDraft(chat);
@@ -4662,6 +4683,12 @@
           noteInput.addEventListener('input', () => {
             const draft = getTrainingDraft(chat);
             draft.note = noteInput.value || '';
+          });
+        }
+        if (categoryInput) {
+          categoryInput.addEventListener('change', () => {
+            const draft = getTrainingDraft(chat);
+            draft.category = categoryInput.value || 'auto';
           });
         }
       }
