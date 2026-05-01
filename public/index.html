@@ -3941,6 +3941,7 @@
       let inboxRefreshTimer = null;
       let currentTraceId = '';
       let currentInboxChatId = '';
+      let lastRenderedInboxChatId = '';
       let currentInboxFilter = 'all';
       let inboxChatsCache = [];
       let trainingItemsCache = [];
@@ -4643,13 +4644,38 @@
         `;
       }
 
+      function settleInboxThreadScroll(scrollState) {
+        window.requestAnimationFrame(() => {
+          if (!inboxThread || !inboxThread.classList.contains('chat-view')) return;
+          const maxScroll = Math.max(0, inboxThread.scrollHeight - inboxThread.clientHeight);
+          if (scrollState.forceBottom || scrollState.wasNearBottom) {
+            inboxThread.scrollTop = maxScroll;
+            return;
+          }
+          const heightDelta = inboxThread.scrollHeight - scrollState.previousScrollHeight;
+          inboxThread.scrollTop = Math.max(0, Math.min(maxScroll, scrollState.previousScrollTop + heightDelta));
+        });
+      }
+
       function renderInboxThread(chat) {
         if (!chat) {
           inboxThread.className = 'status-output muted';
           inboxThread.textContent = 'Выберите чат слева, чтобы открыть диалог.';
+          lastRenderedInboxChatId = '';
           return;
         }
 
+        const sameChat = lastRenderedInboxChatId === chat.chatId;
+        const previousScrollTop = sameChat ? inboxThread.scrollTop : 0;
+        const previousScrollHeight = sameChat ? inboxThread.scrollHeight : 0;
+        const previousClientHeight = sameChat ? inboxThread.clientHeight : 0;
+        const previousBottomGap = previousScrollHeight - previousClientHeight - previousScrollTop;
+        const scrollState = {
+          forceBottom: !sameChat,
+          wasNearBottom: sameChat && previousBottomGap < 80,
+          previousScrollTop,
+          previousScrollHeight,
+        };
         const displayName = buildChatDisplayName(chat);
         const secondaryMeta = buildChatSecondaryMeta(chat);
         const money = chat.money || {};
@@ -4754,6 +4780,8 @@
           </div>
           ${renderTrainingCard(chat)}
         `;
+        lastRenderedInboxChatId = chat.chatId;
+        settleInboxThreadScroll(scrollState);
 
         const toggle = inboxThread.querySelector('[data-chat-details-toggle]');
         if (toggle) {
