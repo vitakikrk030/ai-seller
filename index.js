@@ -123,6 +123,11 @@ const MAX_TRAINING_EXAMPLES = 200;
 const TRAINING_PROMPT_EXAMPLES = 10;
 const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
 const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
+const SAI_GPT_CODE_FILE_LIMIT = 80;
+const SAI_GPT_CODE_SNIPPET_LIMIT = 8;
+const SAI_GPT_CODE_CHAR_LIMIT = 14000;
+const SAI_GPT_ALLOWED_CODE_EXTENSIONS = new Set(['.js', '.json', '.html', '.css', '.md', '.sql']);
+const SAI_GPT_CODE_EXCLUDE_DIRS = new Set(['.git', 'node_modules', 'data', 'logs', 'coverage', 'dist', 'build']);
 const TRAINING_CATEGORIES = {
   hallucination: {
     label: 'выдумал факт',
@@ -178,6 +183,9 @@ const runtimeConfig = {
   ai_key: process.env.AI_API_KEY || '',
   ai_url: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   model: process.env.MODEL || 'gpt-4o-mini',
+  sai_gpt_key: process.env.SAI_GPT_API_KEY || '',
+  sai_gpt_url: process.env.SAI_GPT_BASE_URL || 'https://api.openai.com/v1',
+  sai_gpt_model: process.env.SAI_GPT_MODEL || 'gpt-4o-mini',
   stt_api_key: process.env.STT_API_KEY || process.env.AI_API_KEY || '',
   stt_base_url: process.env.STT_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   stt_model: process.env.STT_MODEL || 'gpt-4o-mini-transcribe',
@@ -2717,6 +2725,9 @@ function getRuntimeSnapshot() {
     ai_key: runtimeConfig.ai_key,
     ai_url: runtimeConfig.ai_url,
     model: runtimeConfig.model,
+    sai_gpt_key: runtimeConfig.sai_gpt_key,
+    sai_gpt_url: runtimeConfig.sai_gpt_url,
+    sai_gpt_model: runtimeConfig.sai_gpt_model,
     stt_api_key: runtimeConfig.stt_api_key,
     stt_base_url: runtimeConfig.stt_base_url,
     stt_model: runtimeConfig.stt_model,
@@ -2967,6 +2978,21 @@ function applyConfigUpdate(body) {
   if (Object.prototype.hasOwnProperty.call(body, 'model')) {
     runtimeConfig.model = body.model || '';
     process.env.MODEL = runtimeConfig.model;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'sai_gpt_key')) {
+    runtimeConfig.sai_gpt_key = body.sai_gpt_key || '';
+    process.env.SAI_GPT_API_KEY = runtimeConfig.sai_gpt_key;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'sai_gpt_url')) {
+    runtimeConfig.sai_gpt_url = body.sai_gpt_url || '';
+    process.env.SAI_GPT_BASE_URL = runtimeConfig.sai_gpt_url;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'sai_gpt_model')) {
+    runtimeConfig.sai_gpt_model = body.sai_gpt_model || '';
+    process.env.SAI_GPT_MODEL = runtimeConfig.sai_gpt_model;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'stt_api_key')) {
@@ -5008,6 +5034,303 @@ function buildAiControlPreview(config = runtimeConfig) {
   };
 }
 
+function sanitizeSaiGptText(value, limit = 4000) {
+  return String(value || '').trim().slice(0, limit);
+}
+
+function sanitizeSaiGptImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .map((image) => String(image || '').trim())
+    .filter((image) => /^data:image\/(?:png|jpe?g|webp);base64,/i.test(image) || /^https?:\/\//i.test(image))
+    .map((image) => image.slice(0, 1600000))
+    .slice(0, 3);
+}
+
+function redactSensitiveText(value) {
+  return String(value || '')
+    .replace(/(Authorization:\s*Bearer\s+)[^\s"']+/gi, '$1[redacted]')
+    .replace(/("?(?:api[_-]?key|token|password|secret|ai_key|telegram_token|sai_gpt_key)"?\s*[:=]\s*["']?)[^"',\n\r]+/gi, '$1[redacted]')
+    .replace(/(DATABASE_URL\s*=\s*)[^\s\n\r]+/gi, '$1[redacted]');
+}
+
+function getSaiGptConfig(config = runtimeConfig) {
+  return {
+    key: String(config.sai_gpt_key || '').trim(),
+    url: String(config.sai_gpt_url || 'https://api.openai.com/v1').trim().replace(/\/$/, ''),
+    model: String(config.sai_gpt_model || 'gpt-4o-mini').trim(),
+  };
+}
+
+function walkSaiGptProjectFiles(dir = __dirname, output = []) {
+  if (output.length >= SAI_GPT_CODE_FILE_LIMIT) return output;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return output;
+  }
+
+  entries
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((entry) => {
+      if (output.length >= SAI_GPT_CODE_FILE_LIMIT) return;
+      if (entry.name.startsWith('.') && entry.name !== '.env.example') return;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SAI_GPT_CODE_EXCLUDE_DIRS.has(entry.name)) {
+          walkSaiGptProjectFiles(fullPath, output);
+        }
+        return;
+      }
+      if (!entry.isFile()) return;
+      if (entry.name === '.env' || entry.name.endsWith('.log')) return;
+      if (!SAI_GPT_ALLOWED_CODE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) return;
+      output.push(fullPath);
+    });
+
+  return output;
+}
+
+function tokenizeSaiGptQuery(query) {
+  const tokens = String(query || '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_-]+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3)
+    .slice(0, 12);
+  return tokens.length ? tokens : ['sai', 'gpt', 'inbox', 'training'];
+}
+
+function buildSaiGptCodeSnippets(query) {
+  const tokens = tokenizeSaiGptQuery(query);
+  const files = walkSaiGptProjectFiles();
+  const scored = [];
+
+  files.forEach((filePath) => {
+    let stat;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      return;
+    }
+    if (!stat || stat.size > 350 * 1024) return;
+
+    let content = '';
+    try {
+      content = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      return;
+    }
+
+    const relativePath = path.relative(__dirname, filePath);
+    const haystack = `${relativePath}\n${content}`.toLowerCase();
+    let score = 0;
+    tokens.forEach((token) => {
+      const re = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      const matches = haystack.match(re);
+      if (matches) score += matches.length;
+      if (relativePath.toLowerCase().includes(token)) score += 6;
+    });
+    if (!score && ['index.js', 'public/index.html', 'src/customer-store.js', 'package.json'].includes(relativePath)) {
+      score = 1;
+    }
+    if (!score) return;
+
+    const lines = content.split('\n');
+    let hitIndex = lines.findIndex((line) => tokens.some((token) => line.toLowerCase().includes(token)));
+    if (hitIndex < 0) hitIndex = 0;
+    const start = Math.max(0, hitIndex - 6);
+    const end = Math.min(lines.length, hitIndex + 12);
+    const snippet = lines
+      .slice(start, end)
+      .map((line, index) => `${start + index + 1}: ${line}`)
+      .join('\n');
+    scored.push({
+      file: relativePath,
+      line: start + 1,
+      score,
+      snippet: redactSensitiveText(snippet),
+    });
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, SAI_GPT_CODE_SNIPPET_LIMIT);
+}
+
+function buildSaiGptSystemContext(query, selectedChatId = '') {
+  const aiControlPreview = buildAiControlPreview(getRuntimeSnapshot());
+  const trainingItems = (trainingStore.items || []).slice(0, 30);
+  const activeTrainingItems = trainingItems.filter((item) => item.active !== false);
+  const logs = getMergedLogs().slice(0, 120);
+  const recentErrors = logs
+    .filter((item) => item.event === 'ERROR' || item.status === 'error')
+    .slice(0, 12)
+    .map((item) => ({
+      time: item.time,
+      event: item.event,
+      scope: item.scope || '',
+      message: item.message || item.error || '',
+      chatId: item.chatId || '',
+      traceId: item.traceId || '',
+    }));
+  const inbox = buildInboxPayload(80, 80);
+  const selectedProfile = selectedChatId
+    ? (inbox.items || []).find((item) => String(item.customer?.chatId || '') === String(selectedChatId))
+    : null;
+  const recentDialogs = (inbox.items || []).slice(0, 12).map((item) => ({
+    chatId: item.customer?.chatId || '',
+    name: [item.customer?.firstName, item.customer?.lastName].filter(Boolean).join(' ') || item.customer?.username || '',
+    status: item.status?.label || '',
+    lastMessage: item.lastMessage?.text || '',
+    messages: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
+  }));
+  const codeSnippets = buildSaiGptCodeSnippets(query);
+  const snapshot = {
+    now: new Date().toISOString(),
+    mode: 'read_only_internal_agent',
+    customerReplyPipeline: 'untouched',
+    aiControl: {
+      model: runtimeConfig.model || '',
+      autoReply: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
+      memory: parseConfigBoolean(runtimeConfig.memory_enabled, true),
+      managerTakeover: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
+      appliedControls: aiControlPreview.appliedControls,
+      promptPreview: redactSensitiveText(aiControlPreview.systemPrompt).slice(0, 7000),
+    },
+    training: {
+      total: trainingItems.length,
+      active: activeTrainingItems.length,
+      promptLimit: TRAINING_PROMPT_EXAMPLES,
+      latest: activeTrainingItems.slice(0, 12).map((item) => ({
+        id: item.id,
+        type: item.type,
+        category: item.category,
+        note: item.note || '',
+        ruleText: item.ruleText || '',
+        contextText: item.contextText || '',
+        correctedText: item.correctedText || '',
+      })),
+    },
+    inbox: {
+      summary: inbox.summary,
+      recentDialogs,
+      selectedChat: selectedProfile
+        ? {
+          customer: selectedProfile.customer,
+          status: selectedProfile.status,
+          facts: selectedProfile.facts,
+          lastOrder: selectedProfile.lastOrder,
+          recentMessages: (selectedProfile.recentMessages || []).slice(-40),
+        }
+        : null,
+    },
+    recentErrors,
+    codeSnippets,
+  };
+
+  return redactSensitiveText(JSON.stringify(snapshot, null, 2)).slice(0, SAI_GPT_CODE_CHAR_LIMIT + 14000);
+}
+
+async function requestSaiGptChat({ messages, selectedChatId }) {
+  const config = getSaiGptConfig();
+  if (!config.key || !config.url || !config.model) {
+    throw new Error('S.AI GPT API не настроен: укажи Base URL, API Key и модель в разделе S.AI GPT.');
+  }
+
+  const cleanMessages = (Array.isArray(messages) ? messages : [])
+    .map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: sanitizeSaiGptText(message.content || message.text || '', 4000),
+      images: sanitizeSaiGptImages(message.images),
+    }))
+    .filter((message) => message.content || message.images.length)
+    .slice(-16);
+  const latestUser = [...cleanMessages].reverse().find((message) => message.role === 'user');
+  if (!latestUser) {
+    throw new Error('Напиши вопрос для S.AI GPT.');
+  }
+
+  const systemContent = [
+    'Ты S.AI GPT — внутренний агент владельца S.AI/IWAK.',
+    'Режим строго read-only: ты не отправляешь сообщения клиентам, не меняешь настройки, не перезапускаешь сервисы и не обещаешь, что уже внёс правку.',
+    'Твоя задача: анализировать диалоги, AI Control, обучение, логи и кодовые фрагменты; объяснять риски; предлагать точные улучшения.',
+    'Если нужно действие в боевой системе, попроси подтверждение и опиши минимальный безопасный план.',
+    'Не раскрывай секреты, токены и ключи. Если контекста не хватает, честно скажи, какой файл/лог/диалог нужно открыть.',
+    'Если пользователь приложил скриншот, анализируй его как часть сообщения. Если модель/провайдер не поддерживает картинки, честно скажи, что нужен текстовый пересказ или другой vision-провайдер.',
+    '',
+    'Снимок системы:',
+    buildSaiGptSystemContext(latestUser.content, selectedChatId),
+  ].join('\n');
+
+  const startedAt = Date.now();
+  logEvent('SAI_GPT_REQUEST', {
+    status: 'process',
+    model: config.model,
+    selectedChatId: selectedChatId || '',
+    text: latestUser.content,
+  });
+
+  const response = await httpClient.post(
+    `${config.url}/chat/completions`,
+    {
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemContent },
+        ...cleanMessages.map((message) => {
+          if (message.role !== 'user' || !message.images.length) {
+            return { role: message.role, content: message.content };
+          }
+          return {
+            role: 'user',
+            content: [
+              { type: 'text', text: message.content || 'Пользователь приложил скриншот для анализа.' },
+              ...message.images.map((image) => ({
+                type: 'image_url',
+                image_url: { url: image },
+              })),
+            ],
+          };
+        }),
+      ],
+      temperature: 0.25,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    }
+  );
+
+  const reply = extractAiReply(response.data?.choices?.[0]?.message?.content);
+  if (!reply || !String(reply).trim()) {
+    throw new Error('S.AI GPT вернул пустой ответ.');
+  }
+
+  logEvent('SAI_GPT_REPLY', {
+    status: 'ok',
+    model: config.model,
+    selectedChatId: selectedChatId || '',
+    duration: Date.now() - startedAt,
+    replyText: reply,
+  });
+
+  return {
+    reply,
+    model: config.model,
+    context: {
+      selectedChatId: selectedChatId || '',
+      codeSnippets: buildSaiGptCodeSnippets(latestUser.content).map((item) => ({
+        file: item.file,
+        line: item.line,
+      })),
+    },
+  };
+}
+
 const SCENARIO_TEST_DEFINITIONS = {
   order_size: {
     title: 'Горячий заказ: клиент прислал размер',
@@ -5788,6 +6111,9 @@ app.get('/config/status', async (req, res) => {
     stt: runtimeConfig.stt_api_key ? 'подключен' : 'нет',
     model: runtimeConfig.model || '',
     base_url: runtimeConfig.ai_url || '',
+    sai_gpt: runtimeConfig.sai_gpt_key ? 'подключен' : 'нет',
+    sai_gpt_url: runtimeConfig.sai_gpt_url || 'https://api.openai.com/v1',
+    sai_gpt_model: runtimeConfig.sai_gpt_model || 'gpt-4o-mini',
     stt_api_key: runtimeConfig.stt_api_key || '',
     stt_base_url: runtimeConfig.stt_base_url || '',
     stt_model: runtimeConfig.stt_model || 'gpt-4o-mini-transcribe',
@@ -6119,6 +6445,23 @@ app.post('/training/coach', async (req, res) => {
       error: error.message,
     });
     res.status(400).json({ success: false, error: error.message || 'Не удалось продолжить обучение' });
+  }
+});
+
+app.post('/sai-gpt/chat', async (req, res) => {
+  try {
+    const result = await requestSaiGptChat({
+      messages: req.body?.messages || [],
+      selectedChatId: sanitizeSaiGptText(req.body?.selectedChatId || '', 120),
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'sai_gpt.chat',
+      status: 'error',
+      error: error.message,
+    });
+    res.status(400).json({ success: false, error: error.message || 'S.AI GPT не ответил' });
   }
 });
 
@@ -7144,6 +7487,9 @@ app.delete('/config', (req, res) => {
   runtimeConfig.ai_key = '';
   runtimeConfig.ai_url = '';
   runtimeConfig.model = '';
+  runtimeConfig.sai_gpt_key = '';
+  runtimeConfig.sai_gpt_url = 'https://api.openai.com/v1';
+  runtimeConfig.sai_gpt_model = 'gpt-4o-mini';
   runtimeConfig.stt_api_key = '';
   runtimeConfig.stt_base_url = 'https://api.openai.com/v1';
   runtimeConfig.stt_model = 'gpt-4o-mini-transcribe';
@@ -7264,6 +7610,9 @@ app.delete('/config', (req, res) => {
   process.env.AI_API_KEY = '';
   process.env.AI_BASE_URL = '';
   process.env.MODEL = '';
+  process.env.SAI_GPT_API_KEY = '';
+  process.env.SAI_GPT_BASE_URL = 'https://api.openai.com/v1';
+  process.env.SAI_GPT_MODEL = 'gpt-4o-mini';
   process.env.STT_API_KEY = '';
   process.env.STT_BASE_URL = 'https://api.openai.com/v1';
   process.env.STT_MODEL = 'gpt-4o-mini-transcribe';
