@@ -5080,10 +5080,11 @@
                 ? 'Готово: хороший ответ сохранён вместе с комментарием.'
                 : 'Готово: исправление сохранено и будет учитываться в следующих ответах.';
               showSaveToast('ok', 'Урок сохранён');
+              trainingSelection = { chatId: chat.chatId, clientIndex: null, aiIndex: null, indexes: [] };
+              trainingDraft = { chatId: chat.chatId, correctedText: '', note: '', category: 'auto' };
               if (action !== 'good') {
                 const corrected = card?.querySelector('[data-training-corrected]');
                 if (corrected) corrected.value = '';
-                trainingDraft.correctedText = '';
               }
             } catch (error) {
               if (status) status.textContent = error.message || 'Не удалось сохранить урок';
@@ -6615,11 +6616,31 @@
         renderTrainingPreviewItems(Array.isArray(data.items) ? data.items : []);
       }
 
+      function shouldPauseInboxAutoRefresh() {
+        if (!views.inbox.classList.contains('active')) return true;
+        const active = document.activeElement;
+        if (
+          active
+          && inboxThread
+          && inboxThread.contains(active)
+          && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(active.tagName)
+        ) {
+          return true;
+        }
+        const hasTrainingSelection = Array.isArray(trainingSelection.indexes) && trainingSelection.indexes.length > 0;
+        const hasTrainingDraft = Boolean(
+          String(trainingDraft.correctedText || '').trim()
+          || String(trainingDraft.note || '').trim()
+          || (trainingDraft.category && trainingDraft.category !== 'auto')
+        );
+        return hasTrainingSelection || hasTrainingDraft;
+      }
+
       function startInboxAutoRefresh() {
         stopInboxAutoRefresh();
         if (!views.inbox.classList.contains('active')) return;
         inboxRefreshTimer = window.setInterval(() => {
-          if (views.inbox.classList.contains('active')) {
+          if (!shouldPauseInboxAutoRefresh()) {
             loadInbox();
           }
         }, 5000);
