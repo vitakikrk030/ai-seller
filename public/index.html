@@ -2068,6 +2068,78 @@
         font-size: 13px;
       }
 
+      .training-console {
+        display: grid;
+        gap: 12px;
+      }
+
+      .training-toolbar,
+      .training-preview {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .training-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .training-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .training-item {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--panel-alt) 94%, transparent);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .training-item.disabled {
+        opacity: 0.64;
+      }
+
+      .training-item-head,
+      .training-item-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .training-item-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        color: var(--text);
+        font-weight: 680;
+      }
+
+      .training-item-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .training-item textarea {
+        min-height: 78px;
+      }
+
+      .training-preview-list {
+        display: grid;
+        gap: 8px;
+      }
+
       .followup-card-title {
         display: flex;
         justify-content: space-between;
@@ -2305,6 +2377,11 @@
           grid-template-columns: 1fr 1fr 1fr;
         }
 
+        .training-summary-grid,
+        .training-item-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
         .filter-grid {
           grid-template-columns: 1fr 1fr;
         }
@@ -2490,6 +2567,18 @@
               </svg>
             </span>
             <span class="nav-text">Logs</span>
+          </button>
+          <button class="nav-item" data-view="training" type="button" title="Training" aria-label="Training">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6.5 5.5h11" />
+                <path d="M6.5 9.5h7" />
+                <path d="M7 14l2 2 4-5" />
+                <path d="M16 14.5h1.5" />
+                <path d="M16 18h1.5" />
+              </svg>
+            </span>
+            <span class="nav-text">Training</span>
           </button>
           <button class="nav-item" data-view="inbox" type="button" title="Inbox" aria-label="Inbox">
             <span class="nav-icon">
@@ -3371,6 +3460,83 @@
             </div>
           </section>
 
+          <section id="view-training" class="view">
+            <div class="list-shell">
+              <details class="list-item" open>
+                <summary class="list-summary">
+                  <div class="list-summary-main">
+                    <div class="list-title">Training</div>
+                    <div class="list-subtitle">Ревизия уроков: включить, выключить, поправить правило и проверить подбор в prompt.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="training-console">
+                    <div class="training-toolbar">
+                      <div class="training-summary-grid">
+                        <div class="summary-pill ok"><div class="summary-label">Активные</div><div id="trainingActiveCount" class="summary-value">0</div></div>
+                        <div class="summary-pill process"><div class="summary-label">Всего</div><div id="trainingTotalCount" class="summary-value">0</div></div>
+                        <div class="summary-pill error"><div class="summary-label">Плохие</div><div id="trainingBadCount" class="summary-value">0</div></div>
+                        <div class="summary-pill ok"><div class="summary-label">Хорошие</div><div id="trainingGoodCount" class="summary-value">0</div></div>
+                        <div class="summary-pill process"><div class="summary-label">В prompt</div><div id="trainingPromptCount" class="summary-value">0</div></div>
+                      </div>
+                      <div class="filter-grid">
+                        <div class="field">
+                          <label class="field-label" for="trainingFilter">Фильтр</label>
+                          <select id="trainingFilter">
+                            <option value="">Все уроки</option>
+                            <option value="active">Только активные</option>
+                            <option value="disabled">Выключенные</option>
+                            <option value="bad">Плохие ответы</option>
+                            <option value="good">Хорошие ответы</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label class="field-label" for="trainingCategoryFilter">Категория</label>
+                          <select id="trainingCategoryFilter">
+                            <option value="">Все категории</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label class="field-label" for="trainingSearch">Поиск</label>
+                          <input id="trainingSearch" placeholder="Например: доставка, размер, чек" />
+                        </div>
+                        <div class="field">
+                          <label class="field-label">&nbsp;</label>
+                          <button id="refreshTraining" class="button-primary" type="button">Обновить</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="training-preview">
+                      <div class="followup-card-title">
+                        <span>Что попадёт в prompt</span>
+                        <span class="status-pill muted">проверка без отправки</span>
+                      </div>
+                      <div class="filter-grid">
+                        <div class="field">
+                          <label class="field-label" for="trainingPreviewQuery">Фраза клиента</label>
+                          <input id="trainingPreviewQuery" placeholder="Например: оплатил, чек прикрепил" />
+                        </div>
+                        <div class="field">
+                          <label class="field-label">&nbsp;</label>
+                          <button id="runTrainingPreview" class="button-secondary" type="button">Показать подбор</button>
+                        </div>
+                      </div>
+                      <div id="trainingPreviewOutput" class="training-preview-list">
+                        <div class="status-output muted">Введи фразу клиента, чтобы увидеть, какие уроки S.AI подберёт для prompt.</div>
+                      </div>
+                    </div>
+
+                    <div id="trainingList" class="training-list">
+                      <div class="status-output muted">Уроки появятся здесь после сохранения из Inbox.</div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
           <section id="view-inbox" class="view">
             <div class="list-shell inbox-panel">
               <details class="list-item">
@@ -3658,6 +3824,19 @@
       const inboxWorkspace = document.querySelector('.inbox-workspace');
       const inboxResizeHandle = document.getElementById('inboxResizeHandle');
       const inboxFilters = document.getElementById('inboxFilters');
+      const trainingList = document.getElementById('trainingList');
+      const trainingFilter = document.getElementById('trainingFilter');
+      const trainingCategoryFilter = document.getElementById('trainingCategoryFilter');
+      const trainingSearch = document.getElementById('trainingSearch');
+      const refreshTrainingButton = document.getElementById('refreshTraining');
+      const trainingPreviewQuery = document.getElementById('trainingPreviewQuery');
+      const runTrainingPreviewButton = document.getElementById('runTrainingPreview');
+      const trainingPreviewOutput = document.getElementById('trainingPreviewOutput');
+      const trainingActiveCount = document.getElementById('trainingActiveCount');
+      const trainingTotalCount = document.getElementById('trainingTotalCount');
+      const trainingBadCount = document.getElementById('trainingBadCount');
+      const trainingGoodCount = document.getElementById('trainingGoodCount');
+      const trainingPromptCount = document.getElementById('trainingPromptCount');
       const followupMasterEnabled = document.getElementById('followupMasterEnabled');
       const followupWorkerEnabled = document.getElementById('followupWorkerEnabled');
       const followupAutoSendEnabled = document.getElementById('followupAutoSendEnabled');
@@ -3743,6 +3922,7 @@
         'ai-control': document.getElementById('view-ai-control'),
         integrations: document.getElementById('view-integrations'),
         logs: document.getElementById('view-logs'),
+        training: document.getElementById('view-training'),
         inbox: document.getElementById('view-inbox'),
       };
 
@@ -3753,6 +3933,8 @@
       let currentInboxChatId = '';
       let currentInboxFilter = 'all';
       let inboxChatsCache = [];
+      let trainingItemsCache = [];
+      let trainingCategoriesCache = [];
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
       let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null, indexes: [] };
@@ -4400,7 +4582,7 @@
         const pair = getTrainingPair(chat);
         const draft = getTrainingDraft(chat);
         const categoryOptions = TRAINING_CATEGORIES.map(([value, label]) => (
-          `<option value="${escapeHtml(value)}"${draft.category === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+          `<option value="${escapeAttr(value)}"${draft.category === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
         )).join('');
         if (!pair) {
           return `
@@ -4440,7 +4622,7 @@
             </div>
             <div class="field">
               <div class="field-label">Короткая причина</div>
-              <input data-training-note value="${escapeHtml(draft.note)}" placeholder="Например: выдумал срок доставки / повторно спросил размер / хороший тон" />
+              <input data-training-note value="${escapeAttr(draft.note)}" placeholder="Например: выдумал срок доставки / повторно спросил размер / хороший тон" />
             </div>
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
@@ -4845,6 +5027,10 @@
           .replaceAll('&', '&amp;')
           .replaceAll('<', '&lt;')
           .replaceAll('>', '&gt;');
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value).replaceAll('"', '&quot;');
       }
 
       const scenarioPresets = {
@@ -5996,6 +6182,148 @@
         renderInboxChats(chats);
       }
 
+      function getTrainingCategoryLabel(category) {
+        return trainingCategoriesCache.find((item) => item.key === category)?.label
+          || TRAINING_CATEGORIES.find(([key]) => key === category)?.[1]
+          || category
+          || 'другое';
+      }
+
+      function renderTrainingCategoryFilter() {
+        if (!trainingCategoryFilter) return;
+        const current = trainingCategoryFilter.value || '';
+        trainingCategoryFilter.innerHTML = [
+          '<option value="">Все категории</option>',
+          ...trainingCategoriesCache.map((item) => `<option value="${escapeAttr(item.key)}">${escapeHtml(item.label)}</option>`),
+        ].join('');
+        trainingCategoryFilter.value = current;
+      }
+
+      function getFilteredTrainingItems() {
+        const filter = trainingFilter?.value || '';
+        const category = trainingCategoryFilter?.value || '';
+        const search = String(trainingSearch?.value || '').trim().toLowerCase();
+        return trainingItemsCache.filter((item) => {
+          if (filter === 'active' && item.active === false) return false;
+          if (filter === 'disabled' && item.active !== false) return false;
+          if (filter === 'bad' && item.type === 'good') return false;
+          if (filter === 'good' && item.type !== 'good') return false;
+          if (category && item.category !== category) return false;
+          if (search) {
+            const haystack = [
+              item.note,
+              item.ruleText,
+              item.contextText,
+              item.clientText,
+              item.aiText,
+              item.correctedText,
+              item.category,
+            ].join(' ').toLowerCase();
+            if (!haystack.includes(search)) return false;
+          }
+          return true;
+        });
+      }
+
+      function renderTrainingItem(item) {
+        const active = item.active !== false;
+        const categoryOptions = trainingCategoriesCache.map((category) => (
+          `<option value="${escapeAttr(category.key)}"${item.category === category.key ? ' selected' : ''}>${escapeHtml(category.label)}</option>`
+        )).join('');
+        return `
+          <div class="training-item${active ? '' : ' disabled'}" data-training-id="${escapeAttr(item.id)}">
+            <div class="training-item-head">
+              <div class="training-item-title">
+                <span class="status-pill ${item.type === 'good' ? 'good' : 'attention'}">${item.type === 'good' ? 'хороший' : 'исправление'}</span>
+                <span class="status-pill ${active ? 'good' : 'muted'}">${active ? 'активен' : 'выключен'}</span>
+                <span>${escapeHtml(getTrainingCategoryLabel(item.category))}</span>
+              </div>
+              <div class="chat-submeta">${escapeHtml(formatDateTimeLabel(item.createdAt))}</div>
+            </div>
+            <div class="training-item-grid">
+              <div class="field">
+                <label class="field-label">Категория</label>
+                <select data-training-edit="category">${categoryOptions}</select>
+              </div>
+              <div class="field">
+                <label class="field-label">Комментарий</label>
+                <input data-training-edit="note" value="${escapeAttr(item.note || '')}" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Правило, которое попадёт в prompt</label>
+              <textarea data-training-edit="ruleText">${escapeHtml(item.ruleText || '')}</textarea>
+            </div>
+            ${item.correctedText ? `
+              <div class="field">
+                <label class="field-label">Правильный ответ</label>
+                <textarea data-training-edit="correctedText">${escapeHtml(item.correctedText || '')}</textarea>
+              </div>
+            ` : ''}
+            <div class="chat-details visible">
+              <div class="chat-detail wide">
+                <div class="chat-detail-label">Фрагмент</div>
+                <div class="chat-detail-value">${escapeHtml(item.contextText || item.clientText || '—')}</div>
+              </div>
+              ${item.aiText ? `
+                <div class="chat-detail wide">
+                  <div class="chat-detail-label">Ответ AI/менеджера</div>
+                  <div class="chat-detail-value">${escapeHtml(item.aiText)}</div>
+                </div>
+              ` : ''}
+            </div>
+            <div class="training-item-actions">
+              <button class="button-secondary" type="button" data-training-action="toggle">${active ? 'Выключить' : 'Включить'}</button>
+              <button class="button-primary" type="button" data-training-action="save">Сохранить правку</button>
+              <button class="button-danger" type="button" data-training-action="delete">Удалить</button>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderTrainingConsole(data = {}) {
+        const summary = data.summary || {};
+        trainingActiveCount.textContent = String(summary.active || 0);
+        trainingTotalCount.textContent = String(summary.total || 0);
+        trainingBadCount.textContent = String(summary.bad || 0);
+        trainingGoodCount.textContent = String(summary.good || 0);
+        trainingPromptCount.textContent = String(data.promptItems || 0);
+        renderTrainingCategoryFilter();
+        const items = getFilteredTrainingItems();
+        trainingList.innerHTML = items.length
+          ? items.map(renderTrainingItem).join('')
+          : '<div class="status-output muted">По этому фильтру уроков нет.</div>';
+      }
+
+      async function loadTrainingConsole() {
+        const data = await fetchJSON('/training');
+        trainingItemsCache = Array.isArray(data.items) ? data.items : [];
+        trainingCategoriesCache = Array.isArray(data.categories) ? data.categories : [];
+        renderTrainingConsole(data);
+      }
+
+      function renderTrainingPreviewItems(items = []) {
+        if (!items.length) {
+          trainingPreviewOutput.innerHTML = '<div class="status-output muted">Для этой фразы подходящих активных уроков не найдено.</div>';
+          return;
+        }
+        trainingPreviewOutput.innerHTML = items.map((item, index) => `
+          <div class="chat-detail wide">
+            <div class="chat-detail-label">Урок ${index + 1} · ${escapeHtml(getTrainingCategoryLabel(item.category))} · ${item.type === 'good' ? 'хороший' : 'исправление'}</div>
+            <div class="chat-detail-value">${escapeHtml(item.ruleText || item.note || item.contextText || '')}</div>
+          </div>
+        `).join('');
+      }
+
+      async function runTrainingPreview() {
+        const data = await fetchJSON('/training/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queryText: trainingPreviewQuery.value || '' }),
+        });
+        renderTrainingPreviewItems(Array.isArray(data.items) ? data.items : []);
+      }
+
       function startInboxAutoRefresh() {
         stopInboxAutoRefresh();
         if (!views.inbox.classList.contains('active')) return;
@@ -6064,6 +6392,12 @@
           headerSubtitle.textContent = 'Поток webhook, AI и Telegram в реальном времени.';
           loadLogs();
           startLogsAutoRefresh();
+        } else if (view === 'training') {
+          stopLogsAutoRefresh();
+          stopInboxAutoRefresh();
+          headerTitle.textContent = 'Training';
+          headerSubtitle.textContent = 'Ревизия уроков, правил и того, что реально попадает в prompt.';
+          loadTrainingConsole();
         } else if (view === 'inbox') {
           stopLogsAutoRefresh();
           headerTitle.textContent = 'Inbox';
@@ -6221,6 +6555,66 @@
         if (!chat) return;
         currentInboxChatId = chat.dataset.chatId || '';
         loadInbox();
+      });
+
+      refreshTrainingButton.addEventListener('click', loadTrainingConsole);
+      trainingFilter.addEventListener('change', () => renderTrainingConsole({
+        summary: {
+          total: trainingItemsCache.length,
+          active: trainingItemsCache.filter((item) => item.active !== false).length,
+          disabled: trainingItemsCache.filter((item) => item.active === false).length,
+          good: trainingItemsCache.filter((item) => item.type === 'good').length,
+          bad: trainingItemsCache.filter((item) => item.type !== 'good').length,
+        },
+        promptItems: Math.min(trainingItemsCache.filter((item) => item.active !== false).length, 10),
+      }));
+      trainingCategoryFilter.addEventListener('change', () => trainingFilter.dispatchEvent(new Event('change')));
+      trainingSearch.addEventListener('input', () => trainingFilter.dispatchEvent(new Event('change')));
+      runTrainingPreviewButton.addEventListener('click', runTrainingPreview);
+
+      trainingList.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-training-action]');
+        const card = event.target.closest('[data-training-id]');
+        if (!button || !card) return;
+        const id = card.dataset.trainingId || '';
+        const item = trainingItemsCache.find((entry) => entry.id === id);
+        if (!item) return;
+        const action = button.dataset.trainingAction;
+        try {
+          if (action === 'delete') {
+            const confirmed = window.confirm('Удалить этот урок? Это действие нельзя отменить.');
+            if (!confirmed) return;
+            await fetchJSON(`/training/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            showSaveToast('ok', 'Урок удалён');
+            await loadTrainingConsole();
+            return;
+          }
+          if (action === 'toggle') {
+            await fetchJSON(`/training/${encodeURIComponent(id)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ active: item.active === false }),
+            });
+            showSaveToast('ok', item.active === false ? 'Урок включён' : 'Урок выключен');
+            await loadTrainingConsole();
+            return;
+          }
+          if (action === 'save') {
+            const payload = {};
+            card.querySelectorAll('[data-training-edit]').forEach((input) => {
+              payload[input.dataset.trainingEdit] = input.value || '';
+            });
+            await fetchJSON(`/training/${encodeURIComponent(id)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            showSaveToast('ok', 'Урок обновлён');
+            await loadTrainingConsole();
+          }
+        } catch (error) {
+          showSaveToast('error', error.message || 'Не удалось обновить урок');
+        }
       });
 
       inboxThread.addEventListener('click', async (event) => {

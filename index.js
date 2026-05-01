@@ -576,6 +576,7 @@ function addTrainingExample(input = {}) {
   const item = {
     id: crypto.randomUUID(),
     type,
+    active: true,
     createdAt: new Date().toISOString(),
     chatId: String(input.chatId || '').trim(),
     category: inferTrainingCategory(input),
@@ -630,7 +631,7 @@ function scoreTrainingExample(item, queryText = '', memoryContext = null) {
 }
 
 function selectTrainingExamples(queryText = '', memoryContext = null) {
-  const all = (trainingStore.items || []).filter(Boolean);
+  const all = (trainingStore.items || []).filter((item) => item && item.active !== false);
   const relevant = all
     .map((item, index) => ({ item, index, score: scoreTrainingExample(item, queryText, memoryContext) }))
     .filter((entry) => entry.score > 0)
@@ -642,6 +643,37 @@ function selectTrainingExamples(queryText = '', memoryContext = null) {
     .filter((item) => !selectedIds.has(item.id))
     .slice(0, TRAINING_RECENT_PROMPT_EXAMPLES);
   return [...relevant, ...recent].slice(0, TRAINING_PROMPT_EXAMPLES);
+}
+
+function findTrainingExample(id) {
+  return (trainingStore.items || []).find((item) => item?.id === id) || null;
+}
+
+function updateTrainingExample(id, input = {}) {
+  const item = findTrainingExample(id);
+  if (!item) return null;
+
+  if (Object.prototype.hasOwnProperty.call(input, 'active')) {
+    item.active = input.active !== false;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'category')) {
+    item.category = getTrainingCategory(String(input.category || '').trim());
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'ruleText')) {
+    item.ruleText = normalizeTrainingText(input.ruleText, 1200);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'note')) {
+    item.note = normalizeTrainingText(input.note, 600);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'correctedText')) {
+    item.correctedText = normalizeTrainingText(input.correctedText, 1200);
+  }
+
+  if (!item.category) item.category = inferTrainingCategory(item);
+  if (!item.ruleText) item.ruleText = buildTrainingRuleText(item);
+  item.updatedAt = new Date().toISOString();
+  saveTrainingStore();
+  return item;
 }
 
 function getTrainingExamplesGuidance(queryText = '', memoryContext = null) {
@@ -5671,14 +5703,32 @@ app.get('/logs/:traceId', (req, res) => {
 });
 
 app.get('/training', (req, res) => {
+  const items = (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES);
   res.json({
-    items: (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES),
-    promptItems: Math.min((trainingStore.items || []).length, TRAINING_PROMPT_EXAMPLES),
+    items,
+    promptItems: Math.min(items.filter((item) => item.active !== false).length, TRAINING_PROMPT_EXAMPLES),
+    summary: {
+      total: items.length,
+      active: items.filter((item) => item.active !== false).length,
+      disabled: items.filter((item) => item.active === false).length,
+      good: items.filter((item) => item.type === 'good').length,
+      bad: items.filter((item) => item.type !== 'good').length,
+    },
     categories: Object.entries(TRAINING_CATEGORIES).map(([key, meta]) => ({
       key,
       label: meta.label,
       rule: meta.rule,
     })),
+  });
+});
+
+app.post('/training/preview', (req, res) => {
+  const queryText = normalizeTrainingText(req.body?.queryText, 1200);
+  const selected = selectTrainingExamples(queryText, null);
+  res.json({
+    items: selected,
+    promptItems: selected.length,
+    queryText,
   });
 });
 
@@ -5696,6 +5746,23 @@ app.post('/training', (req, res) => {
   } catch (error) {
     res.status(400).json({ success: false, error: error.message || 'Не удалось сохранить урок' });
   }
+});
+
+app.patch('/training/:id', (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const item = updateTrainingExample(id, req.body || {});
+  if (!item) {
+    res.status(404).json({ success: false, error: 'Урок не найден' });
+    return;
+  }
+  logEvent('TRAINING_EXAMPLE_UPDATE', {
+    status: 'ok',
+    type: item.type,
+    category: item.category,
+    active: item.active !== false,
+    id: item.id,
+  });
+  res.json({ success: true, item });
 });
 
 app.delete('/training/:id', (req, res) => {
