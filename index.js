@@ -565,6 +565,7 @@ function createEmptySaiGptMemoryStore() {
   return {
     version: 1,
     messages: [],
+    pendingAction: null,
   };
 }
 
@@ -576,6 +577,7 @@ function readSaiGptMemoryStore() {
       ...createEmptySaiGptMemoryStore(),
       ...parsed,
       messages: Array.isArray(parsed.messages) ? parsed.messages.filter(Boolean) : [],
+      pendingAction: parsed.pendingAction && typeof parsed.pendingAction === 'object' ? parsed.pendingAction : null,
     };
   } catch (error) {
     logEvent('ERROR', {
@@ -609,6 +611,142 @@ function appendSaiGptMemoryMessage(role, content, metadata = {}) {
   saiGptMemoryStore.messages = saiGptMemoryStore.messages.slice(-SAI_GPT_MEMORY_MAX_MESSAGES);
   saveSaiGptMemoryStore();
   return item;
+}
+
+function getSaiGptPendingAction() {
+  const action = saiGptMemoryStore.pendingAction;
+  if (!action || typeof action !== 'object') return null;
+  if (!action.type || !action.payload || typeof action.payload !== 'object') return null;
+  return action;
+}
+
+function setSaiGptPendingAction(action = {}) {
+  const cleanAction = normalizeSaiGptPendingAction(action);
+  if (!cleanAction) return null;
+  saiGptMemoryStore.pendingAction = cleanAction;
+  saveSaiGptMemoryStore();
+  return cleanAction;
+}
+
+function clearSaiGptPendingAction() {
+  saiGptMemoryStore.pendingAction = null;
+  saveSaiGptMemoryStore();
+}
+
+function normalizeSaiGptPendingAction(action = {}) {
+  const type = String(action.type || '').trim();
+  const payload = action.payload && typeof action.payload === 'object' ? action.payload : {};
+  if (!['create_training', 'set_training_active'].includes(type)) return null;
+
+  if (type === 'create_training') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        type: payload.type === 'good' ? 'good' : 'bad',
+        chatId: sanitizeSaiGptText(payload.chatId || '', 120),
+        category: getTrainingCategory(payload.category || 'other'),
+        contextText: normalizeTrainingBlock(payload.contextText || '', 2200),
+        clientText: normalizeTrainingText(payload.clientText || '', 900),
+        aiText: normalizeTrainingText(payload.aiText || '', 1200),
+        correctedText: normalizeTrainingText(payload.correctedText || '', 1200),
+        note: normalizeTrainingText(payload.note || '', 600),
+      },
+    };
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    type,
+    createdAt: new Date().toISOString(),
+    payload: {
+      id: sanitizeSaiGptText(payload.id || '', 120),
+      active: payload.active !== false,
+      reason: normalizeTrainingText(payload.reason || '', 600),
+    },
+  };
+}
+
+function extractSaiGptPendingAction(reply = '') {
+  const source = String(reply || '');
+  const match = source.match(/\[SAI_ACTION\]([\s\S]*?)\[\/SAI_ACTION\]/i);
+  if (!match) return { reply: source, action: null };
+  let action = null;
+  try {
+    action = JSON.parse(match[1].trim());
+  } catch {
+    action = null;
+  }
+  return {
+    reply: source.replace(match[0], '').trim(),
+    action: normalizeSaiGptPendingAction(action || {}),
+  };
+}
+
+function isSaiGptActionConfirmation(text = '') {
+  const value = String(text || '').trim().toLowerCase().replace(/ё/g, 'е');
+  if (!value) return false;
+  return /^(да|ок|окей|подтверждаю|согласен|согласна|добавь|сохрани|запомни|включай|выключай|делай|можно)([.! ]|$)/i.test(value);
+}
+
+function isSaiGptActionCancel(text = '') {
+  const value = String(text || '').trim().toLowerCase().replace(/ё/g, 'е');
+  return /^(нет|не надо|отмена|отмени|стой|стоп|не добавляй|не сохраняй|не меняй)([.! ]|$)/i.test(value);
+}
+
+function describeSaiGptPendingAction(action = null) {
+  if (!action) return '';
+  if (action.type === 'create_training') {
+    const payload = action.payload || {};
+    const category = getTrainingCategory(payload.category || 'other');
+    const label = TRAINING_CATEGORIES[category]?.label || TRAINING_CATEGORIES.other.label;
+    return [
+      'Ожидает подтверждения: добавить урок в training.',
+      `Тип: ${payload.type === 'good' ? 'хороший ответ' : 'плохой ответ'}.`,
+      `Категория: ${label}.`,
+      payload.note && `Почему: ${payload.note}`,
+      payload.correctedText && `Как отвечать: ${payload.correctedText}`,
+    ].filter(Boolean).join('\n');
+  }
+  if (action.type === 'set_training_active') {
+    return `Ожидает подтверждения: ${action.payload?.active === false ? 'выключить' : 'включить'} урок ${action.payload?.id || ''}.`;
+  }
+  return 'Ожидает подтверждения: системное действие S.AI GPT.';
+}
+
+function executeSaiGptPendingAction(action = null, selectedChatId = '') {
+  if (!action) throw new Error('Нет действия для подтверждения.');
+  if (action.type === 'create_training') {
+    const item = addTrainingExample({
+      ...action.payload,
+      chatId: action.payload?.chatId || selectedChatId || '',
+    });
+    logEvent('SAI_GPT_ACTION', {
+      status: 'ok',
+      action: action.type,
+      trainingId: item.id,
+      category: item.category,
+    });
+    return [
+      'Готово, добавил урок в training.',
+      `ID: ${item.id}`,
+      `Категория: ${TRAINING_CATEGORIES[item.category]?.label || item.category}`,
+      'Он уже активен и может попадать в prompt по смыслу диалога.',
+    ].join('\n');
+  }
+  if (action.type === 'set_training_active') {
+    const item = updateTrainingExample(action.payload?.id, { active: action.payload?.active !== false });
+    if (!item) throw new Error('Урок не найден.');
+    logEvent('SAI_GPT_ACTION', {
+      status: 'ok',
+      action: action.type,
+      trainingId: item.id,
+      active: item.active !== false,
+    });
+    return `Готово, урок ${item.id} ${item.active === false ? 'выключен' : 'включён'}.`;
+  }
+  throw new Error('Этот тип действия пока не поддержан.');
 }
 
 function normalizeTrainingText(value, limit = 1000) {
@@ -5426,6 +5564,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     recentErrors,
     saiGptMemory: {
       total: Array.isArray(saiGptMemoryStore.messages) ? saiGptMemoryStore.messages.length : 0,
+      pendingAction: describeSaiGptPendingAction(getSaiGptPendingAction()),
       recent: (saiGptMemoryStore.messages || []).slice(-30).map((message) => ({
         role: message.role,
         content: message.content,
@@ -5443,10 +5582,6 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
 
 async function requestSaiGptChat({ messages, selectedChatId }) {
   const config = getSaiGptConfig();
-  if (!config.key || !config.url || !config.model) {
-    throw new Error('S.AI GPT API не настроен: укажи Base URL, API Key и модель в разделе S.AI GPT.');
-  }
-
   const cleanMessages = (Array.isArray(messages) ? messages : [])
     .map((message) => ({
       role: message.role === 'assistant' ? 'assistant' : 'user',
@@ -5459,6 +5594,41 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
   if (!latestUser) {
     throw new Error('Напиши вопрос для S.AI GPT.');
   }
+
+  const pendingAction = getSaiGptPendingAction();
+  if (pendingAction && isSaiGptActionCancel(latestUser.content)) {
+    clearSaiGptPendingAction();
+    const reply = 'Ок, отменил ожидающее действие. Ничего не менял.';
+    appendSaiGptMemoryMessage('user', latestUser.content, {
+      selectedChatId,
+      imageCount: latestUser.images.length,
+    });
+    appendSaiGptMemoryMessage('assistant', reply, { selectedChatId });
+    return {
+      reply,
+      model: config.model,
+      context: { selectedChatId: selectedChatId || '', action: 'cancelled' },
+    };
+  }
+  if (pendingAction && isSaiGptActionConfirmation(latestUser.content)) {
+    const reply = executeSaiGptPendingAction(pendingAction, selectedChatId);
+    clearSaiGptPendingAction();
+    appendSaiGptMemoryMessage('user', latestUser.content, {
+      selectedChatId,
+      imageCount: latestUser.images.length,
+    });
+    appendSaiGptMemoryMessage('assistant', reply, { selectedChatId });
+    return {
+      reply,
+      model: config.model,
+      context: { selectedChatId: selectedChatId || '', action: 'executed' },
+    };
+  }
+
+  if (!config.key || !config.url || !config.model) {
+    throw new Error('S.AI GPT API не настроен: укажи Base URL, API Key и модель в разделе S.AI GPT.');
+  }
+
   const memoryMessages = (saiGptMemoryStore.messages || []).slice(-24).map((message) => ({
     role: message.role === 'assistant' ? 'assistant' : 'user',
     content: sanitizeSaiGptText(message.content || '', 4000),
@@ -5473,6 +5643,11 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Если владелец просто здоровается, отвечает коротко и спокойно, без аудита, без списка рисков и без разбора логов. Например: "Привет, на связи. Что смотрим?".',
     'Не запускай полный аудит сам. Давай аудит, оценки, риски и списки проблем только когда владелец прямо просит проверить состояние, диалог, ошибку, качество или код.',
     'Строго разделяй внутренний S.AI GPT и клиентскую магистраль. Ошибки scope=sai_gpt.chat относятся к этому внутреннему агенту и сами по себе НЕ означают, что клиентский AI отправляет техошибки клиентам.',
+    'Ты можешь готовить контролируемые действия, но только после подтверждения владельцем. Самовольно ничего не меняй.',
+    'Если владелец просит добавить/запомнить урок или исправить обучение, сначала объясни ошибку, покажи точный урок и спроси: "Добавить этот урок?". В самый конец ответа добавь скрытый блок действия строго в формате [SAI_ACTION]{"type":"create_training","payload":{"type":"bad","category":"other","contextText":"...","clientText":"...","aiText":"...","correctedText":"...","note":"..."}}[/SAI_ACTION].',
+    'Для хорошего ответа можно использовать payload.type="good"; для плохого обязательно нужен correctedText. category выбирай из доступных категорий training.',
+    'Если владелец просит включить или выключить существующий урок, покажи какой урок и спроси подтверждение, затем добавь [SAI_ACTION]{"type":"set_training_active","payload":{"id":"training-id","active":false,"reason":"..."}}[/SAI_ACTION].',
+    'Не показывай пользователю служебный блок SAI_ACTION словами и не объясняй его. Сервер сам уберёт этот блок из видимого ответа и выполнит действие только после "да/подтверждаю/добавь/сохрани".',
     'Если владелец спрашивает "ты на какой модели" или "какая модель у тебя", отвечай по snapshot.saiGptRuntime.model. Не называй aiControl.model, потому что это модель клиентского автоответчика.',
     'Не пиши, что "бот может отправлять клиенту сырую ошибку", если в логах нет ошибок клиентского AI/Telegram-send или прямого факта отправки такой ошибки клиенту. Формулируй как "вижу внутреннюю ошибку S.AI GPT", если scope=sai_gpt.chat.',
     'Если делаешь вывод из косвенных признаков, помечай его как предположение, а не факт.',
@@ -5530,26 +5705,33 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     }
   );
 
-  const reply = extractAiReply(response.data?.choices?.[0]?.message?.content);
+  const rawReply = extractAiReply(response.data?.choices?.[0]?.message?.content);
+  const parsedReply = extractSaiGptPendingAction(rawReply);
+  const reply = parsedReply.reply;
   if (!reply || !String(reply).trim()) {
     throw new Error('S.AI GPT вернул пустой ответ.');
   }
+  const storedAction = parsedReply.action ? setSaiGptPendingAction(parsedReply.action) : null;
+  const visibleReply = storedAction
+    ? `${reply}\n\nЖду твоё подтверждение: напиши "да" или "подтверждаю", и я выполню это действие. Если передумал — напиши "отмена".`
+    : reply;
 
   logEvent('SAI_GPT_REPLY', {
     status: 'ok',
     model: config.model,
     selectedChatId: selectedChatId || '',
     duration: Date.now() - startedAt,
-    replyText: reply,
+    replyText: visibleReply,
+    pendingAction: storedAction?.type || '',
   });
   appendSaiGptMemoryMessage('user', latestUser.content, {
     selectedChatId,
     imageCount: latestUser.images.length,
   });
-  appendSaiGptMemoryMessage('assistant', reply, { selectedChatId });
+  appendSaiGptMemoryMessage('assistant', visibleReply, { selectedChatId });
 
   return {
-    reply,
+    reply: visibleReply,
     model: config.model,
     context: {
       selectedChatId: selectedChatId || '',
@@ -6794,6 +6976,7 @@ app.get('/sai-gpt/history', (req, res) => {
   res.json({
     success: true,
     messages: (saiGptMemoryStore.messages || []).slice(-SAI_GPT_MEMORY_MAX_MESSAGES),
+    pendingAction: describeSaiGptPendingAction(getSaiGptPendingAction()),
   });
 });
 
