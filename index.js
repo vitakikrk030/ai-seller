@@ -5846,6 +5846,7 @@ function buildSaiGptOnDemandCapabilities() {
       'dialogIndex lists available chats.',
       'deepMatches auto-loads matching chats by name, username, chatId, product, facts, or phrase.',
       'selectedChat loads the open Inbox chat when available.',
+      'money and paymentSection expose the Inbox card payment area: spent amount, order count, in-work amount, order prices, paymentStatus, paymentCheckStatus and proofReceivedAt.',
       'Ask by name/chatId/username/phrase to pull that dialog instead of requesting manual history.',
     ],
     training: [
@@ -5854,7 +5855,7 @@ function buildSaiGptOnDemandCapabilities() {
       'Confirmed actions can create a training lesson or toggle lesson active state.',
     ],
     toolActions: [
-      'inspect_chat: load matching Inbox dialog by chatId/query.',
+      'inspect_chat: load matching Inbox dialog by chatId/query, including orders, money and paymentSection.',
       'search_code: search project snippets by query.',
       'inspect_file: open a safe excerpt from a project file.',
       'show_prompt: build customer AI prompt for a query/chat.',
@@ -5914,11 +5915,40 @@ function buildSaiGptInboxDeepMatches(inbox = {}, query = '', selectedChatId = ''
       score,
       customer: item.customer,
       status: item.status,
+      money: item.money,
       facts: item.facts,
       lastOrder: item.lastOrder,
       orders: Array.isArray(item.orders) ? item.orders.slice(-5) : [],
+      paymentSection: buildSaiGptPaymentSection(item),
       recentMessages: (item.recentMessages || []).slice(-500),
     }));
+}
+
+function buildSaiGptPaymentSection(profile = {}) {
+  const orders = Array.isArray(profile.orders) ? profile.orders : [];
+  const lastOrder = profile.lastOrder || orders[0] || null;
+  const money = profile.money || buildInboxMoneyStats(orders);
+  return {
+    money,
+    lastOrder,
+    orders: orders.slice(0, 20).map((order) => ({
+      id: order.id,
+      product: order.product || '',
+      size: order.size || '',
+      price: order.price || '',
+      status: order.status || '',
+      paymentStatus: order.paymentStatus || '',
+      paymentCheckStatus: order.paymentCheckStatus || '',
+      paymentCheckSummary: order.paymentCheckSummary || '',
+      proofReceivedAt: order.proofReceivedAt || '',
+      createdAt: order.createdAt || '',
+      updatedAt: order.updatedAt || '',
+    })),
+    notes: [
+      'confirmedSpendLabel/confirmedOrdersCount питают карточку Inbox "Потратил" и "Заказов".',
+      'proof_received означает, что чек получен и заказ учитывается в карточке, но это не финальное ручное подтверждение оплаты клиенту.',
+    ],
+  };
 }
 
 function buildSaiGptSystemContext(query, selectedChatId = '') {
@@ -5943,6 +5973,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     chatId: item.customer?.chatId || '',
     name: [item.customer?.firstName, item.customer?.lastName].filter(Boolean).join(' ') || item.customer?.username || '',
     status: item.status?.label || '',
+    money: item.money,
     lastMessage: item.lastMessage?.text || '',
     messages: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
   }));
@@ -5952,6 +5983,17 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     username: item.customer?.username || '',
     name: [item.customer?.firstName, item.customer?.lastName].filter(Boolean).join(' ') || item.customer?.title || '',
     status: item.status?.label || '',
+    money: item.money,
+    payment: {
+      confirmedSpendLabel: item.money?.confirmedSpendLabel || '0 ₽',
+      confirmedOrdersCount: item.money?.confirmedOrdersCount || 0,
+      potentialSpendLabel: item.money?.potentialSpendLabel || '0 ₽',
+      lastOrderStatus: item.lastOrder?.status || '',
+      lastPaymentStatus: item.lastOrder?.paymentStatus || '',
+      lastPaymentCheckStatus: item.lastOrder?.paymentCheckStatus || '',
+      lastProofReceivedAt: item.lastOrder?.proofReceivedAt || '',
+      lastOrderPrice: item.lastOrder?.price || '',
+    },
     messageCountLoaded: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
     lastMessageAt: item.lastMessage?.createdAt || '',
     lastMessage: item.lastMessage?.text || '',
@@ -5992,6 +6034,8 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
         ? {
           customer: selectedProfile.customer,
           status: selectedProfile.status,
+          money: selectedProfile.money,
+          paymentSection: buildSaiGptPaymentSection(selectedProfile),
           facts: selectedProfile.facts,
           lastOrder: selectedProfile.lastOrder,
           orders: Array.isArray(selectedProfile.orders) ? selectedProfile.orders.slice(-8) : [],
@@ -6096,6 +6140,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Если делаешь вывод из косвенных признаков, помечай его как предположение, а не факт.',
     'В снимке системы есть карта файлов projectMap, релевантные фрагменты codeSnippets, список последних диалогов и deepMatches — глубокие совпадения Inbox по текущему вопросу. Используй их как рабочую память.',
     'В inbox.dialogIndex есть индекс доступных Inbox-диалогов. В inbox.deepMatches есть автоматически подтянутые глубокие истории по имени, username, chatId, товару, фактам или фразе из вопроса.',
+    'Для вопросов про карточку клиента, оплату, чек, сумму, "Потратил", "Заказов" и "В работе" смотри inbox.*.money и paymentSection: там orders, price, paymentStatus, paymentCheckStatus, proofReceivedAt и расчёты карточки.',
     'Если владелец спрашивает про конкретного клиента по имени, username, chatId или фразе из переписки, НЕ проси его открывать чат и НЕ проси прислать историю. Сначала используй inbox.dialogIndex, inbox.deepMatches и selectedChat. Если совпадений несколько — назови варианты и попроси уточнить, кого именно смотреть.',
     'Если deepMatches содержит нужный чат, считай, что ты можешь читать этот диалог из Inbox в пределах переданных сообщений. Разбирай сообщения по ролям и времени, не выдумывай отсутствующие реплики.',
     'Не говори "у меня нет полных историй всех диалогов" как финальный ответ. Правильнее: "Я не держу все 500 диалогов целиком одновременно, но могу подтянуть нужный по имени/chatId/фразе; сейчас вижу такие совпадения...".',
