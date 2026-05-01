@@ -636,7 +636,18 @@ function clearSaiGptPendingAction() {
 function normalizeSaiGptPendingAction(action = {}) {
   const type = String(action.type || '').trim();
   const payload = action.payload && typeof action.payload === 'object' ? action.payload : {};
-  if (!['create_training', 'set_training_active'].includes(type)) return null;
+  const allowedTypes = [
+    'create_training',
+    'set_training_active',
+    'inspect_chat',
+    'search_code',
+    'inspect_file',
+    'show_prompt',
+    'search_logs',
+    'prepare_patch_plan',
+    'prepare_deploy_plan',
+  ];
+  if (!allowedTypes.includes(type)) return null;
 
   if (type === 'create_training') {
     return {
@@ -652,6 +663,83 @@ function normalizeSaiGptPendingAction(action = {}) {
         aiText: normalizeTrainingText(payload.aiText || '', 1200),
         correctedText: normalizeTrainingText(payload.correctedText || '', 1200),
         note: normalizeTrainingText(payload.note || '', 600),
+      },
+    };
+  }
+
+  if (type === 'inspect_chat') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        chatId: sanitizeSaiGptText(payload.chatId || '', 120),
+        query: sanitizeSaiGptText(payload.query || '', 300),
+        limit: Math.max(50, Math.min(2000, Number(payload.limit) || 800)),
+      },
+    };
+  }
+
+  if (type === 'search_code') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        query: sanitizeSaiGptText(payload.query || '', 300),
+      },
+    };
+  }
+
+  if (type === 'inspect_file') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        file: sanitizeSaiGptText(payload.file || '', 260),
+        pattern: sanitizeSaiGptText(payload.pattern || '', 160),
+        line: Math.max(1, Number(payload.line) || 1),
+        contextLines: Math.max(20, Math.min(180, Number(payload.contextLines) || 80)),
+      },
+    };
+  }
+
+  if (type === 'show_prompt') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        query: sanitizeSaiGptText(payload.query || '', 500),
+        chatId: sanitizeSaiGptText(payload.chatId || '', 120),
+      },
+    };
+  }
+
+  if (type === 'search_logs') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        query: sanitizeSaiGptText(payload.query || '', 300),
+        scope: sanitizeSaiGptText(payload.scope || '', 120),
+        limit: Math.max(20, Math.min(200, Number(payload.limit) || 80)),
+      },
+    };
+  }
+
+  if (type === 'prepare_patch_plan' || type === 'prepare_deploy_plan') {
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        goal: sanitizeSaiGptText(payload.goal || payload.query || '', 800),
+        files: Array.isArray(payload.files)
+          ? payload.files.map((file) => sanitizeSaiGptText(file, 260)).filter(Boolean).slice(0, 12)
+          : [],
       },
     };
   }
@@ -712,7 +800,116 @@ function describeSaiGptPendingAction(action = null) {
   if (action.type === 'set_training_active') {
     return `Ожидает подтверждения: ${action.payload?.active === false ? 'выключить' : 'включить'} урок ${action.payload?.id || ''}.`;
   }
+  if (action.type === 'inspect_chat') {
+    return `Ожидает подтверждения: открыть полный диалог ${action.payload?.chatId || action.payload?.query || 'по поиску'} (${action.payload?.limit || 800} сообщений).`;
+  }
+  if (action.type === 'search_code') {
+    return `Ожидает подтверждения: поиск по коду "${action.payload?.query || ''}".`;
+  }
+  if (action.type === 'inspect_file') {
+    return `Ожидает подтверждения: открыть фрагмент файла ${action.payload?.file || ''}.`;
+  }
+  if (action.type === 'show_prompt') {
+    return `Ожидает подтверждения: показать собранный prompt для "${action.payload?.query || 'текущего вопроса'}".`;
+  }
+  if (action.type === 'search_logs') {
+    return `Ожидает подтверждения: поиск по логам "${action.payload?.query || action.payload?.scope || ''}".`;
+  }
+  if (action.type === 'prepare_patch_plan') {
+    return `Ожидает подтверждения: подготовить patch-план для "${action.payload?.goal || ''}".`;
+  }
+  if (action.type === 'prepare_deploy_plan') {
+    return `Ожидает подтверждения: подготовить deploy-план для "${action.payload?.goal || ''}".`;
+  }
   return 'Ожидает подтверждения: системное действие S.AI GPT.';
+}
+
+function formatSaiGptJsonBlock(title, value) {
+  return `${title}\n\`\`\`json\n${redactSensitiveText(JSON.stringify(value, null, 2))}\n\`\`\``;
+}
+
+function findSaiGptInboxProfiles({ chatId = '', query = '', limit = 800 } = {}) {
+  const inbox = buildInboxPayload(500, Math.max(50, Math.min(2000, limit)));
+  const normalizedChatId = String(chatId || '').trim();
+  if (normalizedChatId) {
+    const exact = (inbox.items || []).find((item) => String(item.customer?.chatId || '') === normalizedChatId);
+    if (exact) return [exact];
+  }
+  return buildSaiGptInboxDeepMatches(inbox, query || chatId, normalizedChatId);
+}
+
+function resolveSaiGptProjectFile(file = '') {
+  const cleanFile = String(file || '').replace(/^\/+/, '').trim();
+  if (!cleanFile || cleanFile.includes('\0')) return null;
+  const resolved = path.resolve(__dirname, cleanFile);
+  if (!resolved.startsWith(`${__dirname}${path.sep}`) && resolved !== __dirname) return null;
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return null;
+  if (path.basename(resolved) === '.env' || path.basename(resolved).endsWith('.log')) return null;
+  if (!SAI_GPT_ALLOWED_CODE_EXTENSIONS.has(path.extname(resolved).toLowerCase())) return null;
+  return resolved;
+}
+
+function inspectSaiGptProjectFile(payload = {}) {
+  const resolved = resolveSaiGptProjectFile(payload.file);
+  if (!resolved) throw new Error('Файл не найден или недоступен для S.AI GPT.');
+  const content = fs.readFileSync(resolved, 'utf8');
+  const lines = content.split('\n');
+  const pattern = String(payload.pattern || '').trim().toLowerCase();
+  let center = Math.max(1, Number(payload.line) || 1);
+  if (pattern) {
+    const found = lines.findIndex((line) => line.toLowerCase().includes(pattern));
+    if (found >= 0) center = found + 1;
+  }
+  const contextLines = Math.max(20, Math.min(180, Number(payload.contextLines) || 80));
+  const start = Math.max(1, center - Math.floor(contextLines / 2));
+  const end = Math.min(lines.length, start + contextLines - 1);
+  return {
+    file: path.relative(__dirname, resolved),
+    totalLines: lines.length,
+    start,
+    end,
+    excerpt: lines.slice(start - 1, end).map((line, index) => `${start + index}: ${line}`).join('\n'),
+  };
+}
+
+function buildSaiGptPromptInspection(payload = {}, selectedChatId = '') {
+  const query = sanitizeSaiGptText(payload.query || '', 500);
+  const chatId = sanitizeSaiGptText(payload.chatId || selectedChatId || '', 120);
+  const inbox = buildInboxPayload(500, 2000);
+  const selectedProfile = chatId
+    ? (inbox.items || []).find((item) => String(item.customer?.chatId || '') === String(chatId))
+    : null;
+  const memoryContext = selectedProfile
+    ? buildMemoryContext(selectedProfile.customer?.chatId || chatId, getRuntimeSnapshot())
+    : null;
+  const prompt = buildSystemPrompt(getRuntimeSnapshot(), memoryContext, query);
+  const selectedTraining = selectTrainingExamples(query, memoryContext);
+  return {
+    query,
+    chatId,
+    selectedTrainingIds: selectedTraining.map((item) => item.id),
+    selectedTraining: selectedTraining.map((item) => ({
+      id: item.id,
+      type: item.type,
+      category: item.category,
+      ruleText: item.ruleText || buildTrainingRuleText(item),
+      note: item.note || '',
+    })),
+    prompt,
+  };
+}
+
+function searchSaiGptLogs(payload = {}) {
+  const query = sanitizeSaiGptText(payload.query || '', 300);
+  const scope = sanitizeSaiGptText(payload.scope || '', 120);
+  const limit = Math.max(20, Math.min(200, Number(payload.limit) || 80));
+  return getMergedLogs()
+    .filter((entry) => !scope || String(entry.scope || '').includes(scope))
+    .map((entry) => ({ entry, score: scoreSaiGptLogEntry(entry, query || scope) }))
+    .filter((item) => item.score > 0 || scope)
+    .sort((a, b) => b.score - a.score || new Date(b.entry.time) - new Date(a.entry.time))
+    .slice(0, limit)
+    .map((item) => item.entry);
 }
 
 function executeSaiGptPendingAction(action = null, selectedChatId = '') {
@@ -745,6 +942,56 @@ function executeSaiGptPendingAction(action = null, selectedChatId = '') {
       active: item.active !== false,
     });
     return `Готово, урок ${item.id} ${item.active === false ? 'выключен' : 'включён'}.`;
+  }
+  if (action.type === 'inspect_chat') {
+    const matches = findSaiGptInboxProfiles(action.payload || {});
+    if (!matches.length) return 'Не нашёл подходящий диалог в Inbox. Попробуй дать chatId, username, имя или точную фразу.';
+    return formatSaiGptJsonBlock('Нашёл и открыл диалог:', matches.slice(0, 3));
+  }
+  if (action.type === 'search_code') {
+    const snippets = buildSaiGptCodeSnippets(action.payload?.query || '');
+    return formatSaiGptJsonBlock('Результаты поиска по коду:', snippets);
+  }
+  if (action.type === 'inspect_file') {
+    const result = inspectSaiGptProjectFile(action.payload || {});
+    return [
+      `Файл: ${result.file}:${result.start}`,
+      '```text',
+      redactSensitiveText(result.excerpt),
+      '```',
+    ].join('\n');
+  }
+  if (action.type === 'show_prompt') {
+    const result = buildSaiGptPromptInspection(action.payload || {}, selectedChatId);
+    return formatSaiGptJsonBlock('Собранный prompt и уроки для этого вопроса:', result);
+  }
+  if (action.type === 'search_logs') {
+    const result = searchSaiGptLogs(action.payload || {});
+    return formatSaiGptJsonBlock('Результаты поиска по логам:', result);
+  }
+  if (action.type === 'prepare_patch_plan') {
+    return formatSaiGptJsonBlock('Patch-план без изменения файлов:', {
+      goal: action.payload?.goal || '',
+      filesToInspect: action.payload?.files || [],
+      safeSteps: [
+        'Найти точные функции/роуты через search_code или inspect_file.',
+        'Сформулировать минимальный diff-кандидат.',
+        'Показать риски для клиентской магистрали.',
+        'После отдельного подтверждения вносить код обычным деплоем, не через S.AI GPT.',
+      ],
+    });
+  }
+  if (action.type === 'prepare_deploy_plan') {
+    return formatSaiGptJsonBlock('Deploy-план без запуска команд:', {
+      goal: action.payload?.goal || '',
+      steps: [
+        'Проверить diff и убедиться, что нет лишних data/logs файлов.',
+        'npm run check.',
+        'Inline JS syntax check для public/index.html.',
+        'Commit + push.',
+        'На VPS: git pull --ff-only, npm run check, pm2 restart sai, pm2 status sai, health check.',
+      ],
+    });
   }
   throw new Error('Этот тип действия пока не поддержан.');
 }
@@ -5570,6 +5817,14 @@ function buildSaiGptOnDemandCapabilities() {
       'promptSelectedIds shows which lessons would enter the prompt for the current question.',
       'Confirmed actions can create a training lesson or toggle lesson active state.',
     ],
+    toolActions: [
+      'inspect_chat: load matching Inbox dialog by chatId/query.',
+      'search_code: search project snippets by query.',
+      'inspect_file: open a safe excerpt from a project file.',
+      'show_prompt: build customer AI prompt for a query/chat.',
+      'search_logs: search recent and persisted logs.',
+      'prepare_patch_plan and prepare_deploy_plan: produce plans only, no code/deploy execution.',
+    ],
     logs: [
       'recentErrors and relevant logs are available with scope, traceId, status, and provider details when logged.',
       'Separate scope=sai_gpt.* from customer AI and Telegram send pipeline before making claims.',
@@ -5796,6 +6051,9 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Если владелец просит добавить/запомнить урок или исправить обучение, сначала объясни ошибку, покажи точный урок и спроси: "Добавить этот урок?". В самый конец ответа добавь скрытый блок действия строго в формате [SAI_ACTION]{"type":"create_training","payload":{"type":"bad","category":"other","contextText":"...","clientText":"...","aiText":"...","correctedText":"...","note":"..."}}[/SAI_ACTION].',
     'Для хорошего ответа можно использовать payload.type="good"; для плохого обязательно нужен correctedText. category выбирай из доступных категорий training.',
     'Если владелец просит включить или выключить существующий урок, покажи какой урок и спроси подтверждение, затем добавь [SAI_ACTION]{"type":"set_training_active","payload":{"id":"training-id","active":false,"reason":"..."}}[/SAI_ACTION].',
+    'Если для ответа нужно больше данных, используй подтверждаемые tool-actions вместо просьбы "пришли сам": inspect_chat, search_code, inspect_file, show_prompt, search_logs, prepare_patch_plan, prepare_deploy_plan.',
+    'Форматы tool-actions: [SAI_ACTION]{"type":"inspect_chat","payload":{"chatId":"...","query":"имя/фраза","limit":800}}[/SAI_ACTION]; [SAI_ACTION]{"type":"search_code","payload":{"query":"..."} }[/SAI_ACTION]; [SAI_ACTION]{"type":"inspect_file","payload":{"file":"index.js","pattern":"functionName","line":1,"contextLines":80}}[/SAI_ACTION]; [SAI_ACTION]{"type":"show_prompt","payload":{"query":"фраза клиента","chatId":"..."}}[/SAI_ACTION]; [SAI_ACTION]{"type":"search_logs","payload":{"query":"402","scope":"sai_gpt.chat","limit":80}}[/SAI_ACTION].',
+    'Patch/deploy tool-actions только готовят план и данные для владельца. Они не редактируют код, не запускают shell, не пушат и не деплоят.',
     'Не показывай пользователю служебный блок SAI_ACTION словами и не объясняй его. Сервер сам уберёт этот блок из видимого ответа и выполнит действие только после "да/подтверждаю/добавь/сохрани".',
     'Если владелец спрашивает "ты на какой модели" или "какая модель у тебя", отвечай по snapshot.saiGptRuntime.model. Не называй aiControl.model, потому что это модель клиентского автоответчика.',
     'Не пиши, что "бот может отправлять клиенту сырую ошибку", если в логах нет ошибок клиентского AI/Telegram-send или прямого факта отправки такой ошибки клиенту. Формулируй как "вижу внутреннюю ошибку S.AI GPT", если scope=sai_gpt.chat.',
