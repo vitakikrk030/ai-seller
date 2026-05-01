@@ -2739,6 +2739,7 @@
                 <div class="list-panel">
                   <div class="stack">
                     <label class="toggle-line"><input id="contactsEnabled" type="checkbox" /> Добавлять контакты и информацию о магазине в финальную инструкцию</label>
+                    <label class="toggle-line"><input id="contactsAntiScamEnabled" type="checkbox" /> Предупреждать про мошенников и давать только официальные контакты</label>
                     <label class="toggle-line"><input id="contactsInstagramEnabled" type="checkbox" /> Instagram есть и его можно давать клиентам</label>
                     <div class="settings-grid">
                       <div class="field">
@@ -2748,6 +2749,10 @@
                       <div class="field">
                         <div class="field-label">Telegram</div>
                         <input id="contactsTelegram" type="text" placeholder="@username или ссылка" />
+                      </div>
+                      <div class="field">
+                        <div class="field-label">Менеджер</div>
+                        <input id="contactsManager" type="text" placeholder="@manager или ссылка" />
                       </div>
                       <div class="field">
                         <div class="field-label">Телефон</div>
@@ -3890,10 +3895,12 @@
       const contactsEnabled = document.getElementById('contactsEnabled');
       const contactsWebsite = document.getElementById('contactsWebsite');
       const contactsTelegram = document.getElementById('contactsTelegram');
+      const contactsManager = document.getElementById('contactsManager');
       const contactsPhone = document.getElementById('contactsPhone');
       const contactsWhatsapp = document.getElementById('contactsWhatsapp');
       const contactsInstagramEnabled = document.getElementById('contactsInstagramEnabled');
       const contactsInstagram = document.getElementById('contactsInstagram');
+      const contactsAntiScamEnabled = document.getElementById('contactsAntiScamEnabled');
       const contactsAboutText = document.getElementById('contactsAboutText');
       const contactsRulesText = document.getElementById('contactsRulesText');
       const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
@@ -5586,10 +5593,12 @@
         contactsEnabled.checked = data.contacts_enabled !== false;
         contactsWebsite.value = data.contacts_website || '';
         contactsTelegram.value = data.contacts_telegram || '';
+        contactsManager.value = data.contacts_manager || '';
         contactsPhone.value = data.contacts_phone || '';
         contactsWhatsapp.value = data.contacts_whatsapp || '';
         contactsInstagramEnabled.checked = data.contacts_instagram_enabled === true;
         contactsInstagram.value = data.contacts_instagram || '';
+        contactsAntiScamEnabled.checked = data.contacts_anti_scam_enabled !== false;
         contactsAboutText.value = data.contacts_about_text || '';
         contactsRulesText.value = data.contacts_rules_text || '';
         dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
@@ -6071,10 +6080,12 @@
               contacts_enabled: contactsEnabled.checked,
               contacts_website: contactsWebsite.value,
               contacts_telegram: contactsTelegram.value,
+              contacts_manager: contactsManager.value,
               contacts_phone: contactsPhone.value,
               contacts_whatsapp: contactsWhatsapp.value,
               contacts_instagram_enabled: contactsInstagramEnabled.checked,
               contacts_instagram: contactsInstagram.value,
+              contacts_anti_scam_enabled: contactsAntiScamEnabled.checked,
               contacts_about_text: contactsAboutText.value,
               contacts_rules_text: contactsRulesText.value,
             }),
@@ -6667,7 +6678,7 @@
       ]);
       bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityReturnSoftEnabled, qualityReturnNoDatesEnabled, qualityReturnInspectEnabled, qualityReturnText, qualityRulesText]);
       bindDirtyState(saveStoreTrustButton, [storeTrustEnabled, storeTrustOnlineOnlyEnabled, storeTrustSadovodHistoryEnabled, storeTrustCostReasonEnabled, storeTrustNoAddressEnabled, storeTrustSafePurchaseEnabled, storeTrustText]);
-      bindDirtyState(saveContactsButton, [contactsEnabled, contactsWebsite, contactsTelegram, contactsPhone, contactsWhatsapp, contactsInstagramEnabled, contactsInstagram, contactsAboutText, contactsRulesText]);
+      bindDirtyState(saveContactsButton, [contactsEnabled, contactsAntiScamEnabled, contactsWebsite, contactsTelegram, contactsManager, contactsPhone, contactsWhatsapp, contactsInstagramEnabled, contactsInstagram, contactsAboutText, contactsRulesText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);

@@ -236,10 +236,12 @@ const runtimeConfig = {
   contacts_enabled: process.env.CONTACTS_ENABLED !== 'false',
   contacts_website: process.env.CONTACTS_WEBSITE || DEFAULT_CONTACTS_WEBSITE,
   contacts_telegram: process.env.CONTACTS_TELEGRAM || '',
+  contacts_manager: process.env.CONTACTS_MANAGER || '',
   contacts_phone: process.env.CONTACTS_PHONE || '',
   contacts_whatsapp: process.env.CONTACTS_WHATSAPP || '',
   contacts_instagram_enabled: process.env.CONTACTS_INSTAGRAM_ENABLED === 'true',
   contacts_instagram: process.env.CONTACTS_INSTAGRAM || '',
+  contacts_anti_scam_enabled: process.env.CONTACTS_ANTI_SCAM_ENABLED !== 'false',
   contacts_about_text: process.env.CONTACTS_ABOUT_TEXT || '',
   contacts_rules_text: process.env.CONTACTS_RULES_TEXT || '',
   dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
@@ -2771,10 +2773,12 @@ function getRuntimeSnapshot() {
     contacts_enabled: parseConfigBoolean(runtimeConfig.contacts_enabled, true),
     contacts_website: runtimeConfig.contacts_website || DEFAULT_CONTACTS_WEBSITE,
     contacts_telegram: runtimeConfig.contacts_telegram || '',
+    contacts_manager: runtimeConfig.contacts_manager || '',
     contacts_phone: runtimeConfig.contacts_phone || '',
     contacts_whatsapp: runtimeConfig.contacts_whatsapp || '',
     contacts_instagram_enabled: parseConfigBoolean(runtimeConfig.contacts_instagram_enabled, false),
     contacts_instagram: runtimeConfig.contacts_instagram || '',
+    contacts_anti_scam_enabled: parseConfigBoolean(runtimeConfig.contacts_anti_scam_enabled, true),
     contacts_about_text: runtimeConfig.contacts_about_text || '',
     contacts_rules_text: runtimeConfig.contacts_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
@@ -3022,6 +3026,7 @@ function applyConfigUpdate(body) {
     ['store_trust_no_address_enabled', 'STORE_TRUST_NO_ADDRESS_ENABLED'],
     ['store_trust_safe_purchase_enabled', 'STORE_TRUST_SAFE_PURCHASE_ENABLED'],
     ['contacts_enabled', 'CONTACTS_ENABLED'],
+    ['contacts_anti_scam_enabled', 'CONTACTS_ANTI_SCAM_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   applyBooleanConfig(body, 'contacts_instagram_enabled', 'CONTACTS_INSTAGRAM_ENABLED', false);
@@ -3040,6 +3045,7 @@ function applyConfigUpdate(body) {
     ['store_trust_text', 'STORE_TRUST_TEXT'],
     ['contacts_website', 'CONTACTS_WEBSITE'],
     ['contacts_telegram', 'CONTACTS_TELEGRAM'],
+    ['contacts_manager', 'CONTACTS_MANAGER'],
     ['contacts_phone', 'CONTACTS_PHONE'],
     ['contacts_whatsapp', 'CONTACTS_WHATSAPP'],
     ['contacts_instagram', 'CONTACTS_INSTAGRAM'],
@@ -4625,15 +4631,20 @@ function getContactsGuidance(config) {
   if (!parseConfigBoolean(config.contacts_enabled, true)) return '';
   const website = String(config.contacts_website || DEFAULT_CONTACTS_WEBSITE).trim();
   const telegram = String(config.contacts_telegram || '').trim();
+  const manager = String(config.contacts_manager || '').trim();
   const phone = String(config.contacts_phone || '').trim();
   const whatsapp = String(config.contacts_whatsapp || '').trim();
   const instagram = String(config.contacts_instagram || '').trim();
   const hasInstagram = parseConfigBoolean(config.contacts_instagram_enabled, false) && instagram;
+  const antiScamEnabled = parseConfigBoolean(config.contacts_anti_scam_enabled, true);
 
   return buildGuidanceSection('Контакты и о нас:', [
     'На вопросы про контакты, соцсети, сайт и "о нас" отвечать только из этого блока. Не выдумывать Instagram, WhatsApp, телефон, адрес, шоурум или другие каналы связи.',
+    antiScamEnabled
+      && 'Если клиент спрашивает "это ваше?", "это вы?", "не мошенники?", "куда писать/оплачивать?", сразу спокойно предупредить: ориентироваться только на официальные контакты ниже, не переводить деньги и не писать в сторонние аккаунты, которые не указаны здесь.',
     website && `Сайт: ${website}`,
     telegram && `Telegram: ${telegram}`,
+    manager && `Менеджер / официальный контакт: ${manager}`,
     phone && `Телефон: ${phone}`,
     whatsapp ? `WhatsApp: ${whatsapp}` : 'WhatsApp не указан: не предлагать WhatsApp как канал связи.',
     hasInstagram
@@ -5641,10 +5652,12 @@ app.get('/config/status', async (req, res) => {
     contacts_enabled: parseConfigBoolean(runtimeConfig.contacts_enabled, true),
     contacts_website: runtimeConfig.contacts_website || DEFAULT_CONTACTS_WEBSITE,
     contacts_telegram: runtimeConfig.contacts_telegram || '',
+    contacts_manager: runtimeConfig.contacts_manager || '',
     contacts_phone: runtimeConfig.contacts_phone || '',
     contacts_whatsapp: runtimeConfig.contacts_whatsapp || '',
     contacts_instagram_enabled: parseConfigBoolean(runtimeConfig.contacts_instagram_enabled, false),
     contacts_instagram: runtimeConfig.contacts_instagram || '',
+    contacts_anti_scam_enabled: parseConfigBoolean(runtimeConfig.contacts_anti_scam_enabled, true),
     contacts_about_text: runtimeConfig.contacts_about_text || '',
     contacts_rules_text: runtimeConfig.contacts_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
@@ -6949,10 +6962,12 @@ app.delete('/config', (req, res) => {
   runtimeConfig.contacts_enabled = true;
   runtimeConfig.contacts_website = DEFAULT_CONTACTS_WEBSITE;
   runtimeConfig.contacts_telegram = '';
+  runtimeConfig.contacts_manager = '';
   runtimeConfig.contacts_phone = '';
   runtimeConfig.contacts_whatsapp = '';
   runtimeConfig.contacts_instagram_enabled = false;
   runtimeConfig.contacts_instagram = '';
+  runtimeConfig.contacts_anti_scam_enabled = true;
   runtimeConfig.contacts_about_text = '';
   runtimeConfig.contacts_rules_text = '';
   runtimeConfig.dialog_examples_enabled = false;
