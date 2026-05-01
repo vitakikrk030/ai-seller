@@ -313,7 +313,7 @@ function createCustomerStore(options = {}) {
 
   function getInboxCustomers(options = {}) {
     const limit = Math.max(1, Math.min(500, Number(options.limit) || 200));
-    const messageLimit = Math.max(50, Math.min(300, Number(options.messageLimit) || 300));
+    const messageLimit = Math.max(50, Math.min(2000, Number(options.messageLimit) || 300));
     return statements.listCustomers.all({ limit }).map((customerRow) => {
       const facts = getFactMapByCustomerId(customerRow.id, statements);
       const stateRow = statements.getDialogState.get(customerRow.id);

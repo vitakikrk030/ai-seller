@@ -6207,7 +6207,7 @@
       }
 
       async function loadInbox() {
-        const data = await fetchJSON('/inbox?limit=200');
+        const data = await fetchJSON('/inbox?limit=200&messageLimit=1000');
         const items = Array.isArray(data.items) ? data.items : [];
         inboxChatsCache = items.map(mapInboxItemToChat)
           .filter((chat) => chat.chatId && chat.messages.length)

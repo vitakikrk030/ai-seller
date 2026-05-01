@@ -6344,8 +6344,8 @@ async function runFollowupWorker(options = {}) {
   return result;
 }
 
-function buildInboxPayload(limit) {
-  const rows = safeCustomerStoreCall('customer.inbox.list', (store) => store.getInboxCustomers({ limit })) || [];
+function buildInboxPayload(limit, messageLimit = 1000) {
+  const rows = safeCustomerStoreCall('customer.inbox.list', (store) => store.getInboxCustomers({ limit, messageLimit })) || [];
   const items = rows.map((profile) => {
     const status = detectInboxStatus(profile);
     const money = buildInboxMoneyStats(profile.orders || []);
@@ -6397,7 +6397,8 @@ function startFollowupWorkerLoop() {
 
 app.get('/inbox', (req, res) => {
   const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200));
-  res.json(buildInboxPayload(limit));
+  const messageLimit = Math.max(50, Math.min(2000, Number(req.query.messageLimit) || 1000));
+  res.json(buildInboxPayload(limit, messageLimit));
 });
 
 app.get('/followups', (req, res) => {
