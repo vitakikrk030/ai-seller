@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function nowIso() {
   return new Date().toISOString();
@@ -10,6 +10,19 @@ function nowIso() {
 
 function clean(value, limit = 1200) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function normalizeMedia(input = []) {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 8).map((item) => ({
+    type: clean(item?.type || 'media', 40),
+    fileId: clean(item?.fileId || item?.file_id, 240),
+    uniqueId: clean(item?.uniqueId || item?.file_unique_id, 160),
+    mimeType: clean(item?.mimeType || item?.mime_type, 120),
+    fileName: clean(item?.fileName || item?.file_name, 180),
+    width: Number(item?.width) || 0,
+    height: Number(item?.height) || 0,
+  })).filter((item) => item.fileId || item.type);
 }
 
 function createCustomerStore(options = {}) {
@@ -93,6 +106,7 @@ function createCustomerStore(options = {}) {
       role,
       text: messageText,
       message_type: clean(input.messageType || 'text', 60),
+      media_json: JSON.stringify(normalizeMedia(input.media)),
       trace_id: clean(input.traceId, 80),
       created_at: timestamp,
     });
@@ -651,6 +665,12 @@ function runMigrations(db) {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(4, nowIso());
   }
 
+  const hasV5 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(5);
+  if (!hasV5) {
+    addColumnIfMissing(db, 'messages', 'media_json', 'TEXT');
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(5, nowIso());
+  }
+
 }
 
 function addColumnIfMissing(db, table, column, definition) {
@@ -695,8 +715,8 @@ function prepareStatements(db) {
       LIMIT 1
     `),
     insertMessage: db.prepare(`
-      INSERT INTO messages (customer_id, telegram_message_id, role, text, message_type, trace_id, created_at)
-      VALUES (@customer_id, @telegram_message_id, @role, @text, @message_type, @trace_id, @created_at)
+      INSERT INTO messages (customer_id, telegram_message_id, role, text, message_type, media_json, trace_id, created_at)
+      VALUES (@customer_id, @telegram_message_id, @role, @text, @message_type, @media_json, @trace_id, @created_at)
     `),
     getMessageById: db.prepare('SELECT * FROM messages WHERE id = ?'),
     getRecentMessages: db.prepare(`
@@ -888,6 +908,7 @@ function mapMessageRow(row) {
     role: row.role,
     type: row.message_type || 'text',
     text: row.text || '',
+    media: parseJson(row.media_json) || [],
     telegramMessageId: row.telegram_message_id || '',
     traceId: row.trace_id || '',
     createdAt: row.created_at || '',

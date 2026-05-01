@@ -819,6 +819,7 @@ function appendMemoryMessage(input, role, text) {
     role,
     type: input.messageType || 'text',
     text: cleanText,
+    media: Array.isArray(input.media) ? input.media.slice(0, 8) : [],
     telegramMessageId,
     traceId,
     createdAt: new Date().toISOString(),
@@ -4169,6 +4170,7 @@ async function readTelegramPdfReceipt(config, context, document) {
 
 async function normalizeTelegramMessage(config, context, message) {
   const images = [];
+  const media = [];
   let text = message.text || message.caption || '';
   const messageType = detectMessageType(message);
   let hasMedia = false;
@@ -4177,6 +4179,13 @@ async function normalizeTelegramMessage(config, context, message) {
   if (Array.isArray(message.photo) && message.photo.length > 0) {
     const photo = message.photo[message.photo.length - 1];
     hasMedia = true;
+    media.push({
+      type: 'photo',
+      fileId: photo.file_id || '',
+      uniqueId: photo.file_unique_id || '',
+      width: photo.width || 0,
+      height: photo.height || 0,
+    });
     try {
       const imageUrl = await getTelegramFileUrl(config, context.chatId, messageType, photo.file_id);
       if (imageUrl) images.push(imageUrl);
@@ -4197,6 +4206,13 @@ async function normalizeTelegramMessage(config, context, message) {
 
     if (isImageLikeDocument) {
       hasMedia = true;
+      media.push({
+        type: 'image_document',
+        fileId: message.document.file_id || '',
+        uniqueId: message.document.file_unique_id || '',
+        mimeType: documentMimeType,
+        fileName: documentName,
+      });
       try {
         const imageUrl = await getTelegramFileUrl(config, context.chatId, 'document', message.document.file_id);
         if (imageUrl) images.push(imageUrl);
@@ -4207,6 +4223,13 @@ async function normalizeTelegramMessage(config, context, message) {
     }
 
     if (!text && isPdfDocument) {
+      media.push({
+        type: 'pdf',
+        fileId: message.document.file_id || '',
+        uniqueId: message.document.file_unique_id || '',
+        mimeType: documentMimeType,
+        fileName: documentName,
+      });
       const pdfReceipt = await readTelegramPdfReceipt(config, context, message.document);
       if (pdfReceipt.imageDataUrl) {
         images.push(pdfReceipt.imageDataUrl);
@@ -4240,6 +4263,12 @@ async function normalizeTelegramMessage(config, context, message) {
   }
 
   if (!text && message.voice) {
+    media.push({
+      type: 'voice',
+      fileId: message.voice.file_id || '',
+      uniqueId: message.voice.file_unique_id || '',
+      mimeType: message.voice.mime_type || 'audio/ogg',
+    });
     text = await transcribeTelegramMedia(config, context, message.voice.file_id, {
       fileSize: message.voice.file_size,
       mimeType: message.voice.mime_type || 'audio/ogg',
@@ -4248,10 +4277,22 @@ async function normalizeTelegramMessage(config, context, message) {
   }
 
   if (!text && message.video) {
+    media.push({
+      type: 'video',
+      fileId: message.video.file_id || '',
+      uniqueId: message.video.file_unique_id || '',
+      mimeType: message.video.mime_type || 'video/mp4',
+    });
     text = 'пользователь отправил видео';
   }
 
   if (!text && message.video_note) {
+    media.push({
+      type: 'video_note',
+      fileId: message.video_note.file_id || '',
+      uniqueId: message.video_note.file_unique_id || '',
+      mimeType: 'video/mp4',
+    });
     text = await transcribeTelegramMedia(config, context, message.video_note.file_id, {
       fileSize: message.video_note.file_size,
       mimeType: 'video/mp4',
@@ -4264,6 +4305,13 @@ async function normalizeTelegramMessage(config, context, message) {
   }
 
   if (!text && message.document) {
+    media.push({
+      type: 'document',
+      fileId: message.document.file_id || '',
+      uniqueId: message.document.file_unique_id || '',
+      mimeType: message.document.mime_type || '',
+      fileName: message.document.file_name || '',
+    });
     text = 'Клиент прислал файл. Если это чек или квитанция, содержимое файла автоматически не прочитано: не подтверждать оплату финально, попросить скрин/фото чека или ручную проверку.';
     hasMedia = true;
   }
@@ -4297,6 +4345,7 @@ async function normalizeTelegramMessage(config, context, message) {
   return {
     text: truncateText(text),
     images,
+    media,
     messageType,
     hasMedia,
     hasLinkInput,
@@ -5772,6 +5821,37 @@ app.delete('/training/:id', (req, res) => {
   trainingStore.items = trainingStore.items.filter((item) => item.id !== id);
   if (trainingStore.items.length !== before) saveTrainingStore();
   res.json({ success: true });
+});
+
+app.get('/media/telegram/:fileId', async (req, res) => {
+  const fileId = String(req.params.fileId || '').trim();
+  if (!fileId) {
+    res.status(400).send('Missing file id');
+    return;
+  }
+  try {
+    const fileUrl = await getTelegramFileUrl(getRuntimeSnapshot(), 'media', 'media', fileId);
+    if (!fileUrl) {
+      res.status(404).send('File not found');
+      return;
+    }
+    const response = await axios.get(fileUrl, {
+      responseType: 'stream',
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (response.headers['content-type']) {
+      res.setHeader('Content-Type', response.headers['content-type']);
+    }
+    response.data.pipe(res);
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'telegram.media.proxy',
+      status: 'error',
+      error: error.message,
+    });
+    res.status(502).send('Could not load Telegram media');
+  }
 });
 
 function parseMoneyAmount(value) {

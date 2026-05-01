@@ -2375,6 +2375,34 @@
         word-break: break-word;
       }
 
+      .chat-media-grid {
+        display: grid;
+        gap: 6px;
+      }
+
+      .chat-media-image {
+        display: block;
+        max-width: min(320px, 100%);
+        max-height: 360px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        object-fit: contain;
+        background: color-mix(in srgb, var(--panel) 94%, transparent);
+      }
+
+      .chat-media-chip {
+        display: inline-flex;
+        width: max-content;
+        max-width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 5px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.2;
+        background: color-mix(in srgb, var(--panel-alt) 92%, transparent);
+      }
+
       .chat-bubble-meta {
         color: var(--muted);
         font-size: 10px;
@@ -4114,11 +4142,12 @@
               chatId,
               userId: item.userId || chatId,
               time: item.time,
-              type: item.event === 'IN' ? 'in' : 'out',
-              source: item.messageSource || '',
-              text: item.event === 'IN' ? (item.text || '') : (item.replyText || ''),
-              messageType: item.messageType || '',
-            });
+            type: item.event === 'IN' ? 'in' : 'out',
+            source: item.messageSource || '',
+            text: item.event === 'IN' ? (item.text || '') : (item.replyText || ''),
+            media: Array.isArray(item.media) ? item.media : [],
+            messageType: item.messageType || '',
+          });
           });
 
         items
@@ -4163,6 +4192,7 @@
             type: message.role === 'assistant' || message.role === 'manager' ? 'out' : 'in',
             source: message.role === 'manager' ? 'manager' : '',
             text: message.text || '',
+            media: Array.isArray(message.media) ? message.media : [],
             messageType: message.type || '',
           }))
           .sort((a, b) => new Date(a.time) - new Date(b.time));
@@ -4521,6 +4551,28 @@
         return `${role}: ${String(message.text || '').trim()}`;
       }
 
+      function renderMessageMedia(message) {
+        const media = Array.isArray(message?.media) ? message.media : [];
+        if (!media.length) return '';
+        const items = media.map((item) => {
+          const type = item?.type || 'media';
+          const fileId = item?.fileId || '';
+          const fileName = item?.fileName || '';
+          const isImage = ['photo', 'image_document'].includes(type) && fileId;
+          if (isImage) {
+            return `<img class="chat-media-image" src="/media/telegram/${encodeURIComponent(fileId)}" alt="${escapeAttr(fileName || 'Фото из Telegram')}" loading="lazy" />`;
+          }
+          const label = fileName || (
+            type === 'pdf' ? 'PDF-файл'
+              : type === 'voice' ? 'Голосовое'
+                : type === 'video' || type === 'video_note' ? 'Видео'
+                  : 'Файл'
+          );
+          return `<span class="chat-media-chip">${escapeHtml(label)}</span>`;
+        }).join('');
+        return `<div class="chat-media-grid">${items}</div>`;
+      }
+
       function getTrainingDraft(chat) {
         const chatId = chat?.chatId || '';
         if (trainingDraft.chatId !== chatId) {
@@ -4771,6 +4823,7 @@
               return `
               <div class="chat-bubble ${message.type}${message.source === 'manager' ? ' manager' : ''}${selectable ? ' selectable' : ''}${selectedClass}" data-message-index="${escapeHtml(String(index))}" data-message-type="${escapeHtml(message.type)}">
                 <div class="chat-bubble-role">${message.source === 'manager' ? 'Менеджер' : message.type === 'out' ? 'AI' : 'Пользователь'}</div>
+                ${renderMessageMedia(message)}
                 <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
                 <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
                 ${pickText ? `<div class="training-pick">${escapeHtml(pickText)}</div>` : ''}
