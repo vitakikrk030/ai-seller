@@ -801,11 +801,14 @@ function appendMemoryMessage(input, role, text) {
   safeCustomerStoreCall('customer.message.append', (store) => store.appendMessage(input, role, cleanText));
 
   const telegramMessageId = role !== 'assistant' ? String(input.messageId || '') : '';
+  const traceId = String(input.traceId || '');
   const duplicate = memoryStore.messages.some((message) => (
     message.chatId === chatId
     && message.role === role
-    && telegramMessageId
-    && message.telegramMessageId === telegramMessageId
+    && (
+      (telegramMessageId && message.telegramMessageId === telegramMessageId)
+      || (!telegramMessageId && traceId && message.traceId === traceId)
+    )
   ));
   if (duplicate) return;
 
@@ -817,7 +820,7 @@ function appendMemoryMessage(input, role, text) {
     type: input.messageType || 'text',
     text: cleanText,
     telegramMessageId,
-    traceId: input.traceId || '',
+    traceId,
     createdAt: new Date().toISOString(),
   });
   persistMemoryStore();
@@ -2300,9 +2303,7 @@ async function processInputBatch(inputs) {
           });
           return;
         }
-        if (parseConfigBoolean(batchInput.config.memory_enabled, true)) {
-          appendMemoryMessage(batchInput, 'assistant', finalReply);
-        }
+        appendMemoryMessage(batchInput, 'assistant', finalReply);
         setDialogAiMode(batchInput.chatId, 'active', 'ai_reply');
       }
     } finally {

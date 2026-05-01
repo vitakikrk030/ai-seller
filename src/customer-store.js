@@ -78,6 +78,12 @@ function createCustomerStore(options = {}) {
         telegram_message_id: telegramMessageId,
       });
       if (duplicate) return duplicate;
+    } else if (role === 'assistant' && clean(input.traceId, 80)) {
+      const duplicate = statements.getAssistantMessageDuplicate.get({
+        customer_id: customer.id,
+        trace_id: clean(input.traceId, 80),
+      });
+      if (duplicate) return duplicate;
     }
 
     const timestamp = nowIso();
@@ -307,7 +313,7 @@ function createCustomerStore(options = {}) {
 
   function getInboxCustomers(options = {}) {
     const limit = Math.max(1, Math.min(500, Number(options.limit) || 200));
-    const messageLimit = Math.max(50, Math.min(300, Number(options.messageLimit) || 150));
+    const messageLimit = Math.max(50, Math.min(300, Number(options.messageLimit) || 300));
     return statements.listCustomers.all({ limit }).map((customerRow) => {
       const facts = getFactMapByCustomerId(customerRow.id, statements);
       const stateRow = statements.getDialogState.get(customerRow.id);
@@ -681,6 +687,11 @@ function prepareStatements(db) {
     getMessageDuplicate: db.prepare(`
       SELECT * FROM messages
       WHERE customer_id = @customer_id AND role = @role AND telegram_message_id = @telegram_message_id
+      LIMIT 1
+    `),
+    getAssistantMessageDuplicate: db.prepare(`
+      SELECT * FROM messages
+      WHERE customer_id = @customer_id AND role = 'assistant' AND trace_id = @trace_id
       LIMIT 1
     `),
     insertMessage: db.prepare(`

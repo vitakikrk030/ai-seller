@@ -2350,6 +2350,16 @@
         border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
       }
 
+      .chat-bubble.manager {
+        justify-self: end;
+        background: color-mix(in srgb, var(--warn) 12%, var(--panel-alt));
+        border-color: color-mix(in srgb, var(--warn) 38%, var(--border));
+      }
+
+      .chat-bubble.manager .chat-bubble-role {
+        color: color-mix(in srgb, var(--warn) 88%, var(--text));
+      }
+
       .chat-bubble-role {
         font-size: 10px;
         letter-spacing: 0.12em;
@@ -4733,7 +4743,7 @@
                   ? (selectedAsFragment ? 'В выбранном фрагменте' : 'Клик: добавить в урок')
                   : '';
               return `
-              <div class="chat-bubble ${message.type}${selectable ? ' selectable' : ''}${selectedClass}" data-message-index="${escapeHtml(String(index))}" data-message-type="${escapeHtml(message.type)}">
+              <div class="chat-bubble ${message.type}${message.source === 'manager' ? ' manager' : ''}${selectable ? ' selectable' : ''}${selectedClass}" data-message-index="${escapeHtml(String(index))}" data-message-type="${escapeHtml(message.type)}">
                 <div class="chat-bubble-role">${message.source === 'manager' ? 'Менеджер' : message.type === 'out' ? 'AI' : 'Пользователь'}</div>
                 <div class="chat-bubble-text">${escapeHtml(message.text)}</div>
                 <div class="chat-bubble-meta">${escapeHtml(formatTimeLabel(message.time))}${message.messageType ? ` · ${escapeHtml(message.messageType)}` : ''}</div>
