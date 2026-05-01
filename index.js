@@ -3844,6 +3844,10 @@ function isOpenAiAudioApi(baseUrl) {
   return /api\.openai\.com\/v1\/?$/i.test(String(baseUrl || '').trim());
 }
 
+function isOpenAiChatApi(baseUrl) {
+  return /api\.openai\.com\/v1\/?$/i.test(String(baseUrl || '').trim());
+}
+
 async function transcribeTelegramMedia(config, context, fileId, options = {}) {
   const sttConfig = getSttRuntimeConfig(config);
 
@@ -4499,7 +4503,7 @@ async function explainTrainingAnswer(input = {}) {
       model: config.model,
       messages,
       temperature: 0.2,
-      response_format: isOpenAiCompatible(config.ai_url) ? { type: 'json_object' } : undefined,
+      response_format: isOpenAiChatApi(config.ai_url) ? { type: 'json_object' } : undefined,
     },
     {
       headers: {
