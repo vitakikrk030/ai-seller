@@ -2731,6 +2731,53 @@
 <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
+                    <div class="list-title">Контакты / О нас</div>
+                    <div class="list-subtitle">Сайт, соцсети и короткие факты, которые AI не должен выдумывать.</div>
+                  </div>
+                  <div class="list-caret">⌄</div>
+                </summary>
+                <div class="list-panel">
+                  <div class="stack">
+                    <label class="toggle-line"><input id="contactsEnabled" type="checkbox" /> Добавлять контакты и информацию о магазине в финальную инструкцию</label>
+                    <label class="toggle-line"><input id="contactsInstagramEnabled" type="checkbox" /> Instagram есть и его можно давать клиентам</label>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <div class="field-label">Сайт</div>
+                        <input id="contactsWebsite" type="text" placeholder="https://iwak.ru" />
+                      </div>
+                      <div class="field">
+                        <div class="field-label">Telegram</div>
+                        <input id="contactsTelegram" type="text" placeholder="@username или ссылка" />
+                      </div>
+                      <div class="field">
+                        <div class="field-label">Телефон</div>
+                        <input id="contactsPhone" type="text" placeholder="+7..." />
+                      </div>
+                      <div class="field">
+                        <div class="field-label">WhatsApp</div>
+                        <input id="contactsWhatsapp" type="text" placeholder="если есть" />
+                      </div>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Instagram</div>
+                      <input id="contactsInstagram" type="text" placeholder="оставь пустым, если Instagram нет" />
+                    </div>
+                    <div class="field">
+                      <div class="field-label">О нас</div>
+                      <textarea id="contactsAboutText" placeholder="Например: IWAK — онлайн-магазин обуви и одежды. Заказ оформляем в диалоге, перед отправкой товар проверяем."></textarea>
+                    </div>
+                    <div class="field">
+                      <div class="field-label">Дополнительные правила контактов</div>
+                      <textarea id="contactsRulesText" placeholder="Например: если спрашивают Instagram, отвечать что Instagram сейчас нет, предложить сайт или Telegram."></textarea>
+                    </div>
+                    <div class="actions"><button id="saveContacts" class="button-primary" type="button">Сохранить</button></div>
+                  </div>
+                </div>
+              </details>
+
+<details class="list-item">
+                <summary class="list-summary">
+                  <div class="list-summary-main">
                     <div class="list-title">Живость общения</div>
                     <div class="list-subtitle">Человеческая речь, small talk, стиль и мягкая связь с товаром.</div>
                   </div>
@@ -3840,6 +3887,15 @@
       const storeTrustNoAddressEnabled = document.getElementById('storeTrustNoAddressEnabled');
       const storeTrustSafePurchaseEnabled = document.getElementById('storeTrustSafePurchaseEnabled');
       const storeTrustText = document.getElementById('storeTrustText');
+      const contactsEnabled = document.getElementById('contactsEnabled');
+      const contactsWebsite = document.getElementById('contactsWebsite');
+      const contactsTelegram = document.getElementById('contactsTelegram');
+      const contactsPhone = document.getElementById('contactsPhone');
+      const contactsWhatsapp = document.getElementById('contactsWhatsapp');
+      const contactsInstagramEnabled = document.getElementById('contactsInstagramEnabled');
+      const contactsInstagram = document.getElementById('contactsInstagram');
+      const contactsAboutText = document.getElementById('contactsAboutText');
+      const contactsRulesText = document.getElementById('contactsRulesText');
       const dialogExamplesEnabled = document.getElementById('dialogExamplesEnabled');
       const dialogExamplesText = document.getElementById('dialogExamplesText');
       const aiControlPreview = document.getElementById('aiControlPreview');
@@ -3950,6 +4006,7 @@
       const saveDeliveryButton = document.getElementById('saveDelivery');
       const saveQualityRulesButton = document.getElementById('saveQualityRules');
       const saveStoreTrustButton = document.getElementById('saveStoreTrust');
+      const saveContactsButton = document.getElementById('saveContacts');
       const saveDialogExamplesButton = document.getElementById('saveDialogExamples');
       const saveTelegramButton = document.getElementById('saveTelegram');
       const saveAiProviderButton = document.getElementById('saveAiProvider');
@@ -5526,6 +5583,15 @@
         storeTrustNoAddressEnabled.checked = data.store_trust_no_address_enabled !== false;
         storeTrustSafePurchaseEnabled.checked = data.store_trust_safe_purchase_enabled !== false;
         storeTrustText.value = data.store_trust_text || '';
+        contactsEnabled.checked = data.contacts_enabled !== false;
+        contactsWebsite.value = data.contacts_website || '';
+        contactsTelegram.value = data.contacts_telegram || '';
+        contactsPhone.value = data.contacts_phone || '';
+        contactsWhatsapp.value = data.contacts_whatsapp || '';
+        contactsInstagramEnabled.checked = data.contacts_instagram_enabled === true;
+        contactsInstagram.value = data.contacts_instagram || '';
+        contactsAboutText.value = data.contacts_about_text || '';
+        contactsRulesText.value = data.contacts_rules_text || '';
         dialogExamplesEnabled.checked = data.dialog_examples_enabled === true;
         dialogExamplesText.value = data.dialog_examples_text || '';
         aiControlPreview.value = data.ai_control_context || '';
@@ -5990,6 +6056,27 @@
               store_trust_no_address_enabled: storeTrustNoAddressEnabled.checked,
               store_trust_safe_purchase_enabled: storeTrustSafePurchaseEnabled.checked,
               store_trust_text: storeTrustText.value,
+            }),
+          });
+          await loadStatus();
+        });
+      }
+
+      async function saveContacts() {
+        await performSave(saveContactsButton, async () => {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contacts_enabled: contactsEnabled.checked,
+              contacts_website: contactsWebsite.value,
+              contacts_telegram: contactsTelegram.value,
+              contacts_phone: contactsPhone.value,
+              contacts_whatsapp: contactsWhatsapp.value,
+              contacts_instagram_enabled: contactsInstagramEnabled.checked,
+              contacts_instagram: contactsInstagram.value,
+              contacts_about_text: contactsAboutText.value,
+              contacts_rules_text: contactsRulesText.value,
             }),
           });
           await loadStatus();
@@ -6580,6 +6667,7 @@
       ]);
       bindDirtyState(saveQualityRulesButton, [qualityReplicaHonestyEnabled, qualityNoOriginalClaimsEnabled, qualityCalmExplanationEnabled, qualityNoExtraPhotosEnabled, qualityReturnSoftEnabled, qualityReturnNoDatesEnabled, qualityReturnInspectEnabled, qualityReturnText, qualityRulesText]);
       bindDirtyState(saveStoreTrustButton, [storeTrustEnabled, storeTrustOnlineOnlyEnabled, storeTrustSadovodHistoryEnabled, storeTrustCostReasonEnabled, storeTrustNoAddressEnabled, storeTrustSafePurchaseEnabled, storeTrustText]);
+      bindDirtyState(saveContactsButton, [contactsEnabled, contactsWebsite, contactsTelegram, contactsPhone, contactsWhatsapp, contactsInstagramEnabled, contactsInstagram, contactsAboutText, contactsRulesText]);
       bindDirtyState(saveDialogExamplesButton, [dialogExamplesEnabled, dialogExamplesText]);
       bindDirtyState(saveTelegramButton, [telegramToken, webhookUrl]);
       bindDirtyState(saveAiProviderButton, [providerType, aiBaseUrl, aiApiKey]);
@@ -6629,6 +6717,7 @@
       document.getElementById('saveDelivery').addEventListener('click', saveDelivery);
       document.getElementById('saveQualityRules').addEventListener('click', saveQualityRules);
       document.getElementById('saveStoreTrust').addEventListener('click', saveStoreTrust);
+      document.getElementById('saveContacts').addEventListener('click', saveContacts);
       document.getElementById('saveDialogExamples').addEventListener('click', saveDialogExamples);
       document.getElementById('runScenario').addEventListener('click', runScenario);
       scenarioSelect.addEventListener('change', applyScenarioPreset);

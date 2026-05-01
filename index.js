@@ -39,6 +39,7 @@ const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
 const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'https://iwak.ru/api/products').replace(/\/$/, '');
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
 const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем.';
+const DEFAULT_CONTACTS_WEBSITE = 'https://iwak.ru';
 const GREETING_DIALOG_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 const TYPING_REFRESH_MS = 4500;
 const READ_DELAY_MIN_MS = 1200;
@@ -232,6 +233,15 @@ const runtimeConfig = {
   store_trust_no_address_enabled: process.env.STORE_TRUST_NO_ADDRESS_ENABLED !== 'false',
   store_trust_safe_purchase_enabled: process.env.STORE_TRUST_SAFE_PURCHASE_ENABLED !== 'false',
   store_trust_text: process.env.STORE_TRUST_TEXT || DEFAULT_STORE_TRUST_TEXT,
+  contacts_enabled: process.env.CONTACTS_ENABLED !== 'false',
+  contacts_website: process.env.CONTACTS_WEBSITE || DEFAULT_CONTACTS_WEBSITE,
+  contacts_telegram: process.env.CONTACTS_TELEGRAM || '',
+  contacts_phone: process.env.CONTACTS_PHONE || '',
+  contacts_whatsapp: process.env.CONTACTS_WHATSAPP || '',
+  contacts_instagram_enabled: process.env.CONTACTS_INSTAGRAM_ENABLED === 'true',
+  contacts_instagram: process.env.CONTACTS_INSTAGRAM || '',
+  contacts_about_text: process.env.CONTACTS_ABOUT_TEXT || '',
+  contacts_rules_text: process.env.CONTACTS_RULES_TEXT || '',
   dialog_examples_enabled: process.env.DIALOG_EXAMPLES_ENABLED === 'true',
   dialog_examples_text: process.env.DIALOG_EXAMPLES_TEXT || '',
   tone: process.env.TONE || 'neutral',
@@ -2758,6 +2768,15 @@ function getRuntimeSnapshot() {
     store_trust_no_address_enabled: parseConfigBoolean(runtimeConfig.store_trust_no_address_enabled, true),
     store_trust_safe_purchase_enabled: parseConfigBoolean(runtimeConfig.store_trust_safe_purchase_enabled, true),
     store_trust_text: runtimeConfig.store_trust_text || DEFAULT_STORE_TRUST_TEXT,
+    contacts_enabled: parseConfigBoolean(runtimeConfig.contacts_enabled, true),
+    contacts_website: runtimeConfig.contacts_website || DEFAULT_CONTACTS_WEBSITE,
+    contacts_telegram: runtimeConfig.contacts_telegram || '',
+    contacts_phone: runtimeConfig.contacts_phone || '',
+    contacts_whatsapp: runtimeConfig.contacts_whatsapp || '',
+    contacts_instagram_enabled: parseConfigBoolean(runtimeConfig.contacts_instagram_enabled, false),
+    contacts_instagram: runtimeConfig.contacts_instagram || '',
+    contacts_about_text: runtimeConfig.contacts_about_text || '',
+    contacts_rules_text: runtimeConfig.contacts_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text,
     tone: runtimeConfig.tone,
@@ -3002,7 +3021,10 @@ function applyConfigUpdate(body) {
     ['store_trust_cost_reason_enabled', 'STORE_TRUST_COST_REASON_ENABLED'],
     ['store_trust_no_address_enabled', 'STORE_TRUST_NO_ADDRESS_ENABLED'],
     ['store_trust_safe_purchase_enabled', 'STORE_TRUST_SAFE_PURCHASE_ENABLED'],
+    ['contacts_enabled', 'CONTACTS_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
+
+  applyBooleanConfig(body, 'contacts_instagram_enabled', 'CONTACTS_INSTAGRAM_ENABLED', false);
 
   [
     ['core_rules_text', 'CORE_RULES_TEXT'],
@@ -3016,6 +3038,13 @@ function applyConfigUpdate(body) {
     ['quality_return_text', 'QUALITY_RETURN_TEXT'],
     ['quality_rules_text', 'QUALITY_RULES_TEXT'],
     ['store_trust_text', 'STORE_TRUST_TEXT'],
+    ['contacts_website', 'CONTACTS_WEBSITE'],
+    ['contacts_telegram', 'CONTACTS_TELEGRAM'],
+    ['contacts_phone', 'CONTACTS_PHONE'],
+    ['contacts_whatsapp', 'CONTACTS_WHATSAPP'],
+    ['contacts_instagram', 'CONTACTS_INSTAGRAM'],
+    ['contacts_about_text', 'CONTACTS_ABOUT_TEXT'],
+    ['contacts_rules_text', 'CONTACTS_RULES_TEXT'],
     ['payment_style_text', 'PAYMENT_STYLE_TEXT'],
     ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT'],
     ['payment_example_text', 'PAYMENT_EXAMPLE_TEXT'],
@@ -4592,6 +4621,29 @@ function getStoreTrustGuidance(config) {
   ]);
 }
 
+function getContactsGuidance(config) {
+  if (!parseConfigBoolean(config.contacts_enabled, true)) return '';
+  const website = String(config.contacts_website || DEFAULT_CONTACTS_WEBSITE).trim();
+  const telegram = String(config.contacts_telegram || '').trim();
+  const phone = String(config.contacts_phone || '').trim();
+  const whatsapp = String(config.contacts_whatsapp || '').trim();
+  const instagram = String(config.contacts_instagram || '').trim();
+  const hasInstagram = parseConfigBoolean(config.contacts_instagram_enabled, false) && instagram;
+
+  return buildGuidanceSection('Контакты и о нас:', [
+    'На вопросы про контакты, соцсети, сайт и "о нас" отвечать только из этого блока. Не выдумывать Instagram, WhatsApp, телефон, адрес, шоурум или другие каналы связи.',
+    website && `Сайт: ${website}`,
+    telegram && `Telegram: ${telegram}`,
+    phone && `Телефон: ${phone}`,
+    whatsapp ? `WhatsApp: ${whatsapp}` : 'WhatsApp не указан: не предлагать WhatsApp как канал связи.',
+    hasInstagram
+      ? `Instagram: ${instagram}`
+      : 'Instagram-аккаунта сейчас нет: если клиент спрашивает Instagram, честно сказать, что Instagram нет, и предложить сайт, Telegram или продолжить здесь в диалоге.',
+    String(config.contacts_about_text || '').trim()
+      && `О нас: ${String(config.contacts_about_text).trim()}`,
+  ], config.contacts_rules_text);
+}
+
 function getDialogExamplesGuidance(config) {
   if (!parseConfigBoolean(config.dialog_examples_enabled, false)) return '';
   const text = String(config.dialog_examples_text || '').trim();
@@ -4662,6 +4714,7 @@ function getVisibleControlState(config, memoryContext = null) {
     receiptCheck: Boolean(getReceiptCheckGuidance(config)),
     quality: Boolean(getQualityGuidance(config)),
     storeTrust: Boolean(getStoreTrustGuidance(config)),
+    contacts: Boolean(getContactsGuidance(config)),
     training: Boolean((trainingStore.items || []).length),
     examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
@@ -4709,6 +4762,7 @@ function buildSystemPrompt(config, memoryContext = null, queryText = '') {
     getReceiptCheckGuidance(config),
     getQualityGuidance(config),
     getStoreTrustGuidance(config),
+    getContactsGuidance(config),
     getTrainingExamplesGuidance(queryText, memoryContext),
   ].forEach((section) => {
     if (section) control.push(section);
@@ -5584,6 +5638,15 @@ app.get('/config/status', async (req, res) => {
     store_trust_no_address_enabled: parseConfigBoolean(runtimeConfig.store_trust_no_address_enabled, true),
     store_trust_safe_purchase_enabled: parseConfigBoolean(runtimeConfig.store_trust_safe_purchase_enabled, true),
     store_trust_text: runtimeConfig.store_trust_text || DEFAULT_STORE_TRUST_TEXT,
+    contacts_enabled: parseConfigBoolean(runtimeConfig.contacts_enabled, true),
+    contacts_website: runtimeConfig.contacts_website || DEFAULT_CONTACTS_WEBSITE,
+    contacts_telegram: runtimeConfig.contacts_telegram || '',
+    contacts_phone: runtimeConfig.contacts_phone || '',
+    contacts_whatsapp: runtimeConfig.contacts_whatsapp || '',
+    contacts_instagram_enabled: parseConfigBoolean(runtimeConfig.contacts_instagram_enabled, false),
+    contacts_instagram: runtimeConfig.contacts_instagram || '',
+    contacts_about_text: runtimeConfig.contacts_about_text || '',
+    contacts_rules_text: runtimeConfig.contacts_rules_text || '',
     dialog_examples_enabled: parseConfigBoolean(runtimeConfig.dialog_examples_enabled, false),
     dialog_examples_text: runtimeConfig.dialog_examples_text || '',
     tone: runtimeConfig.tone || 'neutral',
@@ -6883,6 +6946,15 @@ app.delete('/config', (req, res) => {
   runtimeConfig.store_trust_no_address_enabled = true;
   runtimeConfig.store_trust_safe_purchase_enabled = true;
   runtimeConfig.store_trust_text = DEFAULT_STORE_TRUST_TEXT;
+  runtimeConfig.contacts_enabled = true;
+  runtimeConfig.contacts_website = DEFAULT_CONTACTS_WEBSITE;
+  runtimeConfig.contacts_telegram = '';
+  runtimeConfig.contacts_phone = '';
+  runtimeConfig.contacts_whatsapp = '';
+  runtimeConfig.contacts_instagram_enabled = false;
+  runtimeConfig.contacts_instagram = '';
+  runtimeConfig.contacts_about_text = '';
+  runtimeConfig.contacts_rules_text = '';
   runtimeConfig.dialog_examples_enabled = false;
   runtimeConfig.dialog_examples_text = '';
   runtimeConfig.tone = 'neutral';
