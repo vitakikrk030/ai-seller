@@ -3600,6 +3600,34 @@ function isRateLimitError(error) {
   return error.response?.status === 429;
 }
 
+function getProviderErrorDetail(error) {
+  return (
+    error.response?.data?.error?.message ||
+    error.response?.data?.message ||
+    error.response?.data?.error ||
+    error.response?.statusText ||
+    error.message ||
+    ''
+  );
+}
+
+function getSaiGptProviderErrorMessage(error) {
+  const status = Number(error.response?.status || 0);
+  const detail = String(getProviderErrorDetail(error) || '').trim();
+  if (status === 400) return `S.AI GPT API отклонил запрос. Проверь Base URL, формат API и модель.${detail ? ` Деталь: ${detail}` : ''}`;
+  if (status === 401) return 'S.AI GPT API не принял ключ. Проверь API Key или создай новый ключ у провайдера.';
+  if (status === 402) return 'S.AI GPT API просит оплату: закончился баланс, квота или тариф у провайдера. Пополни баланс либо выбери другую модель/API.';
+  if (status === 403) return 'S.AI GPT API запретил доступ. Обычно модель недоступна для этого ключа или аккаунта.';
+  if (status === 404) return 'S.AI GPT API не нашёл модель или endpoint. Проверь Base URL и выбранную модель.';
+  if (status === 429) return 'S.AI GPT API упёрся в лимит запросов. Подожди немного или выбери другой ключ/модель.';
+  if (status >= 500) return 'S.AI GPT API сейчас отвечает ошибкой на стороне провайдера. Попробуй позже или выбери другой provider.';
+  if (isTimeoutError(error)) return 'S.AI GPT API слишком долго не отвечает. Проверь Base URL или выбери более быстрый provider.';
+  if (/ENOTFOUND|ECONNREFUSED|EAI_AGAIN|network/i.test(error.code || error.message || '')) {
+    return 'S.AI GPT API недоступен по сети. Проверь Base URL.';
+  }
+  return detail || 'S.AI GPT не ответил.';
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -6646,12 +6674,15 @@ app.post('/sai-gpt/chat', async (req, res) => {
     });
     res.json({ success: true, ...result });
   } catch (error) {
+    const friendlyError = getSaiGptProviderErrorMessage(error);
     logEvent('ERROR', {
       scope: 'sai_gpt.chat',
       status: 'error',
-      error: error.message,
+      httpStatus: error.response?.status || '',
+      error: friendlyError,
+      providerError: getProviderErrorDetail(error),
     });
-    res.status(400).json({ success: false, error: error.message || 'S.AI GPT не ответил' });
+    res.status(400).json({ success: false, error: friendlyError });
   }
 });
 
@@ -6676,12 +6707,15 @@ app.post('/sai-gpt/lesson-draft', async (req, res) => {
     });
     res.json({ success: true, draft });
   } catch (error) {
+    const friendlyError = getSaiGptProviderErrorMessage(error);
     logEvent('ERROR', {
       scope: 'sai_gpt.lesson_draft',
       status: 'error',
-      error: error.message,
+      httpStatus: error.response?.status || '',
+      error: friendlyError,
+      providerError: getProviderErrorDetail(error),
     });
-    res.status(400).json({ success: false, error: error.message || 'Не удалось собрать урок' });
+    res.status(400).json({ success: false, error: friendlyError });
   }
 });
 
@@ -7598,8 +7632,8 @@ app.post('/sai-gpt/models', async (req, res) => {
     res.status(400).json({
       success: false,
       status: 'error',
-      label: 'API недоступен',
-      error: e.response?.data?.error?.message || e.message,
+      label: getSaiGptProviderErrorMessage(e),
+      error: getSaiGptProviderErrorMessage(e),
       models: [],
     });
   }
