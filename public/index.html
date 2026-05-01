@@ -4614,6 +4614,7 @@
             text: message.text || '',
             media: Array.isArray(message.media) ? message.media : [],
             messageType: message.type || '',
+            traceId: message.traceId || '',
           }))
           .sort((a, b) => new Date(a.time) - new Date(b.time));
         const lastMessage = messages[messages.length - 1] || item.lastMessage || null;
