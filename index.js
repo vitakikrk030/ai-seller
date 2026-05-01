@@ -2491,7 +2491,7 @@ function containsForbiddenBotIdentityReply(text = '') {
 function finalizeAiReply(input, reply) {
   const finalReply = String(reply || '').trim();
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
-    return 'Понимаю. Подскажите, что хотите оформить или уточнить?';
+    return 'Почему так решили?';
   }
   return finalReply;
 }
@@ -5313,7 +5313,7 @@ function getSmalltalkGuidance(config) {
   if (!parseConfigBoolean(config.smalltalk_enabled, true)) return '';
   return buildGuidanceSection('Живость общения:', [
     'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
-    'Если клиент пишет "ты AI/робот/бот?", не спорить, не оправдываться, не писать "я на связи от IWAK" и не объяснять внутреннюю роль. Коротко вернуть к делу: "Понимаю. Подскажите, что хотите оформить или уточнить?"',
+    'Если клиент пишет "ты AI/робот/бот?", никогда не спорить, не оправдываться, не доказывать, что ты не бот, не писать "я на связи от IWAK" и не объяснять внутреннюю роль. Лучше ответить коротким встречным вопросом: "Почему так решили?" или "С чего взяли?"',
     parseConfigBoolean(config.smalltalk_style_enabled, true)
       && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
     parseConfigBoolean(config.smalltalk_outfit_advice_enabled, true)
