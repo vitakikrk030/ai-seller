@@ -490,14 +490,15 @@ function addTrainingExample(input = {}) {
     type,
     createdAt: new Date().toISOString(),
     chatId: String(input.chatId || '').trim(),
+    contextText: normalizeTrainingText(input.contextText, 1800),
     clientText: normalizeTrainingText(input.clientText, 900),
     aiText: normalizeTrainingText(input.aiText, 1200),
     correctedText: normalizeTrainingText(input.correctedText, 1200),
     note: normalizeTrainingText(input.note, 600),
   };
 
-  if (!item.clientText || !item.aiText) {
-    throw new Error('Нужен текст клиента и ответ AI');
+  if (!item.contextText && (!item.clientText || !item.aiText)) {
+    throw new Error('Нужен фрагмент диалога или пара клиент + AI');
   }
   if (!item.note) {
     throw new Error('Добавьте короткий комментарий: почему это хорошо или плохо');
@@ -520,16 +521,16 @@ function getTrainingExamplesGuidance() {
     if (item.type === 'good') {
       return [
         `Урок ${index + 1}: хороший ответ. Использовать как ориентир по смыслу и тону, не копировать дословно.`,
-        `Клиент: ${item.clientText}`,
-        `Хороший ответ: ${item.aiText}`,
+        item.contextText ? `Фрагмент диалога:\n${item.contextText}` : `Клиент: ${item.clientText}`,
+        item.aiText && `Хороший ответ: ${item.aiText}`,
         item.note && `Почему хорошо: ${item.note}`,
       ].filter(Boolean).join('\n');
     }
 
     return [
       `Урок ${index + 1}: плохой ответ. Не повторять ошибку, исправлять по правильному варианту.`,
-      `Клиент: ${item.clientText}`,
-      `Плохой ответ AI: ${item.aiText}`,
+      item.contextText ? `Фрагмент диалога:\n${item.contextText}` : `Клиент: ${item.clientText}`,
+      item.aiText && `Плохой ответ: ${item.aiText}`,
       `Правильно отвечать так: ${item.correctedText}`,
       item.note && `Причина: ${item.note}`,
     ].filter(Boolean).join('\n');

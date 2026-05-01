@@ -2246,7 +2246,8 @@
       }
 
       .chat-bubble.selected-training-client,
-      .chat-bubble.selected-training-ai {
+      .chat-bubble.selected-training-ai,
+      .chat-bubble.selected-training-fragment {
         border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
         box-shadow: var(--glow);
       }
@@ -3754,7 +3755,7 @@
       let inboxChatsCache = [];
       let currentInboxDetailsOpen = false;
       let currentInboxMemoryOpen = true;
-      let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null };
+      let trainingSelection = { chatId: '', clientIndex: null, aiIndex: null, indexes: [] };
       let isInstructionResizing = false;
       let instructionResizeStartY = 0;
       let instructionResizeStartHeight = 0;
@@ -4302,14 +4303,38 @@
 
       function getTrainingSelection(chat) {
         if (!chat || trainingSelection.chatId !== chat.chatId) {
-          trainingSelection = { chatId: chat?.chatId || '', clientIndex: null, aiIndex: null };
+          trainingSelection = { chatId: chat?.chatId || '', clientIndex: null, aiIndex: null, indexes: [] };
         }
+        if (!Array.isArray(trainingSelection.indexes)) trainingSelection.indexes = [];
         return trainingSelection;
+      }
+
+      function formatTrainingMessage(message) {
+        const role = message.type === 'out'
+          ? (message.source === 'manager' ? 'Менеджер' : 'AI')
+          : 'Клиент';
+        return `${role}: ${String(message.text || '').trim()}`;
       }
 
       function getTrainingPair(chat) {
         const messages = Array.isArray(chat?.messages) ? chat.messages : [];
         const selection = getTrainingSelection(chat);
+        const selectedIndexes = [...new Set(selection.indexes || [])]
+          .filter((index) => Number.isInteger(index) && messages[index] && String(messages[index].text || '').trim())
+          .sort((left, right) => left - right);
+        if (selectedIndexes.length) {
+          const selectedMessages = selectedIndexes.map((index) => messages[index]);
+          const clientMessages = selectedMessages.filter((message) => message.type === 'in');
+          const responseMessages = selectedMessages.filter((message) => message.type === 'out');
+          return {
+            contextText: selectedMessages.map(formatTrainingMessage).join('\n'),
+            clientText: clientMessages.map((message) => message.text || '').join('\n\n'),
+            aiText: responseMessages.map((message) => message.text || '').join('\n\n'),
+            manual: true,
+            count: selectedMessages.length,
+          };
+        }
+
         const selectedClient = Number.isInteger(selection.clientIndex) ? messages[selection.clientIndex] : null;
         const selectedAi = Number.isInteger(selection.aiIndex) ? messages[selection.aiIndex] : null;
         if (
@@ -4321,7 +4346,12 @@
           return {
             clientText: selectedClient.text || '',
             aiText: selectedAi.text || '',
+            contextText: [
+              formatTrainingMessage(selectedClient),
+              formatTrainingMessage(selectedAi),
+            ].join('\n'),
             manual: true,
+            count: 2,
           };
         }
 
@@ -4337,7 +4367,12 @@
         return {
           clientText: client.text || '',
           aiText: lastAiIndex.message.text || '',
+          contextText: [
+            formatTrainingMessage(client),
+            formatTrainingMessage(lastAiIndex.message),
+          ].join('\n'),
           manual: false,
+          count: 2,
         };
       }
 
@@ -4358,13 +4393,17 @@
               <span>Обучение на диалоге</span>
               <span class="status-pill attention">анти-выдумки</span>
             </div>
-            <div class="crm-message-item">${pair.manual ? 'Выбрана конкретная пара сообщений.' : 'Сейчас взята последняя пара. Можно кликнуть по нужному сообщению клиента и ответу AI ниже.'} Следующие ответы будут учитывать эти уроки.</div>
+            <div class="crm-message-item">${pair.manual ? `Выбран фрагмент: ${escapeHtml(String(pair.count || 0))} сообщ.` : 'Сейчас взята последняя пара. Можно кликнуть по нужным сообщениям ниже и собрать фрагмент.'} Следующие ответы будут учитывать эти уроки.</div>
+            <div class="chat-detail">
+              <div class="chat-detail-label">Выбранный фрагмент</div>
+              <div class="chat-detail-value" data-training-context>${escapeHtml(pair.contextText || '')}</div>
+            </div>
             <div class="chat-detail">
               <div class="chat-detail-label">Клиент</div>
               <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
             </div>
             <div class="chat-detail">
-              <div class="chat-detail-label">Ответ AI</div>
+              <div class="chat-detail-label">Ответ AI/менеджера</div>
               <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
             </div>
             <div class="field">
@@ -4470,15 +4509,18 @@
           <div class="chat-thread">
             ${chat.messages.map((message, index) => {
               const selectable = message.type === 'in' || message.type === 'out';
+              const selectedAsFragment = (selection.indexes || []).includes(index);
               const selectedClass = message.type === 'in' && selection.clientIndex === index
                 ? ' selected-training-client'
                 : message.type === 'out' && selection.aiIndex === index
                   ? ' selected-training-ai'
-                  : '';
+                  : selectedAsFragment
+                    ? ' selected-training-fragment'
+                    : '';
               const pickText = message.type === 'in'
-                ? (selection.clientIndex === index ? 'Выбран как сообщение клиента' : 'Клик: выбрать клиента')
+                ? (selectedAsFragment ? 'В выбранном фрагменте' : 'Клик: добавить в урок')
                 : message.type === 'out'
-                  ? (selection.aiIndex === index ? 'Выбран как ответ AI' : 'Клик: выбрать ответ AI')
+                  ? (selectedAsFragment ? 'В выбранном фрагменте' : 'Клик: добавить в урок')
                   : '';
               return `
               <div class="chat-bubble ${message.type}${selectable ? ' selectable' : ''}${selectedClass}" data-message-index="${escapeHtml(String(index))}" data-message-type="${escapeHtml(message.type)}">
@@ -4533,13 +4575,15 @@
             const type = bubble.dataset.messageType || '';
             if (!Number.isInteger(index)) return;
             const next = getTrainingSelection(chat);
-            if (type === 'in') {
-              next.clientIndex = next.clientIndex === index ? null : index;
-            } else if (type === 'out') {
-              next.aiIndex = next.aiIndex === index ? null : index;
+            if (type !== 'in' && type !== 'out') return;
+            const indexes = Array.isArray(next.indexes) ? [...next.indexes] : [];
+            if (indexes.includes(index)) {
+              next.indexes = indexes.filter((item) => item !== index);
             } else {
-              return;
+              next.indexes = [...indexes, index].sort((left, right) => left - right);
             }
+            next.clientIndex = null;
+            next.aiIndex = null;
             trainingSelection = next;
             renderInboxThread(chat);
           });
@@ -4550,6 +4594,7 @@
             const card = button.closest('[data-training-card]');
             const status = card?.querySelector('[data-training-status]');
             const action = button.dataset.trainingAction || 'bad';
+            const contextText = card?.querySelector('[data-training-context]')?.textContent || '';
             const clientText = card?.querySelector('[data-training-client]')?.textContent || '';
             const aiText = card?.querySelector('[data-training-ai]')?.textContent || '';
             const correctedText = card?.querySelector('[data-training-corrected]')?.value || '';
@@ -4569,6 +4614,7 @@
                 body: JSON.stringify({
                   type: action === 'good' ? 'good' : 'bad',
                   chatId: chat.chatId,
+                  contextText,
                   clientText,
                   aiText,
                   correctedText,
