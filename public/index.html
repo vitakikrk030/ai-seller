@@ -2068,10 +2068,40 @@
         font-size: 13px;
       }
 
+      .training-learning-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+        gap: 10px;
+        align-items: start;
+      }
+
+      .training-source-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+      }
+
+      .training-conclusion {
+        display: grid;
+        gap: 8px;
+        border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+        border-radius: 10px;
+        padding: 9px;
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+      }
+
+      .training-coach-input-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 7px;
+        align-items: end;
+      }
+
       .training-coach-chat {
         display: grid;
         gap: 7px;
-        max-height: 220px;
+        min-height: 190px;
+        max-height: 280px;
         overflow: auto;
         border: 1px solid var(--border);
         border-radius: 10px;
@@ -2176,6 +2206,14 @@
       .training-preview-list {
         display: grid;
         gap: 8px;
+      }
+
+      @media (max-width: 980px) {
+        .training-learning-grid,
+        .training-source-grid,
+        .training-coach-input-row {
+          grid-template-columns: 1fr;
+        }
       }
 
       .followup-card-title {
@@ -4811,53 +4849,58 @@
         return `
           <div class="followup-card training-card" data-training-card>
             <div class="followup-card-title">
-              <span>Обучение на диалоге</span>
-              <span class="status-pill attention">анти-выдумки</span>
+              <span>Учебная сессия S.AI</span>
+              <span class="status-pill attention">чат-наставник</span>
             </div>
-            <div class="crm-message-item">${pair.manual ? `Выбран фрагмент: ${escapeHtml(String(pair.count || 0))} сообщ.` : 'Сейчас взята последняя пара. Можно кликнуть по нужным сообщениям ниже и собрать фрагмент.'} Следующие ответы будут учитывать эти уроки.</div>
-            <div class="chat-detail">
-              <div class="chat-detail-label">Выбранный фрагмент</div>
-              <div class="chat-detail-value" data-training-context>${escapeHtml(pair.contextText || '')}</div>
+            <div class="crm-message-item">${pair.manual ? `Выбран фрагмент: ${escapeHtml(String(pair.count || 0))} сообщ.` : 'Сейчас взята последняя пара. Можно кликнуть по нужным сообщениям ниже и собрать фрагмент.'} Объясни S.AI обычным языком, он перескажет вывод и подготовит урок.</div>
+            <div class="training-source-grid">
+              <div class="chat-detail">
+                <div class="chat-detail-label">Фрагмент</div>
+                <div class="chat-detail-value" data-training-context>${escapeHtml(pair.contextText || '')}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Клиент</div>
+                <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
+              </div>
+              <div class="chat-detail">
+                <div class="chat-detail-label">Ответ AI/менеджера</div>
+                <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
+              </div>
             </div>
-            <div class="chat-detail">
-              <div class="chat-detail-label">Клиент</div>
-              <div class="chat-detail-value" data-training-client>${escapeHtml(pair.clientText)}</div>
-            </div>
-            <div class="chat-detail">
-              <div class="chat-detail-label">Ответ AI/менеджера</div>
-              <div class="chat-detail-value" data-training-ai>${escapeHtml(pair.aiText)}</div>
-            </div>
-            <div class="field">
-              <div class="field-label">Категория урока</div>
-              <select data-training-category>${categoryOptions}</select>
-            </div>
-            <div class="field">
-              <div class="field-label">Как надо было ответить, если AI ошибся</div>
-              <textarea data-training-corrected placeholder="Напиши правильный вариант. Особенно важно указать, что AI выдумал и как говорить вместо этого.">${escapeHtml(draft.correctedText)}</textarea>
-            </div>
-            <div class="field">
-              <div class="field-label">Короткая причина</div>
-              <input data-training-note value="${escapeAttr(draft.note)}" placeholder="Например: выдумал срок доставки / повторно спросил размер / хороший тон" />
-            </div>
-            <div class="field">
-              <div class="field-label">Разбор ответа</div>
-              <div class="status-output muted" data-training-explanation>Нажми “Почему так ответил?”, чтобы получить разбор причины и черновик правки.</div>
-            </div>
-            <div class="field">
-              <div class="field-label">Диалог с S.AI по этому уроку</div>
-              <div class="training-coach-chat" data-training-coach-chat>${renderTrainingCoachMessages(draft.coachMessages)}</div>
-            </div>
-            <div class="field">
-              <div class="field-label">Объяснить как наставник</div>
-              <textarea data-training-coach-input placeholder="Например: ты не должен был объединять две разные темы в один ответ. Сначала ответь про доставку, потом отдельно про знакомство. И не выдумывай сроки."></textarea>
+            <div class="training-learning-grid">
+              <div class="field">
+                <div class="field-label">Чат обучения</div>
+                <div class="training-coach-chat" data-training-coach-chat>${renderTrainingCoachMessages(draft.coachMessages)}</div>
+                <div class="training-coach-input-row">
+                  <textarea data-training-coach-input placeholder="Объясни S.AI как наставник: что он понял неправильно, как надо рассуждать и как отвечать в следующий раз."></textarea>
+                  <button class="button-primary" type="button" data-training-action="coach">Объяснить</button>
+                </div>
+              </div>
+              <div class="training-conclusion">
+                <div class="field">
+                  <div class="field-label">Что S.AI запомнит</div>
+                  <input data-training-note value="${escapeAttr(draft.note)}" placeholder="Короткий вывод появится после объяснения" />
+                </div>
+                <div class="field">
+                  <div class="field-label">Как отвечать верно</div>
+                  <textarea data-training-corrected placeholder="S.AI предложит правильный ответ. Ты можешь поправить перед сохранением.">${escapeHtml(draft.correctedText)}</textarea>
+                </div>
+                <div class="field">
+                  <div class="field-label">Категория</div>
+                  <select data-training-category>${categoryOptions}</select>
+                </div>
+                <div class="field">
+                  <div class="field-label">Разбор</div>
+                  <div class="status-output muted" data-training-explanation>Можно спросить “Почему так ответил?” или сразу объяснить, как надо.</div>
+                </div>
+              </div>
             </div>
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-training-action="explain">Почему так ответил?</button>
-              <button class="button-secondary" type="button" data-training-action="coach">Объяснить и сделать вывод</button>
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
-              <button class="button-primary" type="button" data-training-action="bad">Сохранить исправление</button>
+              <button class="button-primary" type="button" data-training-action="bad">Запомнить вывод</button>
             </div>
-            <div class="followup-action-help" data-training-status>Урок сохранится локально в S.AI, превратится в правило и будет подбираться по смыслу следующих диалогов.</div>
+            <div class="followup-action-help" data-training-status>Сначала S.AI должен пересказать, что понял. После твоего подтверждения вывод сохранится как урок и будет подбираться по смыслу следующих диалогов.</div>
           </div>
         `;
       }
