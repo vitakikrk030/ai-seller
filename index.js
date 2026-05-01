@@ -125,7 +125,7 @@ const SAI_GPT_MEMORY_MAX_MESSAGES = 200;
 const TRAINING_PROMPT_EXAMPLES = 10;
 const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
 const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
-const SAI_GPT_CODE_FILE_LIMIT = 80;
+const SAI_GPT_CODE_FILE_LIMIT = 500;
 const SAI_GPT_CODE_SNIPPET_LIMIT = 8;
 const SAI_GPT_CODE_CHAR_LIMIT = 14000;
 const SAI_GPT_ALLOWED_CODE_EXTENSIONS = new Set(['.js', '.json', '.html', '.css', '.md', '.sql']);
@@ -5264,6 +5264,77 @@ function buildSaiGptCodeSnippets(query) {
     .slice(0, SAI_GPT_CODE_SNIPPET_LIMIT);
 }
 
+function buildSaiGptProjectMap() {
+  return walkSaiGptProjectFiles()
+    .map((filePath) => {
+      let stat = null;
+      let lines = 0;
+      try {
+        stat = fs.statSync(filePath);
+        const content = fs.readFileSync(filePath, 'utf8');
+        lines = content.split('\n').length;
+      } catch {
+        return null;
+      }
+      return {
+        file: path.relative(__dirname, filePath),
+        bytes: stat?.size || 0,
+        lines,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.file.localeCompare(b.file))
+    .slice(0, 260);
+}
+
+function scoreSaiGptInboxProfile(profile = {}, query = '', selectedChatId = '') {
+  const chatId = String(profile.customer?.chatId || '');
+  if (selectedChatId && chatId === String(selectedChatId)) return 100000;
+  const tokens = tokenizeSaiGptQuery(query);
+  const messages = Array.isArray(profile.recentMessages) ? profile.recentMessages : [];
+  const haystack = [
+    chatId,
+    profile.customer?.telegramId,
+    profile.customer?.username,
+    profile.customer?.firstName,
+    profile.customer?.lastName,
+    profile.customer?.title,
+    profile.status?.label,
+    profile.status?.reason,
+    profile.lastOrder?.product,
+    profile.lastOrder?.status,
+    ...Object.values(profile.facts || {}).map((fact) => fact?.value || ''),
+    ...messages.slice(-80).map((message) => message.text || ''),
+  ].join(' ').toLowerCase();
+
+  let score = 0;
+  tokens.forEach((token) => {
+    const normalized = String(token || '').toLowerCase();
+    if (!normalized) return;
+    if (haystack.includes(normalized)) score += normalized.length >= 5 ? 6 : 3;
+  });
+  if (messages.length) score += 1;
+  return score;
+}
+
+function buildSaiGptInboxDeepMatches(inbox = {}, query = '', selectedChatId = '') {
+  const items = Array.isArray(inbox.items) ? inbox.items : [];
+  return items
+    .map((item) => ({ item, score: scoreSaiGptInboxProfile(item, query, selectedChatId) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(({ item, score }) => ({
+      score,
+      customer: item.customer,
+      status: item.status,
+      facts: item.facts,
+      lastOrder: item.lastOrder,
+      orders: Array.isArray(item.orders) ? item.orders.slice(-5) : [],
+      recentMessages: (item.recentMessages || []).slice(-120),
+    }));
+}
+
 function buildSaiGptSystemContext(query, selectedChatId = '') {
   const aiControlPreview = buildAiControlPreview(getRuntimeSnapshot());
   const trainingItems = (trainingStore.items || []).slice(0, 30);
@@ -5292,6 +5363,8 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     messages: Array.isArray(item.recentMessages) ? item.recentMessages.length : 0,
   }));
   const codeSnippets = buildSaiGptCodeSnippets(query);
+  const projectMap = buildSaiGptProjectMap();
+  const inboxDeepMatches = buildSaiGptInboxDeepMatches(inbox, query, selectedChatId);
   const snapshot = {
     now: new Date().toISOString(),
     mode: 'read_only_internal_agent',
@@ -5321,13 +5394,15 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     inbox: {
       summary: inbox.summary,
       recentDialogs,
+      deepMatches: inboxDeepMatches,
       selectedChat: selectedProfile
         ? {
           customer: selectedProfile.customer,
           status: selectedProfile.status,
           facts: selectedProfile.facts,
           lastOrder: selectedProfile.lastOrder,
-          recentMessages: (selectedProfile.recentMessages || []).slice(-40),
+          orders: Array.isArray(selectedProfile.orders) ? selectedProfile.orders.slice(-8) : [],
+          recentMessages: (selectedProfile.recentMessages || []).slice(-160),
         }
         : null,
     },
@@ -5342,6 +5417,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
         createdAt: message.createdAt || '',
       })),
     },
+    projectMap,
     codeSnippets,
   };
 
@@ -5377,6 +5453,8 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Ты S.AI GPT — внутренний агент владельца S.AI/IWAK.',
     'Режим строго read-only: ты не отправляешь сообщения клиентам, не меняешь настройки, не перезапускаешь сервисы и не обещаешь, что уже внёс правку.',
     'Твоя задача: анализировать диалоги, AI Control, обучение, логи и кодовые фрагменты; объяснять риски; предлагать точные улучшения.',
+    'В снимке системы есть карта файлов projectMap, релевантные фрагменты codeSnippets, список последних диалогов и deepMatches — глубокие совпадения Inbox по текущему вопросу. Используй их как рабочую память.',
+    'Если владелец спрашивает про конкретного клиента по имени, username, chatId или фразе из переписки, сначала смотри inbox.deepMatches и selectedChat. Разбирай сообщения по ролям и времени, не выдумывай отсутствующие реплики.',
     'Если нужно действие в боевой системе, попроси подтверждение и опиши минимальный безопасный план.',
     'Не раскрывай секреты, токены и ключи. Если контекста не хватает, честно скажи, какой файл/лог/диалог нужно открыть.',
     'Если пользователь приложил скриншот, анализируй его как часть сообщения. Если модель/провайдер не поддерживает картинки, честно скажи, что нужен текстовый пересказ или другой vision-провайдер.',
