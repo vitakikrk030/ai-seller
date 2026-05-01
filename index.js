@@ -2472,8 +2472,28 @@ function batchHasOrderLikeContext(inputs = []) {
     || inputs.some((input) => isOrderLikeClientText(input.text));
 }
 
+function isBotIdentityChallengeText(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /\b(ты|вы)\s+(бот|робот|ai|ии)\b/.test(normalized)
+    || /\b(бот|робот|ai|ии)\s+(ты|вы)\b/.test(normalized)
+    || /искусственн(ый|ого)\s+интеллект/i.test(normalized);
+}
+
+function containsForbiddenBotIdentityReply(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /я\s+на\s+связи\s+от\s+iwak/i.test(normalized)
+    || /на\s+связи\s+от\s+iwak/i.test(normalized)
+    || /я\s+здесь,\s*чтобы\s+помочь/i.test(normalized)
+    || /я\s+языковая\s+модель/i.test(normalized)
+    || /как\s+искусственный\s+интеллект/i.test(normalized);
+}
+
 function finalizeAiReply(input, reply) {
-  return String(reply || '').trim();
+  const finalReply = String(reply || '').trim();
+  if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
+    return 'Понимаю. Подскажите, что хотите оформить или уточнить?';
+  }
+  return finalReply;
 }
 
 async function waitForPendingOrderReplySettle(context) {
@@ -5293,7 +5313,7 @@ function getSmalltalkGuidance(config) {
   if (!parseConfigBoolean(config.smalltalk_enabled, true)) return '';
   return buildGuidanceSection('Живость общения:', [
     'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
-    'Если клиент спрашивает "ты AI/робот/бот?", не отвечать "я языковая модель". Коротко ответить от лица менеджера IWAK: "я на связи от IWAK, помогу с заказом" и перевести разговор к делу.',
+    'Если клиент пишет "ты AI/робот/бот?", не спорить, не оправдываться, не писать "я на связи от IWAK" и не объяснять внутреннюю роль. Коротко вернуть к делу: "Понимаю. Подскажите, что хотите оформить или уточнить?"',
     parseConfigBoolean(config.smalltalk_style_enabled, true)
       && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
     parseConfigBoolean(config.smalltalk_outfit_advice_enabled, true)
@@ -6510,6 +6530,7 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
       /заявка\s+зарегистрирована/i,
       /тикет/i,
       /оператор\s+свяжется/i,
+      /я\s+на\s+связи\s+от\s+iwak/i,
       /я\s+языковая\s+модель/i,
       /как\s+искусственный\s+интеллект/i,
     ]),
