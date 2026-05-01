@@ -6817,12 +6817,8 @@
 
       function startInboxAutoRefresh() {
         stopInboxAutoRefresh();
-        if (!views.inbox.classList.contains('active')) return;
-        inboxRefreshTimer = window.setInterval(() => {
-          if (!shouldPauseInboxAutoRefresh()) {
-            loadInbox();
-          }
-        }, 5000);
+        // Do not auto-render Inbox on a timer: it destroys focus and resets the training chat.
+        // Inbox refreshes on view open, chat actions, filters and explicit workflow actions.
       }
 
       function stopInboxAutoRefresh() {
