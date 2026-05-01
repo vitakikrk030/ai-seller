@@ -4428,6 +4428,97 @@ function extractAiReply(content) {
   return '';
 }
 
+function parseAiJsonObject(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return {};
+    try {
+      return JSON.parse(match[0]);
+    } catch (error) {
+      return {};
+    }
+  }
+}
+
+async function explainTrainingAnswer(input = {}) {
+  const config = input.config || getRuntimeSnapshot();
+  if (logMissingConfig('training.explain', config, ['ai_key', 'ai_url', 'model'], {
+    chatId: input.chatId || '',
+  })) {
+    throw new Error('AI не настроен');
+  }
+
+  const contextText = normalizeTrainingBlock(input.contextText, 2200);
+  const clientText = normalizeTrainingText(input.clientText, 900);
+  const aiText = normalizeTrainingText(input.aiText, 1200);
+  const correctedText = normalizeTrainingText(input.correctedText, 1200);
+  const note = normalizeTrainingText(input.note, 600);
+  if (!contextText && (!clientText || !aiText)) {
+    throw new Error('Нужен фрагмент диалога или пара клиент + AI');
+  }
+
+  const categories = Object.entries(TRAINING_CATEGORIES)
+    .map(([key, meta]) => `${key}: ${meta.label} — ${meta.rule}`)
+    .join('\n');
+  const controlPrompt = buildSystemPrompt(config, null, clientText || contextText).slice(0, 7000);
+  const messages = [
+    {
+      role: 'system',
+      content: [
+        'Ты ревизор качества ответов S.AI для магазина IWAK.',
+        'Задача: объяснить, почему AI/менеджер мог так ответить, найти риск ошибки и предложить урок для будущих ответов.',
+        'Не выдумывай факты за пределами фрагмента и AI Control. Если причины не видно, так и напиши.',
+        'Верни только JSON без markdown.',
+        'Формат: {"explanation":"...","category":"...","note":"...","correctedText":"..."}',
+        'category должен быть одним из ключей ниже.',
+        categories,
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: [
+        `AI Control, который мог влиять на ответ:\n${controlPrompt}`,
+        contextText && `Фрагмент диалога:\n${contextText}`,
+        clientText && `Сообщение клиента:\n${clientText}`,
+        aiText && `Ответ AI/менеджера:\n${aiText}`,
+        correctedText && `Черновик правильного ответа от пользователя:\n${correctedText}`,
+        note && `Комментарий пользователя:\n${note}`,
+        '',
+        'Объясни коротко по делу. Если ответ плохой, correctedText должен быть готовым вариантом ответа по смыслу. Если ответ хороший, correctedText может быть пустым, а note объясняет, что сохранить как хороший паттерн.',
+      ].filter(Boolean).join('\n\n'),
+    },
+  ];
+
+  const response = await httpClient.post(
+    `${config.ai_url.replace(/\/$/, '')}/chat/completions`,
+    {
+      model: config.model,
+      messages,
+      temperature: 0.2,
+      response_format: isOpenAiCompatible(config.ai_url) ? { type: 'json_object' } : undefined,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.ai_key}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    }
+  );
+  const parsed = parseAiJsonObject(extractAiReply(response.data?.choices?.[0]?.message?.content));
+  const category = getTrainingCategory(String(parsed.category || input.category || '').trim());
+  return {
+    explanation: normalizeTrainingText(parsed.explanation || '', 900),
+    category,
+    note: normalizeTrainingText(parsed.note || '', 600),
+    correctedText: normalizeTrainingText(parsed.correctedText || '', 1200),
+  };
+}
+
 function getCreativityTemperature(creativity) {
   const map = {
     precise: 0.2,
@@ -5892,6 +5983,28 @@ app.post('/training/preview', (req, res) => {
     promptItems: selected.length,
     queryText,
   });
+});
+
+app.post('/training/explain', async (req, res) => {
+  try {
+    const result = await explainTrainingAnswer({
+      ...(req.body || {}),
+      config: getRuntimeSnapshot(),
+    });
+    logEvent('TRAINING_EXPLAIN', {
+      status: 'ok',
+      chatId: req.body?.chatId || '',
+      category: result.category,
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    logEvent('ERROR', {
+      scope: 'training.explain',
+      status: 'error',
+      error: error.message,
+    });
+    res.status(400).json({ success: false, error: error.message || 'Не удалось разобрать ответ' });
+  }
 });
 
 app.post('/training', (req, res) => {

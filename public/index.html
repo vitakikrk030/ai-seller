@@ -4788,7 +4788,12 @@
               <div class="field-label">Короткая причина</div>
               <input data-training-note value="${escapeAttr(draft.note)}" placeholder="Например: выдумал срок доставки / повторно спросил размер / хороший тон" />
             </div>
+            <div class="field">
+              <div class="field-label">Разбор ответа</div>
+              <div class="status-output muted" data-training-explanation>Нажми “Почему так ответил?”, чтобы получить разбор причины и черновик правки.</div>
+            </div>
             <div class="followup-actions">
+              <button class="button-secondary" type="button" data-training-action="explain">Почему так ответил?</button>
               <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
               <button class="button-primary" type="button" data-training-action="bad">Сохранить исправление</button>
             </div>
@@ -5003,6 +5008,52 @@
             const correctedText = card?.querySelector('[data-training-corrected]')?.value || '';
             const note = card?.querySelector('[data-training-note]')?.value || '';
             const originalLabel = button.textContent;
+            if (action === 'explain') {
+              const explanation = card?.querySelector('[data-training-explanation]');
+              const categoryInput = card?.querySelector('[data-training-category]');
+              const correctedInput = card?.querySelector('[data-training-corrected]');
+              const noteInput = card?.querySelector('[data-training-note]');
+              button.disabled = true;
+              button.textContent = 'Разбираю...';
+              if (explanation) explanation.textContent = 'Смотрю фрагмент, ответ и правила AI Control...';
+              try {
+                const data = await fetchJSON('/training/explain', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    chatId: chat.chatId,
+                    contextText,
+                    clientText,
+                    aiText,
+                    category,
+                    correctedText,
+                    note,
+                  }),
+                });
+                if (data.category && categoryInput) {
+                  categoryInput.value = data.category;
+                  getTrainingDraft(chat).category = data.category;
+                }
+                if (data.note && noteInput && !noteInput.value.trim()) {
+                  noteInput.value = data.note;
+                  getTrainingDraft(chat).note = data.note;
+                }
+                if (data.correctedText && correctedInput && !correctedInput.value.trim()) {
+                  correctedInput.value = data.correctedText;
+                  getTrainingDraft(chat).correctedText = data.correctedText;
+                }
+                if (explanation) {
+                  explanation.textContent = data.explanation || 'Разбор готов. Проверь категорию, причину и правильный вариант перед сохранением.';
+                }
+                showSaveToast('ok', 'Разбор готов');
+              } catch (error) {
+                if (explanation) explanation.textContent = error.message || 'Не удалось разобрать ответ';
+                showSaveToast('error', error.message || 'Не удалось разобрать ответ');
+              } finally {
+                button.disabled = false;
+                button.textContent = originalLabel;
+              }
+              return;
+            }
             if (!note.trim()) {
               if (status) status.textContent = 'Добавь короткий комментарий: почему это хорошо или плохо.';
               showSaveToast('error', 'Нужен комментарий');
