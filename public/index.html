@@ -3307,28 +3307,29 @@
 <details class="list-item">
                 <summary class="list-summary">
                   <div class="list-summary-main">
-                    <div class="list-title">Память</div>
-                    <div class="list-subtitle">Глубина контекста, быстрые сообщения, reply и естественная задержка ответа.</div>
+                    <div class="list-title">Диалог и перехват менеджера</div>
+                    <div class="list-subtitle">Автоответы, память клиента, пауза AI при ручном ответе менеджера и возврат AI.</div>
                   </div>
                   <div class="list-caret">⌄</div>
                 </summary>
                 <div class="list-panel">
                   <div class="stack">
+                    <div class="field-hint">Когда менеджер пишет в Telegram Business, AI уходит в режим “Менеджер ведёт”, не отвечает клиенту и ждёт новые сообщения. Если клиент написал после менеджера, AI вернётся только через выбранное время.</div>
                     <label class="toggle-line">
                       <input id="autoReplyEnabled" type="checkbox" />
-                      AI отвечает автоматически
+                      AI отвечает клиентам автоматически
                     </label>
                     <label class="toggle-line">
                       <input id="memoryEnabled" type="checkbox" />
-                      Память клиента включена
+                      Память клиента включена для AI
                     </label>
                     <label class="toggle-line">
                       <input id="managerTakeoverEnabled" type="checkbox" />
-                      Менеджер может перехватить диалог
+                      Менеджер может перехватить диалог: AI молчит после ответа менеджера
                     </label>
                     <div class="settings-grid">
                       <div class="field">
-                        <label class="field-label" for="memoryRecentLimitSelect">Глубина памяти</label>
+                        <label class="field-label" for="memoryRecentLimitSelect">Сколько истории видит AI</label>
                         <select id="memoryRecentLimitSelect">
                           <option value="20">20 диалогов</option>
                           <option value="30">30 диалогов</option>
@@ -3337,7 +3338,7 @@
                         </select>
                       </div>
                       <div class="field">
-                        <label class="field-label" for="batchDebounceSelect">Сбор быстрых сообщений</label>
+                        <label class="field-label" for="batchDebounceSelect">Сбор быстрых сообщений клиента</label>
                         <select id="batchDebounceSelect">
                           <option value="0">Не собирать</option>
                           <option value="1500">1.5 секунды</option>
@@ -3346,7 +3347,7 @@
                         </select>
                       </div>
                       <div class="field">
-                        <label class="field-label" for="replyModeSelect">Reply на сообщение</label>
+                        <label class="field-label" for="replyModeSelect">Telegram reply от AI</label>
                         <select id="replyModeSelect">
                           <option value="smart">Умно</option>
                           <option value="last">На последнее</option>
@@ -3355,7 +3356,7 @@
                         </select>
                       </div>
                       <div class="field">
-                        <label class="field-label" for="humanTypingModeSelect">Имитация набора</label>
+                        <label class="field-label" for="humanTypingModeSelect">Скорость “печатает...”</label>
                         <select id="humanTypingModeSelect">
                           <option value="fast">Быстрее</option>
                           <option value="natural">Естественно</option>
@@ -3365,13 +3366,16 @@
                       <div class="field">
                         <label class="field-label" for="managerReturnDelaySelect">Возврат AI после менеджера</label>
                         <select id="managerReturnDelaySelect">
+                          <option value="30000">30 секунд</option>
                           <option value="60000">1 минута</option>
                           <option value="180000">3 минуты</option>
                           <option value="300000">5 минут</option>
                           <option value="600000">10 минут</option>
+                          <option value="900000">15 минут</option>
                         </select>
                       </div>
                     </div>
+                    <div class="field-hint">В Inbox этот режим виден как “Вручную” / “Менеджер ведёт”. Сообщения менеджера сохраняются отдельным пузырьком “Менеджер”, чтобы AI видел контекст после возврата.</div>
                     <div class="actions">
                       <button id="saveDialogueAutomation" class="button-primary" type="button">Сохранить</button>
                     </div>
