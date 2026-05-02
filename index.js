@@ -78,6 +78,8 @@ const ORDER_CONTEXT_BATCH_MAX_WINDOW_MS = 9000;
 const ORDER_PENDING_REPLY_SETTLE_MS = 5000;
 const SEMANTIC_BATCH_DEBOUNCE_MS = 9000;
 const SEMANTIC_BATCH_MAX_WINDOW_MS = 15000;
+const MULTIPART_RESPONSE_DEBOUNCE_MS = 45000;
+const MULTIPART_RESPONSE_MAX_WINDOW_MS = 90000;
 const ORDER_CONTEXT_MERGE_GRACE_MS = 3000;
 const ORDER_CONTEXT_MERGE_POLL_MS = 120;
 const MIN_MEMORY_RECENT_LIMIT = 20;
@@ -2293,9 +2295,63 @@ function batchNeedsOrderContextMerge(inputs = []) {
     || batchNeedsSemanticMerge(inputs);
 }
 
+function getOutgoingRequestBlockBeforeInputs(inputs = []) {
+  const lastInput = inputs[inputs.length - 1];
+  if (!lastInput?.chatId) return null;
+  const excludeTraceIds = inputs.map((input) => input.traceId).filter(Boolean);
+  const recentMessages = getRecentMemoryMessages(lastInput.chatId, 16, excludeTraceIds);
+  const outgoing = [];
+  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+    const message = recentMessages[index];
+    if (message?.role === 'assistant' || message?.role === 'manager') {
+      outgoing.push(message);
+      continue;
+    }
+    if (message?.role === 'user' && outgoing.length) break;
+  }
+  if (!outgoing.length) return null;
+  const ordered = outgoing.reverse();
+  return {
+    ...ordered[ordered.length - 1],
+    text: ordered.map((message) => message.text).filter(Boolean).join('\n'),
+    createdAt: ordered[ordered.length - 1]?.createdAt || '',
+  };
+}
+
+function countRequestCueKinds(text = '') {
+  const source = String(text || '');
+  return [
+    /(?:фото|скрин|картин|изображ|ссылк[ау]|модел|товар)/i.test(source),
+    /(?:размер|стельк|см\s+нога|сантиметр)/i.test(source),
+    /(?:адрес|пвз|пункт(?:е|а)?\s+выдач|доставк|город|улиц)/i.test(source),
+    /(?:фио|имя|фамил|телефон|номер)/i.test(source),
+  ].filter(Boolean).length;
+}
+
+function isMultipartCustomerRequestText(text = '') {
+  const source = String(text || '');
+  if (!source) return false;
+  const cueKinds = countRequestCueKinds(source);
+  if (cueKinds < 2) return false;
+  return /(?:пришл|продублир|напиш|скин|укаж|подскаж|нужн|чтобы\s+не\s+ошиб)/i.test(source);
+}
+
+function batchNeedsMultipartResponseWait(inputs = []) {
+  if (!inputs.length) return false;
+  if (inputs.some((input) => isPaymentProofInput(input))) return false;
+  const outgoingBlock = getOutgoingRequestBlockBeforeInputs(inputs);
+  if (!outgoingBlock || !isMultipartCustomerRequestText(outgoingBlock.text)) return false;
+  const outgoingAt = Date.parse(outgoingBlock.createdAt || '') || 0;
+  if (outgoingAt && Date.now() - outgoingAt > 20 * 60 * 1000) return false;
+  return true;
+}
+
 function getBatchDebounceDelayMs(batch, input) {
   const baseDelay = getConfigBatchDebounceMs(input.config);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
+  if (batchNeedsMultipartResponseWait(inputs)) {
+    return Math.max(baseDelay, MULTIPART_RESPONSE_DEBOUNCE_MS);
+  }
   if (batchHasPendingStructuredOrder(inputs)) {
     if (isSizeOnlyFollowupMessage(input.text)) {
       return Math.min(baseDelay, SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS);
@@ -2314,6 +2370,9 @@ function getBatchDebounceDelayMs(batch, input) {
 function getBatchMaxWindowMs(batch, input) {
   const baseWindow = Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
+  if (batchNeedsMultipartResponseWait(inputs)) {
+    return Math.max(baseWindow, MULTIPART_RESPONSE_MAX_WINDOW_MS);
+  }
   if (inputs.length > 1 && batchNeedsSemanticMerge(inputs)) {
     return Math.max(baseWindow, SEMANTIC_BATCH_MAX_WINDOW_MS);
   }
@@ -2389,6 +2448,7 @@ function shouldMergePendingOrderInputs(currentInputs = [], pendingInputs = []) {
 function shouldSplitSemanticBatchForInput(batch, input) {
   const existingInputs = Array.isArray(batch?.inputs) ? batch.inputs : [];
   if (!existingInputs.length) return false;
+  if (batchNeedsMultipartResponseWait(existingInputs)) return false;
   if (!batchNeedsSemanticMerge(existingInputs)) return false;
   const baseDelay = getConfigBatchDebounceMs(input.config);
   const elapsedSinceLastInput = Date.now() - Number(batch.lastInputAt || batch.startedAt || Date.now());
