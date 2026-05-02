@@ -2684,6 +2684,46 @@ function finalizeCatalogPromiseReply(input, reply) {
   return compact;
 }
 
+function extractMoneyAmounts(text = '') {
+  const source = String(text || '');
+  const amounts = [];
+  const matches = source.matchAll(/(?:₽\s*)?(\d{1,3}(?:[\s.,]\d{3})+|\d{4,6})(?:\s*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?))?/gi);
+  for (const match of matches) {
+    const value = normalizeCartPriceValue(match[1]);
+    if (value !== null) amounts.push(Math.round(value));
+  }
+  return amounts;
+}
+
+function hasCartSwitchIntent(text = '') {
+  return /(?:давайте\s+(?:вот\s+)?эти|вот\s+эти|лучше\s+эти|бер[её]м\s+(?:вот\s+)?эти|оформ(?:им|ляем)\s+(?:вот\s+)?эти|не[,\s]+давайте\s+(?:вот\s+)?эти)/i.test(String(text || ''));
+}
+
+function finalizeCartSwitchReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  const profile = input.cartContext?.orderDetails ? null : getCustomerProfileSnapshot(input.chatId);
+  const cleanChatId = getMemoryChatId(input);
+  const memoryCart = memoryStore.facts[cleanChatId]?.currentCart?.value || profile?.facts?.currentCart?.value || '';
+  const details = input.cartContext?.orderDetails || (memoryCart ? {
+    product: memoryCart,
+    price: extractOrderPrice(memoryCart) || extractMoneyAmounts(memoryCart)[0] || '',
+  } : null);
+  if (!details?.product) return finalReply;
+
+  const cartPrice = Number(details.price || 0);
+  const amounts = extractMoneyAmounts(finalReply);
+  const hasWrongPrice = cartPrice > 0 && amounts.some((amount) => amount > 0 && amount !== cartPrice);
+  const hasOldPremiata = /premiata/i.test(finalReply) && !/premiata/i.test(details.product);
+
+  if (!hasWrongPrice && !hasOldPremiata) return finalReply;
+
+  const priceText = cartPrice > 0 ? ` за ${formatMoneyAmount(cartPrice)}` : '';
+  const cartSwitch = hasCartSwitchIntent(input.text)
+    ? `Понял, меняем на товар из новой корзины${priceText}.`
+    : `Понял, ориентируюсь на свежую корзину${priceText}.`;
+  return `${cartSwitch} Пришлите, пожалуйста, адрес или название удобного ПВЗ.`;
+}
+
 function getReceiptAcknowledgementReply() {
   return RECEIPT_ACK_REPLY;
 }
@@ -2741,6 +2781,7 @@ function finalizeAiReply(input, reply) {
   if (containsReceiptAcknowledgement(finalReply)) {
     return getStaleReceiptAckFallback(input);
   }
+  finalReply = finalizeCartSwitchReply(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -2947,10 +2988,39 @@ function buildIwakCartContext(cartItems, productsById, missingIds = []) {
     missingIds.length ? `Часть товаров из корзины не удалось определить: ${missingIds.map((id) => `ID ${id}`).join(', ')}.` : '',
     '',
     'Важно: размеры уже известны из ссылки корзины. Не спрашивай размер повторно по товарам из корзины.',
+    'Если в диалоге уже был другой товар/другая цена, свежая корзина важнее старой памяти.',
+    'Фразы клиента рядом со свежей корзиной вроде "давайте эти", "вот эти", "лучше эти", "не, давайте вот эти" означают смену товара на эту корзину.',
+    'Не продолжай старый товар, старый размер или старую цену, если клиент прислал новую корзину и выбирает её.',
     'Не выдумывай товары, цены или размеры, которых нет в этом контексте.',
   ].filter((line) => line !== '');
 
   return context.join('\n');
+}
+
+function buildIwakCartOrderDetails(cartItems, productsById) {
+  const lines = [];
+  let total = 0;
+  let hasTotal = true;
+  const sizes = [];
+
+  cartItems.forEach((item) => {
+    const product = productsById.get(item.id);
+    if (!product) return;
+    const title = [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${item.id}`;
+    const price = normalizeCartPriceValue(product.price);
+    if (price === null) hasTotal = false;
+    else total += price;
+    sizes.push(item.size);
+    lines.push(`${title}, размер ${item.size}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
+  });
+
+  if (!lines.length) return null;
+  return {
+    product: lines.length === 1 ? lines[0] : `Корзина IWAK: ${lines.join('; ')}`,
+    size: Array.from(new Set(sizes.filter(Boolean))).join(', '),
+    price: hasTotal ? Math.round(total) : '',
+    itemCount: lines.length,
+  };
 }
 
 async function enrichIwakCartContext(input) {
@@ -2979,6 +3049,7 @@ async function enrichIwakCartContext(input) {
   const foundIds = Array.from(productsById.keys());
   const missingIds = uniqueIds.filter((id) => !productsById.has(id));
   const summary = buildIwakCartContext(cartItems, productsById, missingIds);
+  const orderDetails = buildIwakCartOrderDetails(cartItems, productsById);
   const baseLog = {
     traceId: input.traceId,
     userId: input.userId,
@@ -3013,6 +3084,7 @@ async function enrichIwakCartContext(input) {
     productIds: uniqueIds,
     foundProductIds: foundIds,
     missingProductIds: missingIds,
+    orderDetails,
   };
 }
 
@@ -3023,6 +3095,21 @@ function appendCartContextToMemory(input, cartContext) {
   input.memoryContext.summary = [input.memoryContext.summary, cartContext.summary]
     .filter((part) => String(part || '').trim())
     .join('\n\n');
+
+  const chatId = getMemoryChatId(input);
+  const details = cartContext.orderDetails;
+  if (!chatId || !details?.product) return;
+
+  upsertMemoryFact(chatId, 'currentCart', details.product, input.text || cartContext.summary);
+  upsertMemoryFact(chatId, 'lastProduct', details.product, input.text || cartContext.summary);
+  if (details.size) upsertMemoryFact(chatId, 'size', details.size, input.text || cartContext.summary);
+
+  safeCustomerStoreCall('customer.order.cart', (store) => store.upsertOrder(chatId, {
+    product: details.product,
+    size: details.size || '',
+    price: details.price || '',
+    status: 'draft',
+  }));
 }
 
 async function processInputBatch(inputs) {
