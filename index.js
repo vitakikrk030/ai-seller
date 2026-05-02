@@ -2566,12 +2566,48 @@ function finalizeOrderFormReply(input, reply) {
   return [compact, slotReply].filter(Boolean).join('\n\n');
 }
 
+function containsCatalogPromise(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /(могу|можем|давайте|сейчас|пришлю|скину|отправлю|найду|подберу|покажу)[\s\S]{0,80}(фото|ссылк|вариант|модел)/i.test(normalized)
+    || /(фото|ссылк)[\s\S]{0,80}(пришлю|скину|отправлю|покажу)/i.test(normalized);
+}
+
+function containsInventedRecommendationList(text = '') {
+  const source = String(text || '');
+  const numberedItems = source.match(/(?:^|\n)\s*\d+\.\s+/g) || [];
+  const brandMentions = source.match(/\b(?:Adidas|Nike|Puma|New Balance|NB|Asics|Reebok|Salomon|Lacoste|Jordan|Yeezy)\b/gi) || [];
+  return numberedItems.length >= 2 && brandMentions.length >= 2;
+}
+
+function stripCatalogPromiseTail(text = '') {
+  return String(text || '')
+    .replace(/\n?\s*Как вам эти модели\?[\s\S]*$/i, '')
+    .replace(/\n?\s*Могу\s+(?:прислать|скинуть|отправить|показать)[\s\S]*$/i, '')
+    .replace(/\n?\s*(?:Пришлю|Скину|Отправлю|Покажу)\s+(?:фото|ссылки?)[\s\S]*$/i, '')
+    .trim();
+}
+
+function finalizeCatalogPromiseReply(input, reply) {
+  const finalReply = String(reply || '').trim();
+  const hasPromise = containsCatalogPromise(finalReply);
+  const hasInventedList = containsInventedRecommendationList(finalReply);
+  if (!hasPromise && !hasInventedList) return finalReply;
+
+  const compact = stripCatalogPromiseTail(finalReply)
+    .replace(/(?:^|\n)\s*\d+\.\s+[\s\S]*$/i, '')
+    .trim();
+  const fallback = 'Поняла, эта модель не подходит по виду. Я не буду придумывать варианты без точного фото или ссылки. Пришлите, пожалуйста, вариант, который понравился, и я помогу по нему с размером и оформлением.';
+  if (!compact || hasInventedList) return fallback;
+  return compact;
+}
+
 function finalizeAiReply(input, reply) {
   let finalReply = String(reply || '').trim();
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
   finalReply = finalizeOrderFormReply(input, finalReply);
+  finalReply = finalizeCatalogPromiseReply(input, finalReply);
   return finalReply;
 }
 
@@ -5450,6 +5486,7 @@ function getResponseGuardGuidance(config) {
       && 'Нет ли финального подтверждения оплаты, поступления денег или отправки без ручной проверки.',
     parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
       && 'Если клиент просит дополнительные/живые фото, не обещан ли в ответе показ или отправка новых фото.',
+    'Не обещать прислать фото, ссылки, подборку или варианты товаров, если точные товары/ссылки уже не переданы в текущем диалоге. Не придумывать альтернативные модели списком.',
     parseConfigBoolean(config.quality_return_no_dates_enabled, true)
       && 'Если упоминается возврат/обмен, не названы ли сроки или юридические обещания, которых нет в AI Control.',
   ], config.response_guard_rules_text);
