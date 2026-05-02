@@ -1267,7 +1267,7 @@ function getMemoryChatId(inputOrChatId) {
 function getMemoryMessageText(input) {
   const text = normalizeMemoryText(input.text);
   if (text) return text;
-  if (input.messageType === 'photo') return '[photo] Клиент прислал фото товара.';
+  if (input.messageType === 'photo') return '[photo] Клиент прислал фото.';
   if (input.messageType === 'video_note') return '[video_note] Клиент прислал video note.';
   if (input.messageType === 'voice') return '[voice] Клиент прислал голосовое сообщение.';
   if (input.hasMedia) return `[${input.messageType || 'media'}] Клиент прислал медиа.`;
@@ -1873,16 +1873,22 @@ function isPaymentProofText(text) {
     || /^(?:чек|квитанц(?:ия|ию)?)[\s.!-]*$/i.test(source);
 }
 
+function isDeliveryMediaHintText(text) {
+  return /(?:пвз|пункт(?:е|а)?\s+выдач|самовывоз|курьер|достав|куда\s+достав|куда\s+отправ|адрес|улиц|дом\s+\d|корпус|подъезд|ozon|озон|cdek|сд[эе]к|яндекс|yandex|почт[ауы]|карта|скрин\s+карт|геолокац|локац|метк[ау]|точк[ау]|вот\s+сюда|сюда\s+тогда|можете\s+(?:вот\s+)?сюда|этот\s+адрес|адрес\s+не\s+показывает)/i.test(String(text || ''));
+}
+
+function isProductMediaHintText(text) {
+  return /(?:товар|модель|кроссов|кед[ыа]|обув|размер|стельк|цвет|фото\s+товара|скрин\s+товара|корзин|каталог|карточк[аи]\s+товар|iwak\.ru|ссылк[ау]|артикул|налич|подошв|nike|adidas|puma|new\s*balance|asics|reebok|crocs|balenciaga|prada|gucci)/i.test(String(text || ''));
+}
+
+function isNonPaymentMediaHintText(text) {
+  return isDeliveryMediaHintText(text) || isProductMediaHintText(text);
+}
+
 function isPaymentProofInput(input) {
   const text = String(input.text || '').toLowerCase();
   if (isPaymentProofText(text)) return true;
-  if (!input.hasMedia) return false;
-  const profile = getCustomerProfileSnapshot(input.chatId);
-  const lastOrder = profile?.lastOrder || null;
-  return [
-    lastOrder?.payment_status,
-    lastOrder?.status,
-  ].some((value) => ['payment_details_sent', 'proof_received', 'waiting_payment', 'collecting_info', 'draft'].includes(String(value || '')));
+  return false;
 }
 
 function inferConversationStage(input) {
@@ -2623,6 +2629,22 @@ function containsReceiptAcknowledgement(reply = '') {
   return /чек\s+(?:получил|получен|принял|принят)/i.test(String(reply || ''));
 }
 
+function containsReceiptPaymentHandling(reply = '') {
+  const source = String(reply || '');
+  return containsReceiptAcknowledgement(source)
+    || /(?:оплат[ау]\s+(?:получ|прин|подтверж)|деньги\s+поступ|плат[её]ж\s+(?:получ|прин|подтверж)|вс[её]\s+верно|заказ\s+передан\s+в\s+сборк|передан\s+в\s+отправк)/i.test(source)
+    || (
+      /(?:чек|квитанц|оплат|плат[её]ж|перевод)/i.test(source)
+      && /(?:сумм[аы]|банк|получател|карта|реквизит|т[-\s]?банк|сбер|альфа|тинькофф|сборк|отправк|статус\s+доставк)/i.test(source)
+    );
+}
+
+function shouldForceMediaReceiptAcknowledgement(input = {}, reply = '') {
+  if (!input.hasMedia) return false;
+  if (isNonPaymentMediaHintText(input.text)) return false;
+  return containsReceiptPaymentHandling(reply);
+}
+
 function isSimplePositiveAckText(text = '') {
   const source = String(text || '')
     .trim()
@@ -2633,6 +2655,8 @@ function isSimplePositiveAckText(text = '') {
 }
 
 function getStaleReceiptAckFallback(input = {}) {
+  if (isDeliveryMediaHintText(input.text)) return 'Да, подойдёт. Пришлите, пожалуйста, адрес или название ПВЗ текстом, чтобы не ошибиться.';
+  if (isProductMediaHintText(input.text)) return 'Понял. Подскажите, что именно по этой модели хотите уточнить?';
   if (isSimplePositiveAckText(input.text)) return 'Пожалуйста.';
   return 'Подскажите, что хотите уточнить?';
 }
@@ -2640,6 +2664,9 @@ function getStaleReceiptAckFallback(input = {}) {
 function finalizeAiReply(input, reply) {
   let finalReply = String(reply || '').trim();
   if (shouldForceReceiptAcknowledgement(input)) {
+    return getReceiptAcknowledgementReply();
+  }
+  if (shouldForceMediaReceiptAcknowledgement(input, finalReply)) {
     return getReceiptAcknowledgementReply();
   }
   if (containsReceiptAcknowledgement(finalReply)) {
@@ -5421,9 +5448,9 @@ function getPersonaGuidance(config) {
 
 function getMediaBehaviorGuidance(mediaBehavior) {
   const map = {
-    describe_media: 'медиа: если есть фото/скрин, сначала понять и описать, что на нём',
-    answer_from_media: 'медиа: если есть фото/скрин, использовать его как главный контекст ответа',
-    text_first: 'медиа: сначала опираться на текст клиента, фото/скрин использовать как дополнительный контекст',
+    describe_media: 'медиа: если есть фото/скрин/PDF, сначала распознать содержимое: товар, кроссовки, корзина, ПВЗ/адрес, карта доставки, чек оплаты или другое. Не считать любое фото чеком.',
+    answer_from_media: 'медиа: если есть фото/скрин/PDF, использовать его как главный контекст ответа: распознать, что на нём, и ответить по смыслу. Не считать любое фото чеком.',
+    text_first: 'медиа: сначала опираться на текст клиента, фото/скрин/PDF использовать как дополнительный контекст. Не считать любое фото чеком.',
   };
   return map[mediaBehavior] || map.answer_from_media;
 }
@@ -5528,6 +5555,7 @@ function getResponseGuardGuidance(config) {
       && 'Есть ли в ответе понятный следующий шаг для клиента, если диалог ещё не завершён.',
     parseConfigBoolean(config.response_guard_no_final_payment_enabled, true)
       && 'Нет ли финального подтверждения оплаты, поступления денег или отправки без ручной проверки.',
+    'Если вход содержит фото/скрин/PDF, сначала распознать тип вложения. Только чек/квитанция/оплата включает короткий ответ "Чек получил, спасибо."; товар, ПВЗ, адрес, карта доставки или скрин каталога не являются чеком.',
     parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
       && 'Если клиент просит дополнительные/живые фото, не обещан ли в ответе показ или отправка новых фото.',
     'Не обещать прислать фото, ссылки, подборку или варианты товаров, если точные товары/ссылки уже не переданы в текущем диалоге. Не придумывать альтернативные модели списком.',
@@ -5539,18 +5567,22 @@ function getResponseGuardGuidance(config) {
 function getReceiptCheckGuidance(config) {
   if (!parseConfigBoolean(config.receipt_check_enabled, true)) return '';
   return buildGuidanceSection('Проверка чека:', [
-    'Если клиент прислал чек, квитанцию, скрин оплаты или фото оплаты, сначала извлеки видимые данные из изображения/текста и сравни с контекстом заказа.',
+    'Любое фото/скрин/PDF сначала распознать по содержимому и только потом выбирать сценарий ответа.',
+    'Не считать любое вложение чеком автоматически: фото товара, скрин кроссовок, корзина, ПВЗ, карта доставки, адрес или геолокация — это не чек.',
+    'Если после распознавания содержимого это чек, квитанция, скрин оплаты или фото оплаты, ответ клиенту должен состоять только из одной фразы: "Чек получил, спасибо."',
+    'Не комментировать клиенту сумму, банк, получателя, карту, дату, статус оплаты, сборку, отправку или доставку после чека.',
+    'Если после распознавания содержимого это не чек, ответить по смыслу фото/файла: товар, размер, ПВЗ, адрес, доставка или другой вопрос клиента.',
     'Если клиент прислал PDF/документ с чеком, а содержимое файла не извлечено в текст/изображение, не подтверждай чек как корректный: попроси прислать скрин/фото чека или напиши, что PDF проверим вручную.',
     parseConfigBoolean(config.receipt_check_amount_enabled, true)
-      && 'Сверить сумму с ценой заказа, если сумма видна.',
+      && 'Данные чека можно сверить внутренне, если они видны, но клиенту не писать результат сверки.',
     parseConfigBoolean(config.receipt_check_bank_enabled, true)
-      && 'Сверить банк, если он виден и банк указан в разделе Оплата.',
+      && 'Банк можно сверить внутренне, если он виден, но клиенту не писать банк.',
     parseConfigBoolean(config.receipt_check_recipient_enabled, true)
-      && 'Сверить получателя, карту или последние цифры реквизитов, если они видны.',
+      && 'Получателя, карту или последние цифры можно сверить внутренне, если они видны, но клиенту не писать эти данные.',
     parseConfigBoolean(config.receipt_check_datetime_enabled, true)
-      && 'Посмотреть дату и время перевода, если они видны.',
+      && 'Дату и время перевода можно посмотреть внутренне, если они видны, но клиенту не писать эти данные.',
     parseConfigBoolean(config.receipt_check_mismatch_enabled, true)
-      && 'Если сумма, реквизиты, банк или получатель не сходятся, мягко попросить клиента проверить и прислать корректный чек, без обвинений.',
+      && 'Если сумма, реквизиты, банк или получатель не сходятся, зафиксировать внутренне. Разбор делает менеджер вручную, клиенту всё равно ответить только "Чек получил, спасибо."',
     parseConfigBoolean(config.receipt_check_no_final_confirm_enabled, true)
       && 'Даже если визуально всё выглядит нормально, не писать, что оплата подтверждена финально или деньги поступили. Финальная проверка вручную.',
     String(config.receipt_check_success_text || '').trim()
