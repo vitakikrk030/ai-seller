@@ -89,6 +89,10 @@ const MAX_BATCH_DEBOUNCE_MS = 10000;
 const MANAGER_RETURN_DELAY_MS = 180000;
 const MIN_MANAGER_RETURN_DELAY_MS = 30000;
 const MAX_MANAGER_RETURN_DELAY_MS = 900000;
+const MIN_MULTIPART_RESPONSE_DEBOUNCE_MS = 5000;
+const MAX_MULTIPART_RESPONSE_DEBOUNCE_MS = 120000;
+const MIN_MULTIPART_RESPONSE_MAX_WINDOW_MS = 10000;
+const MAX_MULTIPART_RESPONSE_MAX_WINDOW_MS = 600000;
 const WEBHOOK_ERROR_GRACE_MS = 15 * 60 * 1000;
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -289,6 +293,9 @@ const runtimeConfig = {
   human_typing_mode: process.env.HUMAN_TYPING_MODE || 'natural',
   manager_takeover_enabled: process.env.MANAGER_TAKEOVER_ENABLED !== 'false',
   manager_return_delay_ms: Number(process.env.MANAGER_RETURN_DELAY_MS || MANAGER_RETURN_DELAY_MS),
+  listen_wait_enabled: process.env.LISTEN_WAIT_ENABLED !== 'false',
+  listen_wait_debounce_ms: Number(process.env.LISTEN_WAIT_DEBOUNCE_MS || MULTIPART_RESPONSE_DEBOUNCE_MS),
+  listen_wait_max_window_ms: Number(process.env.LISTEN_WAIT_MAX_WINDOW_MS || MULTIPART_RESPONSE_MAX_WINDOW_MS),
   payment_enabled: process.env.PAYMENT_ENABLED === 'true',
   payment_method: process.env.PAYMENT_METHOD || 'card',
   payment_card_number: process.env.PAYMENT_CARD_NUMBER || '',
@@ -2338,6 +2345,8 @@ function isMultipartCustomerRequestText(text = '') {
 
 function batchNeedsMultipartResponseWait(inputs = []) {
   if (!inputs.length) return false;
+  const lastInput = inputs[inputs.length - 1];
+  if (!parseConfigBoolean(lastInput?.config?.listen_wait_enabled, true)) return false;
   if (inputs.some((input) => isPaymentProofInput(input))) return false;
   const outgoingBlock = getOutgoingRequestBlockBeforeInputs(inputs);
   if (!outgoingBlock || !isMultipartCustomerRequestText(outgoingBlock.text)) return false;
@@ -2350,7 +2359,7 @@ function getBatchDebounceDelayMs(batch, input) {
   const baseDelay = getConfigBatchDebounceMs(input.config);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
   if (batchNeedsMultipartResponseWait(inputs)) {
-    return Math.max(baseDelay, MULTIPART_RESPONSE_DEBOUNCE_MS);
+    return Math.max(baseDelay, getConfigListenWaitDebounceMs(input.config));
   }
   if (batchHasPendingStructuredOrder(inputs)) {
     if (isSizeOnlyFollowupMessage(input.text)) {
@@ -2371,7 +2380,7 @@ function getBatchMaxWindowMs(batch, input) {
   const baseWindow = Math.max(BATCH_MAX_WINDOW_MS, getConfigBatchDebounceMs(input.config) + 1000);
   const inputs = Array.isArray(batch?.inputs) ? batch.inputs : [input];
   if (batchNeedsMultipartResponseWait(inputs)) {
-    return Math.max(baseWindow, MULTIPART_RESPONSE_MAX_WINDOW_MS);
+    return Math.max(baseWindow, getConfigListenWaitMaxWindowMs(input.config));
   }
   if (inputs.length > 1 && batchNeedsSemanticMerge(inputs)) {
     return Math.max(baseWindow, SEMANTIC_BATCH_MAX_WINDOW_MS);
@@ -3624,6 +3633,9 @@ function getRuntimeSnapshot() {
     human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
     manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
     manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
+    listen_wait_enabled: parseConfigBoolean(runtimeConfig.listen_wait_enabled, true),
+    listen_wait_debounce_ms: getConfigListenWaitDebounceMs(runtimeConfig),
+    listen_wait_max_window_ms: getConfigListenWaitMaxWindowMs(runtimeConfig),
     payment_enabled: parseConfigBoolean(runtimeConfig.payment_enabled, false),
     payment_method: runtimeConfig.payment_method,
     payment_card_number: runtimeConfig.payment_card_number,
@@ -4033,6 +4045,21 @@ function applyConfigUpdate(body) {
     process.env.MANAGER_RETURN_DELAY_MS = String(runtimeConfig.manager_return_delay_ms);
   }
 
+  if (Object.prototype.hasOwnProperty.call(body, 'listen_wait_enabled')) {
+    runtimeConfig.listen_wait_enabled = parseConfigBoolean(body.listen_wait_enabled, true);
+    process.env.LISTEN_WAIT_ENABLED = String(runtimeConfig.listen_wait_enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'listen_wait_debounce_ms')) {
+    runtimeConfig.listen_wait_debounce_ms = getConfigListenWaitDebounceMs({ listen_wait_debounce_ms: body.listen_wait_debounce_ms });
+    process.env.LISTEN_WAIT_DEBOUNCE_MS = String(runtimeConfig.listen_wait_debounce_ms);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'listen_wait_max_window_ms')) {
+    runtimeConfig.listen_wait_max_window_ms = getConfigListenWaitMaxWindowMs({ listen_wait_max_window_ms: body.listen_wait_max_window_ms });
+    process.env.LISTEN_WAIT_MAX_WINDOW_MS = String(runtimeConfig.listen_wait_max_window_ms);
+  }
+
 
   if (Object.prototype.hasOwnProperty.call(body, 'payment_enabled')) {
     runtimeConfig.payment_enabled = parseConfigBoolean(body.payment_enabled, false);
@@ -4405,6 +4432,24 @@ function getConfigMemoryLimit(config = runtimeConfig) {
 
 function getConfigBatchDebounceMs(config = runtimeConfig) {
   return clampNumber(config.batch_debounce_ms, BATCH_DEBOUNCE_MS, MIN_BATCH_DEBOUNCE_MS, MAX_BATCH_DEBOUNCE_MS);
+}
+
+function getConfigListenWaitDebounceMs(config = runtimeConfig) {
+  return clampNumber(
+    config.listen_wait_debounce_ms,
+    MULTIPART_RESPONSE_DEBOUNCE_MS,
+    MIN_MULTIPART_RESPONSE_DEBOUNCE_MS,
+    MAX_MULTIPART_RESPONSE_DEBOUNCE_MS,
+  );
+}
+
+function getConfigListenWaitMaxWindowMs(config = runtimeConfig) {
+  return clampNumber(
+    config.listen_wait_max_window_ms,
+    MULTIPART_RESPONSE_MAX_WINDOW_MS,
+    MIN_MULTIPART_RESPONSE_MAX_WINDOW_MS,
+    MAX_MULTIPART_RESPONSE_MAX_WINDOW_MS,
+  );
 }
 
 function getHumanTypingDelayMs(text, config = runtimeConfig) {
@@ -9081,6 +9126,9 @@ app.delete('/config', (req, res) => {
   runtimeConfig.human_typing_mode = 'natural';
   runtimeConfig.manager_takeover_enabled = true;
   runtimeConfig.manager_return_delay_ms = MANAGER_RETURN_DELAY_MS;
+  runtimeConfig.listen_wait_enabled = true;
+  runtimeConfig.listen_wait_debounce_ms = MULTIPART_RESPONSE_DEBOUNCE_MS;
+  runtimeConfig.listen_wait_max_window_ms = MULTIPART_RESPONSE_MAX_WINDOW_MS;
   runtimeConfig.payment_enabled = false;
   runtimeConfig.payment_method = 'card';
   runtimeConfig.payment_card_number = '';
@@ -9181,6 +9229,9 @@ app.delete('/config', (req, res) => {
   process.env.HUMAN_TYPING_MODE = 'natural';
   process.env.MANAGER_TAKEOVER_ENABLED = 'true';
   process.env.MANAGER_RETURN_DELAY_MS = String(MANAGER_RETURN_DELAY_MS);
+  process.env.LISTEN_WAIT_ENABLED = 'true';
+  process.env.LISTEN_WAIT_DEBOUNCE_MS = String(MULTIPART_RESPONSE_DEBOUNCE_MS);
+  process.env.LISTEN_WAIT_MAX_WINDOW_MS = String(MULTIPART_RESPONSE_MAX_WINDOW_MS);
   process.env.PAYMENT_ENABLED = 'false';
   process.env.PAYMENT_METHOD = 'card';
   process.env.PAYMENT_CARD_NUMBER = '';

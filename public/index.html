@@ -3327,6 +3327,10 @@
                       <input id="managerTakeoverEnabled" type="checkbox" />
                       Менеджер может перехватить диалог: AI молчит после ответа менеджера
                     </label>
+                    <label class="toggle-line">
+                      <input id="listenWaitEnabled" type="checkbox" />
+                      Слушать и ждать: после большой просьбы AI не торопит клиента и собирает ответы частями
+                    </label>
                     <div class="settings-grid">
                       <div class="field">
                         <label class="field-label" for="memoryRecentLimitSelect">Сколько истории видит AI</label>
@@ -3374,8 +3378,30 @@
                           <option value="900000">15 минут</option>
                         </select>
                       </div>
+                      <div class="field">
+                        <label class="field-label" for="listenWaitDebounceSelect">Пауза “клиент ещё пишет”</label>
+                        <select id="listenWaitDebounceSelect">
+                          <option value="15000">15 секунд</option>
+                          <option value="30000">30 секунд</option>
+                          <option value="45000">45 секунд</option>
+                          <option value="60000">1 минута</option>
+                          <option value="90000">1.5 минуты</option>
+                          <option value="120000">2 минуты</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label class="field-label" for="listenWaitMaxWindowSelect">Максимум ожидания пачки</label>
+                        <select id="listenWaitMaxWindowSelect">
+                          <option value="60000">1 минута</option>
+                          <option value="90000">1.5 минуты</option>
+                          <option value="180000">3 минуты</option>
+                          <option value="300000">5 минут</option>
+                          <option value="600000">10 минут</option>
+                        </select>
+                      </div>
                     </div>
-                    <div class="field-hint">В Inbox этот режим виден как “Вручную” / “Менеджер ведёт”. Сообщения менеджера сохраняются отдельным пузырьком “Менеджер”, чтобы AI видел контекст после возврата.</div>
+                    <div class="field-hint">“Слушать и ждать” включается, когда AI/менеджер попросил несколько вещей сразу: фото, модель, размер, адрес, ПВЗ или телефон. AI ждёт паузу, собирает ответы клиента в один кусок и только потом отвечает.</div>
+                    <div class="field-hint">В Inbox перехват менеджера виден как “Вручную” / “Менеджер ведёт”. Сообщения менеджера сохраняются отдельным пузырьком “Менеджер”, чтобы AI видел контекст после возврата.</div>
                     <div class="actions">
                       <button id="saveDialogueAutomation" class="button-primary" type="button">Сохранить</button>
                     </div>
@@ -4197,11 +4223,14 @@
       const autoReplyEnabled = document.getElementById('autoReplyEnabled');
       const memoryEnabled = document.getElementById('memoryEnabled');
       const managerTakeoverEnabled = document.getElementById('managerTakeoverEnabled');
+      const listenWaitEnabled = document.getElementById('listenWaitEnabled');
       const memoryRecentLimitSelect = document.getElementById('memoryRecentLimitSelect');
       const batchDebounceSelect = document.getElementById('batchDebounceSelect');
       const replyModeSelect = document.getElementById('replyModeSelect');
       const humanTypingModeSelect = document.getElementById('humanTypingModeSelect');
       const managerReturnDelaySelect = document.getElementById('managerReturnDelaySelect');
+      const listenWaitDebounceSelect = document.getElementById('listenWaitDebounceSelect');
+      const listenWaitMaxWindowSelect = document.getElementById('listenWaitMaxWindowSelect');
       const paymentEnabled = document.getElementById('paymentEnabled');
       const paymentMethod = document.getElementById('paymentMethod');
       const paymentCardNumber = document.getElementById('paymentCardNumber');
@@ -6128,11 +6157,14 @@
         autoReplyEnabled.checked = data.auto_reply_enabled !== false;
         memoryEnabled.checked = data.memory_enabled !== false;
         managerTakeoverEnabled.checked = data.manager_takeover_enabled !== false;
+        listenWaitEnabled.checked = data.listen_wait_enabled !== false;
         memoryRecentLimitSelect.value = String(data.memory_recent_limit || 20);
         batchDebounceSelect.value = String(data.batch_debounce_ms ?? 3000);
         replyModeSelect.value = data.reply_mode || 'smart';
         humanTypingModeSelect.value = data.human_typing_mode || 'natural';
         managerReturnDelaySelect.value = String(data.manager_return_delay_ms || 180000);
+        listenWaitDebounceSelect.value = String(data.listen_wait_debounce_ms || 45000);
+        listenWaitMaxWindowSelect.value = String(data.listen_wait_max_window_ms || 90000);
         paymentEnabled.checked = data.payment_enabled === true;
         paymentMethod.value = data.payment_method || 'card';
         paymentCardNumber.value = data.payment_card_number || '';
@@ -6651,11 +6683,14 @@
               auto_reply_enabled: autoReplyEnabled.checked,
               memory_enabled: memoryEnabled.checked,
               manager_takeover_enabled: managerTakeoverEnabled.checked,
+              listen_wait_enabled: listenWaitEnabled.checked,
               memory_recent_limit: memoryRecentLimitSelect.value,
               batch_debounce_ms: batchDebounceSelect.value,
               reply_mode: replyModeSelect.value,
               human_typing_mode: humanTypingModeSelect.value,
               manager_return_delay_ms: managerReturnDelaySelect.value,
+              listen_wait_debounce_ms: listenWaitDebounceSelect.value,
+              listen_wait_max_window_ms: listenWaitMaxWindowSelect.value,
             }),
           });
           await loadStatus();
@@ -7436,11 +7471,14 @@
         autoReplyEnabled,
         memoryEnabled,
         managerTakeoverEnabled,
+        listenWaitEnabled,
         memoryRecentLimitSelect,
         batchDebounceSelect,
         replyModeSelect,
         humanTypingModeSelect,
         managerReturnDelaySelect,
+        listenWaitDebounceSelect,
+        listenWaitMaxWindowSelect,
       ]);
       bindDirtyState(savePaymentButton, [
         paymentEnabled,
