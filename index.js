@@ -35,6 +35,7 @@ const MAX_PDF_RECEIPT_BYTES = 8 * 1024 * 1024;
 const PDF_RECEIPT_TEXT_LIMIT = 2500;
 const PDF_RENDER_TIMEOUT_MS = 15000;
 const PDF_RENDER_DPI = 180;
+const RECEIPT_ACK_REPLY = 'Чек получил, спасибо.';
 const IWAK_CART_MAX_ITEMS = 20;
 const IWAK_CART_FETCH_TIMEOUT_MS = 4500;
 const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -239,7 +240,7 @@ const runtimeConfig = {
   receipt_check_datetime_enabled: process.env.RECEIPT_CHECK_DATETIME_ENABLED !== 'false',
   receipt_check_mismatch_enabled: process.env.RECEIPT_CHECK_MISMATCH_ENABLED !== 'false',
   receipt_check_no_final_confirm_enabled: process.env.RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED !== 'false',
-  receipt_check_success_text: process.env.RECEIPT_CHECK_SUCCESS_TEXT || 'Чек получил, спасибо. Статус доставки сможете отслеживать в приложении выбранной службы доставки. Если будут вопросы — напишите.',
+  receipt_check_success_text: process.env.RECEIPT_CHECK_SUCCESS_TEXT || RECEIPT_ACK_REPLY,
   receipt_check_mismatch_text: process.env.RECEIPT_CHECK_MISMATCH_TEXT || 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.',
   receipt_check_rules_text: process.env.RECEIPT_CHECK_RULES_TEXT || '',
   quality_replica_honesty_enabled: process.env.QUALITY_REPLICA_HONESTY_ENABLED !== 'false',
@@ -1865,9 +1866,16 @@ function isPaymentIntentText(text) {
   return /(куда\s+платить|как\s+оплат|реквизит|карта|номер\s+карты|перевести|оплатить)/i.test(String(text || ''));
 }
 
+function isPaymentProofText(text) {
+  const source = String(text || '').trim();
+  if (!source) return false;
+  return /(?:^|\b)(?:оплатил|оплатила|оплатили|перев[её]л|перевела|перевели|скинул(?:а|и)?\s+(?:оплат|чек|квитанц)|отправил(?:а|и)?\s+(?:оплат|чек|квитанц)|прислал(?:а|и)?\s+(?:оплат|чек|квитанц)|вот\s+(?:чек|квитанц)|ловите\s+(?:чек|квитанц)|чек\s+(?:прикрепил|прикрепила|отправил|отправила|прислал|прислала)|квитанц(?:ия|ию)\s+(?:прикрепил|прикрепила|отправил|отправила|прислал|прислала)|receipt|payment|pdf-файл\s+с\s+чеком|pdf.*квитанц|receipt\s+ocr)/i.test(source)
+    || /^(?:чек|квитанц(?:ия|ию)?)[\s.!-]*$/i.test(source);
+}
+
 function isPaymentProofInput(input) {
   const text = String(input.text || '').toLowerCase();
-  if (/(оплатил|оплатила|чек|квитанц|перев[её]л|скинул оплат|скрин.*оплат|receipt|payment)/i.test(text)) return true;
+  if (isPaymentProofText(text)) return true;
   if (!input.hasMedia) return false;
   const profile = getCustomerProfileSnapshot(input.chatId);
   const lastOrder = profile?.lastOrder || null;
@@ -2601,8 +2609,42 @@ function finalizeCatalogPromiseReply(input, reply) {
   return compact;
 }
 
+function getReceiptAcknowledgementReply() {
+  return RECEIPT_ACK_REPLY;
+}
+
+function shouldForceReceiptAcknowledgement(input = {}) {
+  const config = input.config || runtimeConfig;
+  if (!parseConfigBoolean(config.receipt_check_enabled, true)) return false;
+  return Boolean(input.hasPaymentProofInput) || isPaymentProofInput(input);
+}
+
+function containsReceiptAcknowledgement(reply = '') {
+  return /чек\s+(?:получил|получен|принял|принят)/i.test(String(reply || ''));
+}
+
+function isSimplePositiveAckText(text = '') {
+  const source = String(text || '')
+    .trim()
+    .replace(/[.!?,;:]+$/g, '')
+    .toLowerCase();
+  if (!source || source.length > 80) return false;
+  return /^(?:хорошо|ок|окей|ладно|понял|поняла|спасибо|благодарю|супер|отлично)(?:\s+(?:хорошо|ок|окей|ладно|понял|поняла|спасибо|благодарю|супер|отлично))*$/i.test(source);
+}
+
+function getStaleReceiptAckFallback(input = {}) {
+  if (isSimplePositiveAckText(input.text)) return 'Пожалуйста.';
+  return 'Подскажите, что хотите уточнить?';
+}
+
 function finalizeAiReply(input, reply) {
   let finalReply = String(reply || '').trim();
+  if (shouldForceReceiptAcknowledgement(input)) {
+    return getReceiptAcknowledgementReply();
+  }
+  if (containsReceiptAcknowledgement(finalReply)) {
+    return getStaleReceiptAckFallback(input);
+  }
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -2646,6 +2688,7 @@ function buildBatchInput(inputs) {
   const messageTypes = Array.from(new Set(inputs.map((input) => input.messageType).filter(Boolean)));
   const hasMedia = inputs.some((input) => input.hasMedia);
   const hasLinkInput = inputs.some((input) => input.hasLinkInput);
+  const hasPaymentProofInput = inputs.some((input) => isPaymentProofInput(input));
   const hasStructuredOrderPayload = batchHasStructuredOrderPayload(inputs);
   const hasSizeOnlyFollowup = batchHasSizeOnlyFollowup(inputs);
 
@@ -2664,6 +2707,7 @@ function buildBatchInput(inputs) {
     images,
     hasMedia,
     hasLinkInput,
+    hasPaymentProofInput,
   };
 }
 
@@ -8898,7 +8942,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.receipt_check_datetime_enabled = true;
   runtimeConfig.receipt_check_mismatch_enabled = true;
   runtimeConfig.receipt_check_no_final_confirm_enabled = true;
-  runtimeConfig.receipt_check_success_text = 'Чек получил, спасибо. Статус доставки сможете отслеживать в приложении выбранной службы доставки. Если будут вопросы — напишите.';
+  runtimeConfig.receipt_check_success_text = RECEIPT_ACK_REPLY;
   runtimeConfig.receipt_check_mismatch_text = 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.';
   runtimeConfig.receipt_check_rules_text = '';
   runtimeConfig.quality_replica_honesty_enabled = true;
