@@ -2488,11 +2488,90 @@ function containsForbiddenBotIdentityReply(text = '') {
     || /как\s+искусственный\s+интеллект/i.test(normalized);
 }
 
-function finalizeAiReply(input, reply) {
+function isStrongCheckoutIntent(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /(беру|возьму|оформ(?:ить|ляем|ляйте)|заказ(?:ать|ываю)?|можно\s+заказ|давайте|хочу\s+(?:оформить|заказать|купить))/i.test(normalized);
+}
+
+function isAvailabilityOnlyQuestion(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return !isStrongCheckoutIntent(normalized)
+    && /(есть|налич|бывает|остал[аио]с|размер|стельк|см\b)/i.test(normalized);
+}
+
+function isFullCheckoutFormReply(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  const hits = [
+    /фио|полные\s+фио|имя\s+получателя/i,
+    /город\s+достав/i,
+    /служб[ауы]\s+достав|яндекс|ozon|озон|cdek|сд[эе]к|почта\s+россии/i,
+    /пвз|пункт\s+выдачи|полный\s+адрес|адрес\s+для\s+курьер/i,
+    /номер\s+телефон|телефон/i,
+  ].filter((pattern) => pattern.test(normalized)).length;
+  return hits >= 4 || /(для\s+оформления[\s\S]{0,500}(фио|телефон)[\s\S]{0,500}(город|достав|пвз|адрес))/i.test(normalized);
+}
+
+function stripCheckoutFormTail(text = '') {
+  let result = String(text || '').trim();
+  result = result
+    .replace(/\n?\s*Для оформления заказа мне понадобятся[\s\S]*$/i, '')
+    .replace(/\n?\s*Для оформления мне понадобятся[\s\S]*$/i, '')
+    .replace(/\n?\s*Для оформления заказа нужны[\s\S]*$/i, '')
+    .replace(/\n?\s*Для оформления нужны[\s\S]*$/i, '')
+    .replace(/\n?\s*Мне понадобятся[\s\S]*$/i, '')
+    .replace(/\n?\s*Нужны ваши[\s\S]*$/i, '')
+    .replace(/\n?\s*Доставка у нас бесплатная\.?\s*$/i, '')
+    .trim();
+  return result || '';
+}
+
+function getMissingOrderSlots(snapshot = {}) {
+  if (!snapshot) return [];
+  const missing = [];
+  if (!snapshot.fullName) missing.push('full_name');
+  if (!snapshot.phone) missing.push('phone');
+  if (!snapshot.city) missing.push('city');
+  if (!snapshot.deliveryService) missing.push('delivery_service');
+  if (!snapshot.pickupPoint) missing.push('pickup_point');
+  return missing;
+}
+
+function buildMissingOrderFieldsReply(snapshot = {}) {
+  const missing = getMissingOrderSlots(snapshot);
+  if (!missing.length) return 'Отлично, всё есть. Можно переходить к оплате.';
+  const labels = {
+    full_name: 'ФИО',
+    phone: 'телефон',
+    city: 'город',
+    delivery_service: 'службу доставки',
+    pickup_point: 'ПВЗ или адрес',
+  };
+  const picked = missing.slice(0, 2).map((slot) => labels[slot]).filter(Boolean);
+  if (!picked.length) return '';
+  if (picked.length === 1) return `Пришлите, пожалуйста, ${picked[0]}.`;
+  return `Пришлите, пожалуйста, ${picked[0]} и ${picked[1]}.`;
+}
+
+function finalizeOrderFormReply(input, reply) {
   const finalReply = String(reply || '').trim();
+  if (!isFullCheckoutFormReply(finalReply)) return finalReply;
+
+  const compact = stripCheckoutFormTail(finalReply);
+  if (isAvailabilityOnlyQuestion(input?.text)) {
+    return compact || 'Да, есть.';
+  }
+
+  const slotReply = buildMissingOrderFieldsReply(input?.memoryContext?.slotSnapshot || {});
+  if (!slotReply) return compact || finalReply;
+  return [compact, slotReply].filter(Boolean).join('\n\n');
+}
+
+function finalizeAiReply(input, reply) {
+  let finalReply = String(reply || '').trim();
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
+  finalReply = finalizeOrderFormReply(input, finalReply);
   return finalReply;
 }
 
@@ -5350,6 +5429,8 @@ function getOrderPathGuidance(config) {
       && 'Когда основные данные собраны, аккуратно отправить реквизиты из раздела Оплата.',
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
+    'Не отправлять клиенту полную анкету оформления, если он просто уточняет наличие, размер или стельку. В таком случае ответить только по вопросу.',
+    'Если клиент уже хочет оформлять, спрашивать только ближайшие 1-2 недостающих поля из контекста оформления, а не весь список ФИО/телефон/город/служба/ПВЗ сразу.',
   ], config.order_rules_text);
 }
 
