@@ -2747,6 +2747,20 @@ function isFullCheckoutFormReply(text = '') {
   return hits >= 4 || /(для\s+оформления[\s\S]{0,500}(фио|телефон)[\s\S]{0,500}(город|достав|пвз|адрес))/i.test(normalized);
 }
 
+function asksPersonalOrderContacts(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /(?:пришлите|напишите|нужн[ыоа]?|понадоб(?:ятся|ится)|оставьте)[\s\S]{0,120}(фио|полное\s+имя|телефон|номер)/i.test(normalized)
+    || /(фио|полное\s+имя)[\s\S]{0,80}(телефон|номер)/i.test(normalized);
+}
+
+function isFreshStructuredOrderLead(input = {}) {
+  return Boolean(
+    input?.cartContext?.orderDetails
+    || looksLikeStructuredOrderPayload(input?.text)
+    || getIwakCartItemsFromText(input?.text).length
+  );
+}
+
 function stripCheckoutFormTail(text = '') {
   let result = String(text || '').trim();
   result = result
@@ -2786,6 +2800,16 @@ function buildMissingOrderFieldsReply(snapshot = {}) {
   if (!picked.length) return '';
   if (picked.length === 1) return `Пришлите, пожалуйста, ${picked[0]}.`;
   return `Пришлите, пожалуйста, ${picked[0]} и ${picked[1]}.`;
+}
+
+function buildSoftOrderStartReply(input = {}) {
+  const snapshot = input?.memoryContext?.slotSnapshot || {};
+  const details = input?.cartContext?.orderDetails || {};
+  const size = normalizeMemoryText(details.size || snapshot.size || extractSize(input?.text));
+  const price = normalizeMemoryText(details.price || snapshot.price || extractOrderPrice(input?.text));
+  const sizeText = size ? `${size} размер` : 'эту модель';
+  const priceText = price ? `, цена ${formatMoneyAmount(price)}` : '';
+  return `Здравствуйте! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
 }
 
 function buildShoeSizeInsoleIssueReply(issue) {
@@ -2834,6 +2858,15 @@ function finalizeAvailabilityIssueReply(input = {}, reply = '') {
   const acceptsUnavailable = /оформляем|подходит|принял|всё\s+верно|есть\s+в\s+наличии|отлично/i.test(finalReply);
   if (!asksCheckout && !acceptsUnavailable) return finalReply;
   return buildAvailabilityIssueReply(issue);
+}
+
+function finalizeEarlyOrderContactRequest(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !isFreshStructuredOrderLead(input)) return finalReply;
+  const snapshot = input?.memoryContext?.slotSnapshot || {};
+  if (snapshot.fullName || snapshot.phone) return finalReply;
+  if (!asksPersonalOrderContacts(finalReply) && !isFullCheckoutFormReply(finalReply)) return finalReply;
+  return buildSoftOrderStartReply(input);
 }
 
 function finalizeOrderFormReply(input, reply) {
@@ -2985,6 +3018,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
+  finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -5934,6 +5968,7 @@ function getOrderPathGuidance(config) {
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
     'Не отправлять клиенту полную анкету оформления, если он просто уточняет наличие, размер или стельку. В таком случае ответить только по вопросу.',
+    'В первом ответе на корзину или готовый заказ не начинать резко с ФИО и телефона. Сначала мягко подтвердить товар/размер/цену, сказать что доставка бесплатная, и спросить коротко: "Оформим?" Контакты просить уже после согласия клиента.',
     'Если клиент уже хочет оформлять, спрашивать только ближайшие 1-2 недостающих поля из контекста оформления, а не весь список ФИО/телефон/город/служба/ПВЗ сразу.',
   ], config.order_rules_text);
 }
