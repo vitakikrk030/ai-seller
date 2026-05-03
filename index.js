@@ -1576,6 +1576,61 @@ function extractAvailableSizeOptions(text) {
   return options;
 }
 
+function extractAvailableShoeSizeInsolePairs(text) {
+  const source = String(text || '');
+  if (!/(остал[аои]?с[ья]?|остались|в\s+наличии|наличие|есть)/i.test(source)) return [];
+  if (!/(размер|стельк|см|остал[аои]?с[ья]?|остались)/i.test(source)) return [];
+
+  const pairs = [];
+  const seen = new Set();
+  const patterns = [
+    /\b(3[5-9]|4[0-9])\s*(?:[-–—/:=]|\s+)\s*(2[0-9]|3[0-2])(?:[,.](\d))?\s*(?:см|cm)?\b/g,
+    /\b(3[5-9]|4[0-9])\s*(?:размер|р-р)?\s*(?:стелька|стельки|по\s+стельке)\s*(2[0-9]|3[0-2])(?:[,.](\d))?\s*(?:см|cm)?\b/gi,
+  ];
+
+  patterns.forEach((pattern) => {
+    for (const match of source.matchAll(pattern)) {
+      const size = String(match[1]);
+      const insole = Number(`${match[2]}.${match[3] || 0}`);
+      if (!Number.isFinite(insole) || insole < 20 || insole > 32.5) continue;
+      const key = `${size}:${insole}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ size, insole });
+    }
+  });
+
+  return pairs;
+}
+
+function serializeAvailableShoeSizePairs(pairs = []) {
+  return (Array.isArray(pairs) ? pairs : [])
+    .map((pair) => `${pair.size}:${formatCm(pair.insole)}`)
+    .join('; ');
+}
+
+function parseAvailableShoeSizePairs(value = '') {
+  const pairs = [];
+  const seen = new Set();
+  for (const part of String(value || '').split(/[;\n]+/)) {
+    const match = part.match(/\b(3[5-9]|4[0-9])\s*:\s*(2[0-9]|3[0-2])(?:[,.](\d))?\b/);
+    if (!match) continue;
+    const size = String(match[1]);
+    const insole = Number(`${match[2]}.${match[3] || 0}`);
+    const key = `${size}:${insole}`;
+    if (!Number.isFinite(insole) || seen.has(key)) continue;
+    seen.add(key);
+    pairs.push({ size, insole });
+  }
+  return pairs;
+}
+
+function formatAvailableShoeSizePairs(pairs = []) {
+  return (Array.isArray(pairs) ? pairs : [])
+    .map((pair) => `${pair.size} (${formatCm(pair.insole)} см)`)
+    .join(', ');
+}
+
 function extractSingleLabeledSize(text) {
   const source = String(text || '');
   const match = source.match(/(?:^|\n|\r)\s*(?:размер\s+клиента|нужный\s+размер|выбранный\s+размер|размер|size)\s*[:\-]\s*([^\n\r]+)/i);
@@ -1686,6 +1741,32 @@ function getShoeSizeInsoleIssue(sizeValue, insoleValue) {
     max,
     expectedSizes,
     direction: insole > max ? 'too_big' : 'too_small',
+  };
+}
+
+function getAvailableShoeSizeIssue(sizeValue, insoleValue, availablePairs = []) {
+  const pairs = Array.isArray(availablePairs) ? availablePairs.filter(Boolean) : [];
+  if (!pairs.length) return null;
+
+  const size = Math.round(normalizeNumericValue(sizeValue));
+  const insole = normalizeNumericValue(insoleValue);
+  const availableSizes = pairs.map((pair) => String(pair.size));
+  const hasSize = size ? availableSizes.includes(String(size)) : true;
+  const hasInsole = insole
+    ? pairs.some((pair) => Math.abs(Number(pair.insole) - insole) <= 0.35)
+    : true;
+  if (hasSize && hasInsole) return null;
+
+  const maxInsole = Math.max(...pairs.map((pair) => Number(pair.insole) || 0));
+  const minInsole = Math.min(...pairs.map((pair) => Number(pair.insole) || 0).filter(Boolean));
+  return {
+    size: size || '',
+    insole: insole || '',
+    availablePairs: pairs,
+    availableSizes,
+    maxInsole,
+    minInsole,
+    reason: !hasSize ? 'size_unavailable' : 'insole_unavailable',
   };
 }
 
@@ -1848,12 +1929,16 @@ function buildSlotSnapshot(chatId, currentInput = null) {
     || lastOrder.payment_check_status
     || lastOrder.proof_received_at
   );
+  const availableShoeSizePairs = parseAvailableShoeSizePairs(facts.availableShoeSizePairs?.value || '');
   const sizeInsoleIssue = shoeContext ? getShoeSizeInsoleIssue(size, insoleCm) : null;
+  const availabilityIssue = shoeContext && !sizeInsoleIssue
+    ? getAvailableShoeSizeIssue(size, insoleCm, availableShoeSizePairs)
+    : null;
 
   const closedSlots = [
     product && 'product',
     size && 'size',
-    insoleCm && !sizeInsoleIssue && 'insole_cm',
+    insoleCm && !sizeInsoleIssue && !availabilityIssue && 'insole_cm',
     fullName && 'full_name',
     phone && 'phone',
     city && 'city',
@@ -1867,6 +1952,7 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   if (!product) nextBlockingSlot = 'product';
   else if (!size) nextBlockingSlot = 'size';
   else if (sizeInsoleIssue) nextBlockingSlot = 'insole_confirm';
+  else if (availabilityIssue) nextBlockingSlot = 'availability_confirm';
   else if (shoeContext && !insoleCm) nextBlockingSlot = 'insole_cm';
   else if (!fullName) nextBlockingSlot = 'full_name';
   else if (!phone) nextBlockingSlot = 'phone';
@@ -1887,7 +1973,9 @@ function buildSlotSnapshot(chatId, currentInput = null) {
     paymentRequested,
     paymentProofReceived,
     shoeContext,
+    availableShoeSizePairs,
     sizeInsoleIssue,
+    availabilityIssue,
     closedSlots,
     nextBlockingSlot,
   };
@@ -1907,6 +1995,7 @@ function buildSlotSummary(snapshot) {
     payment_requested: 'Перейти к оплате и дать реквизиты',
     payment_proof_received: 'Подтвердить получение чека',
     insole_confirm: 'Перепроверить связку размера и стельки',
+    availability_confirm: 'Проверить остатки размера от менеджера',
   };
   const lines = [
     `- Товар: ${snapshot.product ? 'есть' : 'нет'}`,
@@ -1918,6 +2007,8 @@ function buildSlotSummary(snapshot) {
     `- Служба доставки: ${snapshot.deliveryService ? 'есть' : 'нет'}`,
     `- ПВЗ/адрес: ${snapshot.pickupPoint ? 'есть' : 'нет'}`,
     snapshot.sizeInsoleIssue && `- Внимание: размер ${snapshot.sizeInsoleIssue.size} и ${formatCm(snapshot.sizeInsoleIssue.insole)} см по стельке выглядят несоответствием. Сначала перепроверить, не оформлять дальше.`,
+    snapshot.availableShoeSizePairs?.length && `- Остатки по этой модели от менеджера: ${formatAvailableShoeSizePairs(snapshot.availableShoeSizePairs)}.`,
+    snapshot.availabilityIssue && `- Внимание: выбранный размер/стелька не попадает в остатки менеджера. Не оформлять доставку, сначала предложить выбрать другой размер или модель.`,
     `- Реквизиты уже отправлены: ${snapshot.paymentRequested ? 'да' : 'нет'}`,
     `- Чек получен: ${snapshot.paymentProofReceived ? 'да' : 'нет'}`,
     snapshot.closedSlots?.length && `- Уже закрыто: ${snapshot.closedSlots.join(', ')}`,
@@ -2071,6 +2162,12 @@ function applyManagerStageHints(input) {
     safeCustomerStoreCall('customer.order.delivery', (store) => store.upsertOrder(chatId, {
       status: 'delivery',
     }));
+  }
+
+  const availablePairs = extractAvailableShoeSizeInsolePairs(text);
+  if (availablePairs.length) {
+    upsertMemoryFact(chatId, 'availableShoeSizePairs', serializeAvailableShoeSizePairs(availablePairs), text);
+    upsertMemoryFact(chatId, 'shoeContext', 'true', text);
   }
 }
 
@@ -2700,6 +2797,21 @@ function buildShoeSizeInsoleIssueReply(issue) {
   return `Проверьте, пожалуйста: ${range}${expected} Ориентируемся на стопу ${formatCm(issue.insole)} см или нужен именно ${issue.size} размер?`;
 }
 
+function buildAvailabilityIssueReply(issue) {
+  if (!issue) return '';
+  const available = formatAvailableShoeSizePairs(issue.availablePairs);
+  const base = available
+    ? `По этой модели сейчас остались ${available}.`
+    : 'По этой модели нужного размера сейчас нет.';
+  if (issue.insole) {
+    return `${base} На ${formatCm(issue.insole)} см они не подойдут. Давайте подберём другую модель под вашу стельку?`;
+  }
+  if (issue.size) {
+    return `${base} ${issue.size} размера нет в остатках. Давайте подберём другую модель?`;
+  }
+  return `${base} Давайте сначала уточним подходящий размер или выберем другую модель.`;
+}
+
 function containsNextStepAfterSuspiciousInsole(reply = '') {
   return /(?:пришлите|напишите|нужен|нужна|нужны|теперь|далее|для\s+оформления|фио|телефон|город|доставк|пвз|адрес|оплат)/i.test(String(reply || ''));
 }
@@ -2712,6 +2824,16 @@ function finalizeShoeSizeInsoleReply(input = {}, reply = '') {
     || /принял|подходит|всё\s+верно|оформляем/i.test(finalReply);
   if (!acceptsMismatch && !containsNextStepAfterSuspiciousInsole(finalReply)) return finalReply;
   return buildShoeSizeInsoleIssueReply(issue);
+}
+
+function finalizeAvailabilityIssueReply(input = {}, reply = '') {
+  const issue = input?.memoryContext?.slotSnapshot?.availabilityIssue;
+  if (!issue) return String(reply || '').trim();
+  const finalReply = String(reply || '').trim();
+  const asksCheckout = containsNextStepAfterSuspiciousInsole(finalReply) || isFullCheckoutFormReply(finalReply);
+  const acceptsUnavailable = /оформляем|подходит|принял|всё\s+верно|есть\s+в\s+наличии|отлично/i.test(finalReply);
+  if (!asksCheckout && !acceptsUnavailable) return finalReply;
+  return buildAvailabilityIssueReply(issue);
 }
 
 function finalizeOrderFormReply(input, reply) {
@@ -2862,6 +2984,7 @@ function finalizeAiReply(input, reply) {
   }
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
+  finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -5795,6 +5918,7 @@ function getOrderPathGuidance(config) {
     parseConfigBoolean(config.order_collect_insole_enabled, true)
       && 'Для обуви уточнить длину стельки в сантиметрах, если её ещё нет.',
     'Для обуви проверять связку размера и стельки: если размер и сантиметры выглядят несоответствием, не продолжать оформление, а мягко переспросить. Например, 44 размер и 29 см по стельке выглядят подозрительно: 29 см ближе к 45-46.',
+    'Если менеджер в диалоге написал остатки по модели, например "остались 42-26,5 43-27,5", считать это главным фактом по наличию. Если размер или стелька клиента не попадает в эти остатки, не оформлять заказ и не спрашивать доставку/ФИО/телефон; коротко сказать, какие размеры остались, и предложить другую модель или размер.',
     parseConfigBoolean(config.order_collect_full_name_enabled, true)
       && 'Для оформления собрать ФИО получателя.',
     parseConfigBoolean(config.order_collect_phone_enabled, true)
