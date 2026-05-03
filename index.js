@@ -1642,6 +1642,57 @@ function extractInsoleCm(text) {
   return '';
 }
 
+function normalizeNumericValue(value) {
+  const normalized = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const SHOE_SIZE_INSOLE_RANGES = {
+  35: [22.0, 22.8],
+  36: [22.6, 23.4],
+  37: [23.2, 24.0],
+  38: [23.8, 24.6],
+  39: [24.4, 25.2],
+  40: [25.0, 25.8],
+  41: [25.6, 26.4],
+  42: [26.2, 27.0],
+  43: [26.8, 27.6],
+  44: [27.4, 28.4],
+  45: [28.3, 29.2],
+  46: [29.0, 30.1],
+  47: [30.0, 30.8],
+};
+
+function getExpectedShoeSizesForInsole(insoleCm) {
+  const insole = normalizeNumericValue(insoleCm);
+  if (!insole) return [];
+  return Object.entries(SHOE_SIZE_INSOLE_RANGES)
+    .filter(([, range]) => insole >= range[0] - 0.15 && insole <= range[1] + 0.15)
+    .map(([size]) => size);
+}
+
+function getShoeSizeInsoleIssue(sizeValue, insoleValue) {
+  const size = Math.round(normalizeNumericValue(sizeValue));
+  const insole = normalizeNumericValue(insoleValue);
+  if (!size || !insole || !SHOE_SIZE_INSOLE_RANGES[size]) return null;
+  const [min, max] = SHOE_SIZE_INSOLE_RANGES[size];
+  if (insole >= min - 0.15 && insole <= max + 0.15) return null;
+  const expectedSizes = getExpectedShoeSizesForInsole(insole);
+  return {
+    size,
+    insole,
+    min,
+    max,
+    expectedSizes,
+    direction: insole > max ? 'too_big' : 'too_small',
+  };
+}
+
+function formatCm(value) {
+  return String(Number(value).toFixed(1)).replace('.', ',').replace(/,0$/, '');
+}
+
 function extractCity(text) {
   const match = String(text || '').match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
   return match ? match[1].trim() : '';
@@ -1797,11 +1848,12 @@ function buildSlotSnapshot(chatId, currentInput = null) {
     || lastOrder.payment_check_status
     || lastOrder.proof_received_at
   );
+  const sizeInsoleIssue = shoeContext ? getShoeSizeInsoleIssue(size, insoleCm) : null;
 
   const closedSlots = [
     product && 'product',
     size && 'size',
-    insoleCm && 'insole_cm',
+    insoleCm && !sizeInsoleIssue && 'insole_cm',
     fullName && 'full_name',
     phone && 'phone',
     city && 'city',
@@ -1814,6 +1866,7 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   let nextBlockingSlot = '';
   if (!product) nextBlockingSlot = 'product';
   else if (!size) nextBlockingSlot = 'size';
+  else if (sizeInsoleIssue) nextBlockingSlot = 'insole_confirm';
   else if (shoeContext && !insoleCm) nextBlockingSlot = 'insole_cm';
   else if (!fullName) nextBlockingSlot = 'full_name';
   else if (!phone) nextBlockingSlot = 'phone';
@@ -1834,6 +1887,7 @@ function buildSlotSnapshot(chatId, currentInput = null) {
     paymentRequested,
     paymentProofReceived,
     shoeContext,
+    sizeInsoleIssue,
     closedSlots,
     nextBlockingSlot,
   };
@@ -1852,6 +1906,7 @@ function buildSlotSummary(snapshot) {
     pickup_point: 'Уточнить ПВЗ или адрес',
     payment_requested: 'Перейти к оплате и дать реквизиты',
     payment_proof_received: 'Подтвердить получение чека',
+    insole_confirm: 'Перепроверить связку размера и стельки',
   };
   const lines = [
     `- Товар: ${snapshot.product ? 'есть' : 'нет'}`,
@@ -1862,6 +1917,7 @@ function buildSlotSummary(snapshot) {
     `- Город: ${snapshot.city ? 'есть' : 'нет'}`,
     `- Служба доставки: ${snapshot.deliveryService ? 'есть' : 'нет'}`,
     `- ПВЗ/адрес: ${snapshot.pickupPoint ? 'есть' : 'нет'}`,
+    snapshot.sizeInsoleIssue && `- Внимание: размер ${snapshot.sizeInsoleIssue.size} и ${formatCm(snapshot.sizeInsoleIssue.insole)} см по стельке выглядят несоответствием. Сначала перепроверить, не оформлять дальше.`,
     `- Реквизиты уже отправлены: ${snapshot.paymentRequested ? 'да' : 'нет'}`,
     `- Чек получен: ${snapshot.paymentProofReceived ? 'да' : 'нет'}`,
     snapshot.closedSlots?.length && `- Уже закрыто: ${snapshot.closedSlots.join(', ')}`,
@@ -2635,6 +2691,29 @@ function buildMissingOrderFieldsReply(snapshot = {}) {
   return `Пришлите, пожалуйста, ${picked[0]} и ${picked[1]}.`;
 }
 
+function buildShoeSizeInsoleIssueReply(issue) {
+  if (!issue) return '';
+  const expected = issue.expectedSizes?.length
+    ? ` ${formatCm(issue.insole)} см больше похоже на ${issue.expectedSizes.join('-')} размер.`
+    : '';
+  const range = `Для ${issue.size} размера стелька обычно около ${formatCm(issue.min)}-${formatCm(issue.max)} см.`;
+  return `Проверьте, пожалуйста: ${range}${expected} Ориентируемся на стопу ${formatCm(issue.insole)} см или нужен именно ${issue.size} размер?`;
+}
+
+function containsNextStepAfterSuspiciousInsole(reply = '') {
+  return /(?:пришлите|напишите|нужен|нужна|нужны|теперь|далее|для\s+оформления|фио|телефон|город|доставк|пвз|адрес|оплат)/i.test(String(reply || ''));
+}
+
+function finalizeShoeSizeInsoleReply(input = {}, reply = '') {
+  const issue = input?.memoryContext?.slotSnapshot?.sizeInsoleIssue;
+  if (!issue) return String(reply || '').trim();
+  const finalReply = String(reply || '').trim();
+  const acceptsMismatch = new RegExp(`${issue.size}[\\s\\S]{0,80}${String(issue.insole).replace('.', '[.,]')}\\s*(?:см|cm)`, 'i').test(finalReply)
+    || /принял|подходит|всё\s+верно|оформляем/i.test(finalReply);
+  if (!acceptsMismatch && !containsNextStepAfterSuspiciousInsole(finalReply)) return finalReply;
+  return buildShoeSizeInsoleIssueReply(issue);
+}
+
 function finalizeOrderFormReply(input, reply) {
   const finalReply = String(reply || '').trim();
   if (!isFullCheckoutFormReply(finalReply)) return finalReply;
@@ -2782,6 +2861,7 @@ function finalizeAiReply(input, reply) {
     return getStaleReceiptAckFallback(input);
   }
   finalReply = finalizeCartSwitchReply(input, finalReply);
+  finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -5714,6 +5794,7 @@ function getOrderPathGuidance(config) {
       && 'Если размер уже указан, записать его и не спрашивать повторно.',
     parseConfigBoolean(config.order_collect_insole_enabled, true)
       && 'Для обуви уточнить длину стельки в сантиметрах, если её ещё нет.',
+    'Для обуви проверять связку размера и стельки: если размер и сантиметры выглядят несоответствием, не продолжать оформление, а мягко переспросить. Например, 44 размер и 29 см по стельке выглядят подозрительно: 29 см ближе к 45-46.',
     parseConfigBoolean(config.order_collect_full_name_enabled, true)
       && 'Для оформления собрать ФИО получателя.',
     parseConfigBoolean(config.order_collect_phone_enabled, true)
