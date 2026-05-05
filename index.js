@@ -1797,6 +1797,8 @@ function extractDeliveryAddress(text) {
   const source = String(text || '').trim();
   const explicit = source.match(/(?:адрес|доставка|доставить|отправить)\s*[:\-]?\s*([^\n]{8,220})/i);
   if (explicit) return explicit[1].trim();
+  const cityAddress = source.match(/(?:^|[\s.])((?:москва|санкт[-\s]?петербург|спб)[^\n]{5,180})/i);
+  if (cityAddress) return cityAddress[1].trim();
   const lines = source.split(/\n/).map((line) => line.trim()).filter(Boolean);
   const candidate = lines.find((line) => /(ул\.?|улица|проспект|пр-т|дом|д\.|кв\.?|квартира|корпус|подъезд|москва|санкт|спб|область|район)/i.test(line) && line.length >= 8);
   return candidate || '';
@@ -1887,7 +1889,7 @@ function extractPaymentProofAmount(text) {
 function extractDeliveryService(text) {
   const source = String(text || '').toLowerCase();
   if (!source) return '';
-  if (/(сд[эе]к|cdek)\b/i.test(source)) return 'CDEK';
+  if (/(?:^|[\s.,;:!?()[\]{}"'])сд[эе]к(?=$|[\s.,;:!?()[\]{}"'])|\bcdek\b/i.test(source)) return 'CDEK';
   if (/(wildberries|\bwb\b)/i.test(source)) return 'WB';
   if (/(ozon|озон)\b/i.test(source)) return 'Ozon';
   if (/(яндекс.*достав|доставк.*яндекс|яндекс go|yandex)/i.test(source)) return 'Яндекс Доставка';
@@ -1925,7 +1927,13 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   const phone = normalizeMemoryText(lastOrder.phone || facts.phone?.value || extractPhone(currentText));
   const city = normalizeMemoryText(facts.city?.value || extractCity(currentText));
   const deliveryService = normalizeMemoryText(facts.deliveryService?.value || extractDeliveryService(currentText));
-  const pickupPoint = normalizeMemoryText(facts.pickupPoint?.value || lastOrder.delivery_address || extractPickupPoint(currentText));
+  const pickupPoint = normalizeMemoryText(
+    facts.deliveryAddress?.value
+    || facts.pickupPoint?.value
+    || lastOrder.delivery_address
+    || extractDeliveryAddress(currentText)
+    || extractPickupPoint(currentText)
+  );
   const shoeContext = Boolean(
     facts.shoeContext?.value === 'true'
     || detectShoeContextFromText(product)
@@ -3029,6 +3037,47 @@ function getMissingOrderSlots(snapshot = {}) {
   return missing;
 }
 
+function getKnownDeliveryDestination(input = {}) {
+  const snapshot = input?.memoryContext?.slotSnapshot || buildSlotSnapshot(input?.chatId, input);
+  const profile = getCustomerProfileSnapshot(input?.chatId) || {};
+  const facts = profile.facts || {};
+  const lastOrder = profile.lastOrder || {};
+  return normalizeMemoryText(
+    snapshot.pickupPoint
+    || facts.deliveryAddress?.value
+    || facts.pickupPoint?.value
+    || lastOrder.delivery_address
+    || extractDeliveryAddress(input?.text)
+    || extractPickupPoint(input?.text)
+  );
+}
+
+function shouldFinalizeDeliveryChoice(input = {}) {
+  const text = String(input?.text || '');
+  if (!text) return false;
+  if (!extractDeliveryService(text)) return false;
+  return /(там\s+забер|заберу|подойд[её]т|сюда|этот\s+адрес|этот\s+пвз|пункт|пвз|скрин|фото)/i.test(text)
+    || input.hasMedia
+    || isDeliveryMediaHintText(text);
+}
+
+function replyAsksForDeliveryDestination(reply = '') {
+  const source = String(reply || '');
+  return /(?:пришлите|уточните|напишите|подскажите)[\s\S]{0,90}(?:адрес|пвз|пункт\s+выдач|название\s+удобного\s+пвз)/i.test(source);
+}
+
+function finalizeDeliveryChoiceReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!shouldFinalizeDeliveryChoice(input)) return finalReply;
+  if (!replyAsksForDeliveryDestination(finalReply)) return finalReply;
+
+  const service = extractDeliveryService(input.text) || input?.memoryContext?.slotSnapshot?.deliveryService || '';
+  const destination = getKnownDeliveryDestination(input);
+  const serviceText = service ? `${service}` : 'доставку';
+  const destinationText = destination ? ` на ${destination}` : '';
+  return `Понял, ${serviceText}${destinationText}.`;
+}
+
 function buildMissingOrderFieldsReply(snapshot = {}) {
   const missing = getMissingOrderSlots(snapshot);
   if (!missing.length) return 'Отлично, всё есть. Можно переходить к оплате.';
@@ -3336,10 +3385,11 @@ function finalizeCartSwitchReply(input = {}, reply = '') {
 
   if (!hasWrongPrice && !hasOldPremiata) return finalReply;
 
-  const priceText = cartPrice > 0 ? ` за ${formatMoneyAmount(cartPrice)}` : '';
   const cartSwitch = hasCartSwitchIntent(input.text)
-    ? `Понял, меняем на товар из новой корзины${priceText}.`
-    : `Понял, ориентируюсь на свежую корзину${priceText}.`;
+    ? 'Понял, меняем на товар из новой корзины.'
+    : 'Понял.';
+  const destination = getKnownDeliveryDestination(input);
+  if (destination) return cartSwitch;
   return `${cartSwitch} Пришлите, пожалуйста, адрес или название удобного ПВЗ.`;
 }
 
@@ -3416,6 +3466,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeTimeAwareGreetingReply(input, finalReply);
   finalReply = finalizeRepeatedGreetingReply(input, finalReply);
   finalReply = finalizeCartSwitchReply(input, finalReply);
+  finalReply = finalizeDeliveryChoiceReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
