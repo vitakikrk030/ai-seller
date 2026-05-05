@@ -2995,9 +2995,11 @@ function isStoreOfflineQuestion(text = '') {
 function finalizeStoreOfflineReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   if (!finalReply || !isStoreOfflineQuestion(input.text)) return finalReply;
-  if (!/(?:павильон|склад|сотрудник|содержание|расход)/i.test(finalReply) && finalReply.length <= 260) return finalReply;
+  const inputMentionsSadovod = /садовод/i.test(String(input.text || ''));
+  const hasUnaskedSadovod = /садовод/i.test(finalReply) && !inputMentionsSadovod;
+  if (!hasUnaskedSadovod && !/(?:павильон|склад|сотрудник|содержание|расход)/i.test(finalReply) && finalReply.length <= 260) return finalReply;
 
-  const sadovod = /садовод/i.test(String(input.text || ''))
+  const sadovod = inputMentionsSadovod
     ? 'На Садоводе раньше были, сейчас уже нет. '
     : '';
   return `${sadovod}Сейчас работаем только онлайн, шоурума нет. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем. При получении можно спокойно примерить, осмотреть и проверить товар.`;
@@ -7393,14 +7395,19 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
   );
 
   if (scenario.id === 'discount') {
+    const promisedModel = /сейчас\s+(?:скину|пришлю|отправлю|покажу)[\s\S]{0,80}(?:модель|фото|ссылк)/i.test(scenario.message);
     addScenarioCheck(
       checks,
       'discount_policy',
-      'Скидка не обещана от себя',
-      scenarioTextHasAny(lower, [/скид/i])
-        && scenarioTextHasAny(lower, [/нет|финальн|акци|канал|сейчас\s+не/i])
-        && !scenarioTextHasAny(lower, [/сделаю\s+скид|дам\s+скид|уступ/i]),
-      'На просьбу скидки нужна мягкая позиция: цена финальная, акции только если явно есть.'
+      promisedModel ? 'Ждёт обещанную модель' : 'Скидка не обещана от себя',
+      promisedModel
+        ? scenarioTextHasAny(lower, [/пришлите|жду/i]) && !scenarioTextHasAny(lower, [/скид|финальн|акци|канал|размер/i])
+        : scenarioTextHasAny(lower, [/скид/i])
+          && scenarioTextHasAny(lower, [/нет|финальн|акци|канал|сейчас\s+не/i])
+          && !scenarioTextHasAny(lower, [/сделаю\s+скид|дам\s+скид|уступ/i]),
+      promisedModel
+        ? 'Если клиент сказал, что сейчас скинет модель/фото/ссылку, надо коротко ждать, а не отвечать по скидке заранее.'
+        : 'На просьбу скидки нужна мягкая позиция: цена финальная, акции только если явно есть.'
     );
   }
 
