@@ -7231,11 +7231,42 @@
         });
       }
 
+      function getTrainingReviewFlags(item) {
+        const flags = [];
+        const text = [
+          item.note,
+          item.ruleText,
+          item.correctedText,
+          item.aiText,
+          item.contextText,
+          item.clientText,
+        ].join(' ').toLowerCase();
+        const createdAt = Date.parse(item.createdAt || '');
+        const ageDays = Number.isFinite(createdAt) ? Math.floor((Date.now() - createdAt) / 86400000) : 0;
+        if (item.type !== 'good' && /(фио|телефон|город|служб[ауы] доставки|пвз)[\s\S]{0,160}(сразу|мне понадобятся|для оформления)/i.test(text)) {
+          flags.push({ tone: 'attention', label: 'проверить: может торопить оформление' });
+        }
+        if (/(я\s+менеджер\s+iwak|я\s+на\s+связи|от\s+iwak)/i.test(text)) {
+          flags.push({ tone: 'attention', label: 'проверить: может палить роль' });
+        }
+        if ((item.ruleText || '').length > 850 || (item.correctedText || '').length > 650) {
+          flags.push({ tone: 'muted', label: 'длинный' });
+        }
+        if (item.type !== 'good' && ageDays >= 3) {
+          flags.push({ tone: 'muted', label: 'старый bad' });
+        }
+        if (item.type === 'good') {
+          flags.push({ tone: 'good', label: 'эталон' });
+        }
+        return flags.slice(0, 3);
+      }
+
       function renderTrainingItem(item) {
         const active = item.active !== false;
         const categoryOptions = trainingCategoriesCache.map((category) => (
           `<option value="${escapeAttr(category.key)}"${item.category === category.key ? ' selected' : ''}>${escapeHtml(category.label)}</option>`
         )).join('');
+        const reviewFlags = getTrainingReviewFlags(item);
         return `
           <div class="training-item${active ? '' : ' disabled'}" data-training-id="${escapeAttr(item.id)}">
             <div class="training-item-head">
@@ -7243,6 +7274,7 @@
                 <span class="status-pill ${item.type === 'good' ? 'good' : 'attention'}">${item.type === 'good' ? 'хороший' : 'исправление'}</span>
                 <span class="status-pill ${active ? 'good' : 'muted'}">${active ? 'активен' : 'выключен'}</span>
                 <span>${escapeHtml(getTrainingCategoryLabel(item.category))}</span>
+                ${reviewFlags.map((flag) => `<span class="status-pill ${escapeAttr(flag.tone)}">${escapeHtml(flag.label)}</span>`).join('')}
               </div>
               <div class="chat-submeta">${escapeHtml(formatDateTimeLabel(item.createdAt))}</div>
             </div>
@@ -7293,11 +7325,19 @@
         trainingTotalCount.textContent = String(summary.total || 0);
         trainingBadCount.textContent = String(summary.bad || 0);
         trainingGoodCount.textContent = String(summary.good || 0);
-        trainingPromptCount.textContent = String(data.promptItems || 0);
+        trainingPromptCount.textContent = `${data.promptItems || 0}/${data.promptLimit || 5}`;
         renderTrainingCategoryFilter();
         const items = getFilteredTrainingItems();
+        const reviewHints = [
+          !summary.good && 'Пока нет хороших эталонов. Добавь несколько через “👍 Хороший урок” в Inbox.',
+          (summary.bad || 0) > (summary.good || 0) * 2 && 'Bad-уроков заметно больше хороших: продавец сильнее учится на запретах, чем на примерах хорошего ответа.',
+          (summary.active || 0) > (data.promptLimit || 5) && `В prompt попадёт только ${data.promptLimit || 5} самых подходящих уроков, остальные остаются в базе.`,
+        ].filter(Boolean);
         trainingList.innerHTML = items.length
-          ? items.map(renderTrainingItem).join('')
+          ? [
+            reviewHints.length ? `<div class="status-output muted">${reviewHints.map(escapeHtml).join('<br>')}</div>` : '',
+            items.map(renderTrainingItem).join(''),
+          ].join('')
           : '<div class="status-output muted">По этому фильтру уроков нет.</div>';
       }
 
@@ -7620,7 +7660,8 @@
           good: trainingItemsCache.filter((item) => item.type === 'good').length,
           bad: trainingItemsCache.filter((item) => item.type !== 'good').length,
         },
-        promptItems: Math.min(trainingItemsCache.filter((item) => item.active !== false).length, 10),
+        promptLimit: 5,
+        promptItems: Math.min(trainingItemsCache.filter((item) => item.active !== false).length, 5),
       }));
       trainingCategoryFilter.addEventListener('change', () => trainingFilter.dispatchEvent(new Event('change')));
       trainingSearch.addEventListener('input', () => trainingFilter.dispatchEvent(new Event('change')));

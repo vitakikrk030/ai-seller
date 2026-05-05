@@ -131,9 +131,9 @@ const SAI_GPT_MEMORY_FILE_PATH = path.join(dataDir, 'sai-gpt-memory.json');
 const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
 const MAX_TRAINING_EXAMPLES = 200;
 const SAI_GPT_MEMORY_MAX_MESSAGES = 200;
-const TRAINING_PROMPT_EXAMPLES = 10;
-const TRAINING_RELEVANT_PROMPT_EXAMPLES = 6;
-const TRAINING_RECENT_PROMPT_EXAMPLES = 4;
+const TRAINING_PROMPT_EXAMPLES = 5;
+const TRAINING_RELEVANT_PROMPT_EXAMPLES = 3;
+const TRAINING_RECENT_PROMPT_EXAMPLES = 2;
 const SAI_GPT_CODE_FILE_LIMIT = 500;
 const SAI_GPT_CODE_SNIPPET_LIMIT = 8;
 const SAI_GPT_CONTEXT_CHAR_LIMIT = 70000;
@@ -8177,6 +8177,7 @@ app.get('/training', (req, res) => {
   const items = (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES);
   res.json({
     items,
+    promptLimit: TRAINING_PROMPT_EXAMPLES,
     promptItems: Math.min(items.filter((item) => item.active !== false).length, TRAINING_PROMPT_EXAMPLES),
     summary: {
       total: items.length,
