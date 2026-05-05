@@ -26,6 +26,8 @@ data/training-examples.json
 data/sai-gpt-memory.json
 data/*.sqlite
 data/*.sqlite-*
+data/*.sqlite.*
+data/*.bak
 data/*.corrupt-*
 
 # OS
