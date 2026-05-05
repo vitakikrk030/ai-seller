@@ -2731,6 +2731,30 @@ function isStrongCheckoutIntent(text = '') {
   return /(беру|возьму|оформ(?:ить|ляем|ляйте)|заказ(?:ать|ываю)?|можно\s+заказ|давайте|хочу\s+(?:оформить|заказать|купить))/i.test(normalized);
 }
 
+function isCustomerPromiseToSendMore(text = '') {
+  const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /(?:сейчас|щас|сча|позже|потом|через\s+\S+|как\s+буду)[\s\S]{0,80}(?:скину|пришлю|отправлю|покажу|найду|добавлю|напишу)[\s\S]{0,80}(?:модель|фото|ссылк|вариант|размер|информац|данн|адрес|пвз)?/i.test(normalized)
+    || /(?:скину|пришлю|отправлю|покажу|найду|добавлю|напишу)[\s\S]{0,80}(?:сейчас|щас|сча|позже|потом|как\s+буду)/i.test(normalized);
+}
+
+function getRecentDialogText(input = {}, limit = 8) {
+  const history = Array.isArray(input?.memoryContext?.history) ? input.memoryContext.history : [];
+  return history
+    .slice(-limit)
+    .map((message) => normalizeMemoryText(message?.content || ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function hasRecentCustomerPromiseToSendMore(input = {}) {
+  const history = Array.isArray(input?.memoryContext?.history) ? input.memoryContext.history : [];
+  return history.slice(-8).some((message) => message?.role !== 'assistant' && isCustomerPromiseToSendMore(message?.content || ''));
+}
+
+function hasRecentDiscountContext(input = {}) {
+  return /(?:скидк|дешевле|дорог|цена|за\s+\d{3,6}|уступ|акци)/i.test(getRecentDialogText(input, 10));
+}
+
 function isAvailabilityOnlyQuestion(text = '') {
   const normalized = String(text || '').toLowerCase().replace(/ё/g, 'е');
   return !isStrongCheckoutIntent(normalized)
@@ -2812,6 +2836,33 @@ function buildSoftOrderStartReply(input = {}) {
   const sizeText = size ? `${size} размер` : 'эту модель';
   const priceText = price ? `, цена ${formatMoneyAmount(price)}` : '';
   return `Здравствуйте! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
+}
+
+function asksOnlyForSize(reply = '') {
+  const normalized = String(reply || '').toLowerCase().replace(/ё/g, 'е').trim();
+  if (!normalized || normalized.length > 180) return false;
+  return /(?:какой|какие|подскажите|уточните|напишите)[\s\S]{0,60}размер/i.test(normalized)
+    || /размер[\s\S]{0,40}(?:нужен|интересует|выберите)/i.test(normalized);
+}
+
+function finalizeWaitForCustomerContinuation(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply) return finalReply;
+  if (isCustomerPromiseToSendMore(input?.text)) return 'Хорошо, пришлите.';
+
+  const currentText = normalizeMemoryText(input?.text || '');
+  const isSharedProduct = containsLink(currentText) || isProductMediaHintText(currentText) || input.hasMedia;
+  if (!isSharedProduct || !hasRecentCustomerPromiseToSendMore(input)) return finalReply;
+
+  if (hasRecentDiscountContext(input) && (asksOnlyForSize(finalReply) || /оформ/i.test(finalReply))) {
+    return 'Понял. По этой модели цена сейчас фиксированная, скидки нет.';
+  }
+
+  if (asksOnlyForSize(finalReply)) {
+    return 'Понял, посмотрел. Что именно хотите уточнить по этой модели?';
+  }
+
+  return finalReply;
 }
 
 function hasPriorDialogContext(input = {}) {
@@ -3066,6 +3117,7 @@ function finalizeAiReply(input, reply) {
   if (containsReceiptAcknowledgement(finalReply)) {
     return getStaleReceiptAckFallback(input);
   }
+  finalReply = finalizeWaitForCustomerContinuation(input, finalReply);
   finalReply = finalizeRepeatedGreetingReply(input, finalReply);
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
@@ -5984,6 +6036,7 @@ function getSmalltalkGuidance(config) {
   return buildGuidanceSection('Живость общения:', [
     'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
     'Не здороваться повторно внутри уже начатого диалога. Если клиент прислал новую ссылку/фото/модель в той же беседе, продолжать по смыслу без "Здравствуйте", "Привет" или "Добрый день".',
+    'Если клиент пишет "сейчас скину/пришлю/покажу модель, фото или ссылку", ответить коротко "Хорошо, пришлите." и ждать. Не продолжать продажу, пока клиент не пришлёт обещанное.',
     'Если клиент пишет "ты AI/робот/бот?", никогда не спорить, не оправдываться, не доказывать, что ты не бот, не писать "я на связи от IWAK" и не объяснять внутреннюю роль. Лучше ответить коротким встречным вопросом: "Почему так решили?" или "С чего взяли?"',
     parseConfigBoolean(config.smalltalk_style_enabled, true)
       && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
@@ -6024,6 +6077,7 @@ function getOrderPathGuidance(config) {
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
     'Не отправлять клиенту полную анкету оформления, если он просто уточняет наличие, размер или стельку. В таком случае ответить только по вопросу.',
+    'Ссылка или фото товара не всегда означает новый заказ. Если до этого клиент обсуждал скидку, сравнение цены, внешний пример или написал "сейчас скину модель", считать новую ссылку/фото продолжением этого вопроса, а не начинать оформление и не спрашивать размер.',
     'В первом ответе на корзину или готовый заказ не начинать резко с ФИО и телефона. Сначала мягко подтвердить товар/размер/цену, сказать что доставка бесплатная, и спросить коротко: "Оформим?" Контакты просить уже после согласия клиента.',
     'Если клиент уже хочет оформлять, спрашивать только ближайшие 1-2 недостающих поля из контекста оформления, а не весь список ФИО/телефон/город/служба/ПВЗ сразу.',
   ], config.order_rules_text);
@@ -6034,6 +6088,7 @@ function getResponseGuardGuidance(config) {
   return buildGuidanceSection('Проверка ответа:', [
     'Перед финальным ответом клиенту молча проверь черновик по этим пунктам. Не показывай клиенту сам чек-лист.',
     'Если в этом чате уже были сообщения до текущего ответа, в начале ответа не должно быть повторного приветствия.',
+    'Если клиент сказал, что сейчас пришлёт модель/фото/ссылку, не отвечать по старому вопросу длинно: коротко принять и ждать вложение.',
     parseConfigBoolean(config.response_guard_no_fake_payment_enabled, true)
       && 'Не выдуманы ли реквизиты, банк, получатель или способ оплаты.',
     parseConfigBoolean(config.response_guard_no_repeat_known_enabled, true)
@@ -6107,11 +6162,11 @@ function getStoreTrustGuidance(config) {
   if (!parseConfigBoolean(config.store_trust_enabled, true)) return '';
   return buildGuidanceSection('Магазин и доверие:', [
     parseConfigBoolean(config.store_trust_online_only_enabled, true)
-      && 'Если клиент спрашивает про офлайн-магазин, адрес, где посмотреть или можно ли приехать: спокойно объяснить, что сейчас работаем только онлайн.',
+      && 'Если клиент спрашивает про офлайн-магазин, адрес, шоурум, где посмотреть или можно ли приехать: коротко сказать, что сейчас работаем только онлайн, шоурума нет.',
     parseConfigBoolean(config.store_trust_sadovod_history_enabled, true)
-      && 'Если клиент спрашивает про Садовод: можно сказать, что раньше действительно работали на Садоводе, но сейчас уже нет.',
+      && 'Если клиент спрашивает про Садовод: коротко сказать, что раньше действительно работали на Садоводе, но сейчас уже нет.',
     parseConfigBoolean(config.store_trust_cost_reason_enabled, true)
-      && 'Причину объяснять без оправданий: содержание павильона, склада и сотрудников сильно выросло, а офлайн-расходы отражались бы на цене товара.',
+      && 'Не оправдываться длинно про павильон, склад, сотрудников и расходы. Если нужна причина, одной короткой фразой: онлайн помогает держать цену ниже.',
     parseConfigBoolean(config.store_trust_no_address_enabled, true)
       && 'Не выдумывать адрес, павильон, точку выдачи или возможность приехать. Не писать "приезжайте", "можно подъехать" или "адрес такой-то".',
     parseConfigBoolean(config.store_trust_safe_purchase_enabled, true)
