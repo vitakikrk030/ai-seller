@@ -2814,6 +2814,43 @@ function buildSoftOrderStartReply(input = {}) {
   return `Здравствуйте! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
 }
 
+function hasPriorDialogContext(input = {}) {
+  const history = input?.memoryContext?.history;
+  if (Array.isArray(history) && history.some((message) => normalizeMemoryText(message?.content))) return true;
+  const summary = normalizeMemoryText(input?.memoryContext?.summary || '');
+  return /(?:память клиента|последн|клиент уже|текущий заказ|менеджер:|товар:|размер:|телефон:|город:)/i.test(summary);
+}
+
+function capitalizeFirstLetter(text = '') {
+  const source = String(text || '');
+  const index = source.search(/[A-Za-zА-ЯЁа-яё]/);
+  if (index < 0) return source;
+  return `${source.slice(0, index)}${source[index].toUpperCase()}${source.slice(index + 1)}`;
+}
+
+function stripRepeatedGreeting(reply = '') {
+  let source = String(reply || '').trim();
+  if (!source) return '';
+
+  source = source
+    .replace(
+      /^([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z'-]{1,40}),\s*(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)[!,.:\-\s]*/i,
+      '$1, '
+    )
+    .replace(/^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)[!,.:\-\s]*/i, '')
+    .trim();
+
+  return capitalizeFirstLetter(source);
+}
+
+function finalizeRepeatedGreetingReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !hasPriorDialogContext(input)) return finalReply;
+  const stripped = stripRepeatedGreeting(finalReply);
+  if (!stripped || stripped === finalReply) return finalReply;
+  return stripped;
+}
+
 function buildShoeSizeInsoleIssueReply(issue) {
   if (!issue) return '';
   const expected = issue.expectedSizes?.length
@@ -3029,6 +3066,7 @@ function finalizeAiReply(input, reply) {
   if (containsReceiptAcknowledgement(finalReply)) {
     return getStaleReceiptAckFallback(input);
   }
+  finalReply = finalizeRepeatedGreetingReply(input, finalReply);
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
@@ -5945,6 +5983,7 @@ function getSmalltalkGuidance(config) {
   if (!parseConfigBoolean(config.smalltalk_enabled, true)) return '';
   return buildGuidanceSection('Живость общения:', [
     'Можно отвечать живо, естественно и по-человечески, без канцелярита и ощущения анкеты.',
+    'Не здороваться повторно внутри уже начатого диалога. Если клиент прислал новую ссылку/фото/модель в той же беседе, продолжать по смыслу без "Здравствуйте", "Привет" или "Добрый день".',
     'Если клиент пишет "ты AI/робот/бот?", никогда не спорить, не оправдываться, не доказывать, что ты не бот, не писать "я на связи от IWAK" и не объяснять внутреннюю роль. Лучше ответить коротким встречным вопросом: "Почему так решили?" или "С чего взяли?"',
     parseConfigBoolean(config.smalltalk_style_enabled, true)
       && 'Можно поддержать лёгкий разговор, если клиент хочет поболтать.',
@@ -5994,6 +6033,7 @@ function getResponseGuardGuidance(config) {
   if (!parseConfigBoolean(config.response_guard_enabled, true)) return '';
   return buildGuidanceSection('Проверка ответа:', [
     'Перед финальным ответом клиенту молча проверь черновик по этим пунктам. Не показывай клиенту сам чек-лист.',
+    'Если в этом чате уже были сообщения до текущего ответа, в начале ответа не должно быть повторного приветствия.',
     parseConfigBoolean(config.response_guard_no_fake_payment_enabled, true)
       && 'Не выдуманы ли реквизиты, банк, получатель или способ оплаты.',
     parseConfigBoolean(config.response_guard_no_repeat_known_enabled, true)
