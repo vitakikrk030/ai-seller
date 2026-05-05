@@ -2989,7 +2989,7 @@ function finalizePhotoSizeRealityReply(input = {}, reply = '') {
 }
 
 function isStoreOfflineQuestion(text = '') {
-  return /(?:шоурум|офлайн|магазин|адрес|приехать|подъехать|померить|примерить|садовод)/i.test(String(text || ''));
+  return /(?:шоурум|офлайн|магазин|адрес|приехать|подъехать|померить|пример|самовывоз|садовод)/i.test(String(text || ''));
 }
 
 function finalizeStoreOfflineReply(input = {}, reply = '') {
@@ -7485,6 +7485,7 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
   }
 
   if (scenario.id === 'store_offline') {
+    const askedSadovod = /садовод/i.test(String(scenario.message || ''));
     addScenarioCheck(
       checks,
       'store_online_only',
@@ -7497,17 +7498,21 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
       checks,
       'sadovod_context',
       'Садовод объяснён без легенд',
-      scenarioTextHasAny(lower, [/садовод/i])
-        && scenarioTextHasAny(lower, [/раньше|были|работали/i])
-        && scenarioTextHasAny(lower, [/сейчас|уже\s+нет|онлайн/i]),
+      !askedSadovod || (
+        scenarioTextHasAny(lower, [/садовод/i])
+          && scenarioTextHasAny(lower, [/раньше|были|работали/i])
+          && scenarioTextHasAny(lower, [/сейчас|уже\s+нет|онлайн/i])
+      ),
       'Если клиент спросил про Садовод, ответ должен признать прошлый контекст и объяснить текущий онлайн-формат.'
     );
     addScenarioCheck(
       checks,
       'offline_cost_reason',
       'Причина связана с ценой',
-      scenarioTextHasAny(lower, [/дорог|расход|содержан|аренд|павильон|сотрудник|склад/i])
-        && scenarioTextHasAny(lower, [/цен|стоимост/i]),
+      !askedSadovod || (
+        scenarioTextHasAny(lower, [/дорог|расход|содержан|аренд|павильон|сотрудник|склад/i])
+          && scenarioTextHasAny(lower, [/цен|стоимост/i])
+      ),
       'Нужен понятный мост: офлайн-расходы выросли и влияли бы на конечную цену.'
     );
     addScenarioCheck(
