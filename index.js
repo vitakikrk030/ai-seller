@@ -2982,7 +2982,7 @@ function finalizePhotoSizeRealityReply(input = {}, reply = '') {
   if (!size || !approxCm) return finalReply;
 
   const sizeCmPattern = new RegExp(`${String(size).replace('.', '[.,]')}[\\s\\S]{0,80}${String(approxCm).replace('.', '[.,]')}\\s*(?:см|cm)|${String(approxCm).replace('.', '[.,]')}\\s*(?:см|cm)[\\s\\S]{0,80}${String(size).replace('.', '[.,]')}`, 'i');
-  if (sizeCmPattern.test(finalReply)) return finalReply;
+  if (sizeCmPattern.test(finalReply) && /^(?:да,\s*)?(?:фото|все\s+фото|фото\s+у\s+нас)[\s\S]{0,80}реальн/i.test(finalReply)) return finalReply;
 
   return `Да, фото у нас реальные. Вижу у вас ${size} размер — это примерно ${approxCm} см по стельке. Если этот размер подошёл, можно оформлять ${size}.`;
 }
