@@ -5161,7 +5161,7 @@
             </div>
             <div class="followup-actions">
               <button class="button-secondary" type="button" data-training-action="explain">Почему так ответил?</button>
-              <button class="button-secondary" type="button" data-training-action="good">Это хороший ответ</button>
+              <button class="button-primary" type="button" data-training-action="good">👍 Хороший урок</button>
               <button class="button-primary" type="button" data-training-action="bad">Запомнить вывод</button>
             </div>
             <div class="followup-action-help" data-training-status>Общайся с S.AI как в обычном чате. Когда он правильно пересказал вывод, нажми “Запомнить вывод”.</div>
@@ -5519,7 +5519,7 @@
               }
               return;
             }
-            if (!note.trim()) {
+            if (action !== 'good' && !note.trim()) {
               if (status) status.textContent = 'Добавь короткий комментарий: почему это хорошо или плохо.';
               showSaveToast('error', 'Нужен комментарий');
               return;
@@ -5538,7 +5538,9 @@
                   aiText,
                   category,
                   correctedText,
-                  note,
+                  note: action === 'good' && !note.trim()
+                    ? 'Хороший эталонный ответ: отвечать так же по смыслу, тону и длине в похожих ситуациях.'
+                    : note,
                 }),
               });
               if (status) status.textContent = action === 'good'

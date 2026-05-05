@@ -1087,7 +1087,9 @@ function addTrainingExample(input = {}) {
     clientText: normalizeTrainingText(input.clientText, 900),
     aiText: normalizeTrainingText(input.aiText, 1200),
     correctedText: normalizeTrainingText(input.correctedText, 1200),
-    note: normalizeTrainingText(input.note, 600),
+    note: normalizeTrainingText(input.note, 600) || (type === 'good'
+      ? 'Хороший эталонный ответ: отвечать так же по смыслу, тону и длине в похожих ситуациях.'
+      : ''),
   };
   item.ruleText = buildTrainingRuleText(item);
 
