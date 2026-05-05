@@ -3044,6 +3044,15 @@ function stripRepeatedGreeting(reply = '') {
   return capitalizeFirstLetter(source);
 }
 
+function startsWithGreetingText(text = '') {
+  return /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b/i.test(normalizeMemoryText(text));
+}
+
+function shouldAnswerInitialGreeting(input = {}) {
+  if (hasPriorDialogContext(input)) return false;
+  return startsWithGreetingText(input?.text || '');
+}
+
 function finalizeRepeatedGreetingReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   if (!finalReply || !hasPriorDialogContext(input)) return finalReply;
@@ -3055,10 +3064,12 @@ function finalizeRepeatedGreetingReply(input = {}, reply = '') {
 function finalizeTimeAwareGreetingReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   if (!finalReply || hasPriorDialogContext(input)) return finalReply;
-  return finalReply.replace(
+  const replaced = finalReply.replace(
     /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b[!,.:\-\s]*/i,
     `${getTimeAwareGreeting()}! `
   ).trim();
+  if (replaced !== finalReply || !shouldAnswerInitialGreeting(input)) return replaced;
+  return `${getTimeAwareGreeting()}! ${finalReply}`;
 }
 
 function buildShoeSizeInsoleIssueReply(issue) {
