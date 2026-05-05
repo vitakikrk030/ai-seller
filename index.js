@@ -3067,8 +3067,10 @@ function pickReplyTargetMessageId(inputs, config = runtimeConfig) {
 function buildBatchInput(inputs) {
   const lastInput = inputs[inputs.length - 1];
   const images = [];
+  const media = [];
   inputs.forEach((input) => {
     (input.images || []).forEach((image) => images.push(image));
+    (input.media || []).forEach((item) => media.push(item));
   });
 
   const messageTypes = Array.from(new Set(inputs.map((input) => input.messageType).filter(Boolean)));
@@ -3091,6 +3093,7 @@ function buildBatchInput(inputs) {
     replyToMessageId: pickReplyTargetMessageId(inputs, lastInput.config),
     text: buildBatchText(inputs),
     images,
+    media,
     hasMedia,
     hasLinkInput,
     hasPaymentProofInput,
@@ -7322,8 +7325,33 @@ function buildScenarioContextPreview(scenario) {
   ].filter(Boolean).join('\n');
 }
 
+function buildMediaInspectionText(input = {}) {
+  const media = Array.isArray(input.media) ? input.media : [];
+  const counts = media.reduce((acc, item) => {
+    const type = String(item?.type || 'media');
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
+  const imageCount = Array.isArray(input.images) ? input.images.length : 0;
+  if (!input.hasMedia && !imageCount && !Object.keys(counts).length) return '';
+
+  const countText = [
+    imageCount && `${imageCount} изображений доступно модели для просмотра`,
+    ...Object.entries(counts).map(([type, count]) => `${type}: ${count}`),
+  ].filter(Boolean).join(', ');
+
+  return [
+    `Медиа-вложения в этом сообщении: ${countText || 'есть'}.`,
+    'Перед ответом обязательно просмотри каждое доступное изображение и классифицируй вложения по смыслу: товар/кроссовки, корзина, ПВЗ/адрес/карта доставки, чек/квитанция/оплата или другое.',
+    'Не считай фото/видео/альбом чеком автоматически. Чековый сценарий включается только если на вложении визуально чек/квитанция/оплата или клиент явно написал про чек/оплату.',
+    'Если это товарный альбом или фото кроссовок, отвечай по товару: модель/цвет/размер/наличие/следующий вопрос. Не пиши "Чек получил, спасибо."',
+    'Видео без читаемых кадров используй как дополнительный сигнал, но не как чек без явных признаков оплаты.',
+  ].join('\n');
+}
+
 function buildAiMessages(input) {
-  const content = [{ type: 'text', text: input.text }];
+  const text = [buildMediaInspectionText(input), input.text].filter(Boolean).join('\n\n');
+  const content = [{ type: 'text', text }];
 
   input.images.forEach((url) => {
     content.push({
