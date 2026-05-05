@@ -2977,7 +2977,8 @@ function finalizePhotoSizeRealityReply(input = {}, reply = '') {
   if (!finalReply || !isPhotoSizeRealityQuestion(input)) return finalReply;
 
   const snapshot = input?.memoryContext?.slotSnapshot || {};
-  const size = extractShoeSize(input.text) || snapshot.size || '';
+  const summarySizeMatch = String(input?.memoryContext?.summary || '').match(/размер\s+уже\s+известен\s*:\s*(3[5-9]|4[0-9])\b/i);
+  const size = extractShoeSize(input.text) || snapshot.size || summarySizeMatch?.[1] || '';
   const approxCm = getApproxInsoleCmForSize(size);
   if (!size || !approxCm) return finalReply;
 
