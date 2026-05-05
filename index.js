@@ -1779,8 +1779,14 @@ function formatCm(value) {
 }
 
 function extractCity(text) {
-  const match = String(text || '').match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
-  return match ? match[1].trim() : '';
+  const source = String(text || '');
+  const match = source.match(/\b(?:город|г\.|из)\s+([А-ЯЁA-Z][А-ЯЁA-Zа-яёa-z -]{2,40})/);
+  if (match) return match[1].trim();
+  const addressCity = source.match(/(?:^|[\s,.;])((?:москва|санкт[-\s]?петербург|спб))(?=[\s,.;]|$)/i);
+  if (!addressCity) return '';
+  const normalized = addressCity[1].replace(/\s+/g, ' ').trim();
+  if (/^спб$/i.test(normalized)) return 'Санкт-Петербург';
+  return normalized.replace(/^./, (char) => char.toUpperCase());
 }
 
 function extractFullName(text) {
@@ -1795,6 +1801,8 @@ function extractFullName(text) {
 
 function extractDeliveryAddress(text) {
   const source = String(text || '').trim();
+  if (isDeliveryTrackingQuestion(source)) return '';
+  if (isPaymentProofText(source) || /чек|квитанц|оплат|pdf-файл/i.test(source)) return '';
   const explicit = source.match(/(?:адрес|доставка|доставить|отправить)\s*[:\-]?\s*([^\n]{8,220})/i);
   if (explicit) return explicit[1].trim();
   const cityAddress = source.match(/(?:^|[\s.])((?:москва|санкт[-\s]?петербург|спб)[^\n]{5,180})/i);
@@ -1920,11 +1928,11 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   const facts = profile.facts || {};
   const lastOrder = profile.lastOrder || {};
   const currentText = normalizeMemoryText(currentInput?.text || '');
-  const product = normalizeMemoryText(lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText));
-  const size = normalizeMemoryText(lastOrder.size || facts.size?.value || facts.shoeSize?.value || extractSize(currentText));
+  const product = normalizeMemoryText(facts.currentCart?.value || lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText));
+  const size = normalizeMemoryText(facts.size?.value || facts.shoeSize?.value || extractSize(currentText) || lastOrder.size);
   const insoleCm = normalizeMemoryText(facts.insoleCm?.value || extractInsoleCm(currentText));
-  const fullName = normalizeMemoryText(lastOrder.full_name || facts.fullName?.value || extractFullName(currentText));
-  const phone = normalizeMemoryText(lastOrder.phone || facts.phone?.value || extractPhone(currentText));
+  const fullName = normalizeMemoryText(facts.fullName?.value || extractFullName(currentText) || lastOrder.full_name);
+  const phone = normalizeMemoryText(facts.phone?.value || extractPhone(currentText) || lastOrder.phone);
   const city = normalizeMemoryText(facts.city?.value || extractCity(currentText));
   const deliveryService = normalizeMemoryText(facts.deliveryService?.value || extractDeliveryService(currentText));
   const pickupPoint = normalizeMemoryText(
@@ -2097,9 +2105,46 @@ function extractProductLink(text) {
   return match ? stripTrailingUrlNoise(match[0].startsWith('http') ? match[0] : `https://${match[0]}`) : '';
 }
 
+function extractIwakOrderLink(text) {
+  const source = String(text || '');
+  const productLink = extractProductLink(source);
+  if (productLink) return productLink;
+  const cartLink = extractIwakCartLinks(source)[0];
+  return cartLink || '';
+}
+
+function cleanOrderProductName(value = '') {
+  return normalizeMemoryText(value)
+    .replace(/\s*,?\s*размер\s+\d{2}(?:[.,]5)?\b/gi, '')
+    .replace(/\s*,?\s*цена\s*₽?\s*\d[\d\s.,]*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?)?/gi, '')
+    .replace(/\s*,?\s*₽\s*\d[\d\s.,]*\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+,/g, ',')
+    .trim();
+}
+
 function compactOrderValue(value, fallback = '...') {
   const cleaned = normalizeMemoryText(value).replace(/\s+/g, ' ').trim();
   return cleaned || fallback;
+}
+
+function getApproxInsoleBySize(sizeValue = '') {
+  const size = String(sizeValue || '').match(/\b(3[5-9]|4[0-7])\b/)?.[1];
+  if (!size) return '';
+  const table = {
+    36: '23',
+    37: '23.5',
+    38: '24',
+    39: '25',
+    40: '25.5',
+    41: '26',
+    42: '26.5',
+    43: '27.2',
+    44: '28',
+    45: '28.7',
+    46: '29.5',
+  };
+  return table[size] || '';
 }
 
 function formatOrderChatCustomer(input = {}, profile = {}) {
@@ -2123,23 +2168,28 @@ function buildOrderChatMessage(input = {}) {
   const productSource = [
     order.product,
     facts.lastProduct?.value,
+    facts.currentCart?.value,
+    facts.currentCartLink?.value,
+    facts.lastProduct?.source,
+    facts.currentCart?.source,
     facts.interest?.value,
+    facts.interest?.source,
     text,
   ].filter(Boolean).join('\n');
-  const productLink = extractProductLink(productSource);
+  const productLink = extractIwakOrderLink(productSource);
   const productName = compactOrderValue(
-    order.product || facts.lastProduct?.value || extractLastProduct(productSource),
+    cleanOrderProductName(facts.currentCart?.value || order.product || facts.lastProduct?.value || extractLastProduct(productSource)),
   );
-  const size = compactOrderValue(order.size || facts.size?.value || facts.shoeSize?.value || extractSize(text));
-  const insole = compactOrderValue(facts.insoleCm?.value || extractInsoleCm(text), '');
-  const fullName = compactOrderValue(order.fullName || facts.fullName?.value || extractFullName(text));
-  const phone = compactOrderValue(order.phone || facts.phone?.value || extractPhone(text));
-  const city = compactOrderValue(facts.city?.value || extractCity(text));
-  const deliveryService = compactOrderValue(facts.deliveryService?.value || extractDeliveryService(text), '');
+  const size = compactOrderValue(facts.size?.value || facts.shoeSize?.value || extractSize(text) || order.size);
+  const insole = compactOrderValue(facts.insoleCm?.value || extractInsoleCm(text) || getApproxInsoleBySize(size), '');
+  const fullName = compactOrderValue(facts.fullName?.value || extractFullName(text) || order.full_name || order.fullName);
+  const phone = compactOrderValue(facts.phone?.value || extractPhone(text) || order.phone);
   const pickupOrAddress = compactOrderValue(
-    facts.pickupPoint?.value || order.deliveryAddress || facts.deliveryAddress?.value || extractPickupPoint(text) || extractDeliveryAddress(text),
+    facts.deliveryAddress?.value || facts.pickupPoint?.value || order.deliveryAddress || order.delivery_address || extractDeliveryAddress(text) || extractPickupPoint(text),
     '',
   );
+  const city = compactOrderValue(facts.city?.value || extractCity(pickupOrAddress) || extractCity(text));
+  const deliveryService = compactOrderValue(facts.deliveryService?.value || extractDeliveryService(text), '');
   const delivery = compactOrderValue([deliveryService, pickupOrAddress].filter(Boolean).join(' / '));
   const insoleLine = insole ? `${insole} см` : '...';
 
@@ -2168,19 +2218,34 @@ async function maybeSendOrderChatNotification(config, input = {}) {
   if (!chatId) return false;
   const receiptKey = String(input.messageId || input.traceId || `${chatId}:${input.receivedAt || Date.now()}`);
   const state = memoryStore.states[chatId] || {};
-  if (state.lastOrderChatReceiptKey === receiptKey) {
+  const text = buildOrderChatMessage(input);
+  const digest = crypto.createHash('sha256').update(text).digest('hex').slice(0, 24);
+  const now = Date.now();
+  const lastSentAt = Date.parse(state.lastOrderChatSentAt || '');
+  const pendingAt = Date.parse(state.orderChatPendingAt || '');
+  const isSamePending = state.orderChatPendingDigest === digest && Number.isFinite(pendingAt) && now - pendingAt < 120000;
+  const isSameRecent = state.lastOrderChatDigest === digest && Number.isFinite(lastSentAt) && now - lastSentAt < 10 * 60 * 1000;
+  if (state.lastOrderChatReceiptKey === receiptKey || isSamePending || isSameRecent) {
     logEvent('ORDER_CHAT', {
       traceId: input.traceId,
       userId: input.userId,
       chatId: input.chatId,
       orderChatId: getOrderChatId(config),
       status: 'skipped',
-      reason: 'duplicate_receipt',
+      reason: isSamePending ? 'duplicate_pending' : isSameRecent ? 'duplicate_digest' : 'duplicate_receipt',
     });
     return false;
   }
 
-  const text = buildOrderChatMessage(input);
+  memoryStore.states[chatId] = {
+    ...state,
+    orderChatPendingReceiptKey: receiptKey,
+    orderChatPendingDigest: digest,
+    orderChatPendingAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  persistMemoryStore();
+
   const context = {
     traceId: input.traceId,
     userId: input.userId,
@@ -2194,10 +2259,14 @@ async function maybeSendOrderChatNotification(config, input = {}) {
   if (!result) return false;
 
   memoryStore.states[chatId] = {
-    ...state,
+    ...(memoryStore.states[chatId] || state),
     lastOrderChatReceiptKey: receiptKey,
+    lastOrderChatDigest: digest,
     lastOrderChatSentAt: new Date().toISOString(),
     lastOrderChatTelegramMessageId: String(result.message_id || ''),
+    orderChatPendingReceiptKey: '',
+    orderChatPendingDigest: '',
+    orderChatPendingAt: '',
     updatedAt: new Date().toISOString(),
   };
   persistMemoryStore();
@@ -2248,8 +2317,13 @@ function updateCustomerMemoryFromInput(input) {
   const fullName = extractFullName(input.text);
   if (fullName) upsertMemoryFact(chatId, 'fullName', fullName, source);
 
-  const deliveryAddress = extractDeliveryAddress(input.text);
+  const currentInputIsPaymentProof = isPaymentProofInput(input);
+  const deliveryAddress = currentInputIsPaymentProof ? '' : extractDeliveryAddress(input.text);
   if (deliveryAddress) upsertMemoryFact(chatId, 'deliveryAddress', deliveryAddress, source);
+  if (!city && deliveryAddress) {
+    const cityFromAddress = extractCity(deliveryAddress);
+    if (cityFromAddress) upsertMemoryFact(chatId, 'city', cityFromAddress, source);
+  }
 
   const deliveryService = extractDeliveryService(input.text);
   if (deliveryService) upsertMemoryFact(chatId, 'deliveryService', deliveryService, source);
@@ -2261,12 +2335,14 @@ function updateCustomerMemoryFromInput(input) {
   if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
   const orderPrice = extractOrderPrice(source) || extractPaymentProofAmount(source);
   const commonOrderPatch = {
-    product: lastProduct || lastOrderSnapshot.product || (factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
-    size: size || lastOrderSnapshot.size || factsSnapshot.size?.value || factsSnapshot.shoeSize?.value || '',
+    product: lastProduct || (factsSnapshot.currentCart?.value || lastOrderSnapshot.product || factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
+    size: size || factsSnapshot.size?.value || factsSnapshot.shoeSize?.value || lastOrderSnapshot.size || '',
     price: orderPrice || lastOrderSnapshot.price || '',
     fullName: fullName || lastOrderSnapshot.fullName || lastOrderSnapshot.full_name || factsSnapshot.fullName?.value || '',
     phone: phone || lastOrderSnapshot.phone || factsSnapshot.phone?.value || '',
-    deliveryAddress: pickupPoint || deliveryAddress || lastOrderSnapshot.deliveryAddress || lastOrderSnapshot.delivery_address || factsSnapshot.pickupPoint?.value || factsSnapshot.deliveryAddress?.value || '',
+    deliveryAddress: currentInputIsPaymentProof
+      ? (factsSnapshot.deliveryAddress?.value || factsSnapshot.pickupPoint?.value || lastOrderSnapshot.deliveryAddress || lastOrderSnapshot.delivery_address || '')
+      : (deliveryAddress || factsSnapshot.deliveryAddress?.value || pickupPoint || factsSnapshot.pickupPoint?.value || lastOrderSnapshot.deliveryAddress || lastOrderSnapshot.delivery_address || ''),
   };
 
   const slotContextText = [lastProduct, memoryStore.facts[chatId]?.lastProduct?.value, memoryStore.facts[chatId]?.interest?.value, input.text].filter(Boolean).join(' ');
@@ -2274,7 +2350,7 @@ function updateCustomerMemoryFromInput(input) {
     upsertMemoryFact(chatId, 'shoeContext', 'true', source);
   }
 
-  if (input.hasMedia || input.hasLinkInput) {
+  if (input.hasLinkInput || isProductMediaHintText(input.text)) {
     upsertMemoryFact(chatId, 'interest', getMemoryMessageText(input), source);
     upsertMemoryFact(chatId, 'lastProduct', getMemoryMessageText(input), source);
   }
@@ -3817,6 +3893,8 @@ function appendCartContextToMemory(input, cartContext) {
   if (!chatId || !details?.product) return;
 
   upsertMemoryFact(chatId, 'currentCart', details.product, input.text || cartContext.summary);
+  const cartLink = extractIwakCartLinks(input.text || '')[0];
+  if (cartLink) upsertMemoryFact(chatId, 'currentCartLink', cartLink, input.text || cartContext.summary);
   upsertMemoryFact(chatId, 'lastProduct', details.product, input.text || cartContext.summary);
   if (details.size) upsertMemoryFact(chatId, 'size', details.size, input.text || cartContext.summary);
 
