@@ -1853,6 +1853,11 @@ function extractLastProduct(text) {
     const cleaned = cleanCandidate(orderIntent[1]);
     if (cleaned) return cleaned;
   }
+  const managerNeed = normalized.match(/(?:клиенту|клиент|покупателю|ему|ей)\s+(?:нужен|нужна|нужны|интересует|подходит|подош[её]л)\s+(.{3,180}?)(?=\s+(?:размер|стельк|цена|стоимость|фио|телефон|город)(?:\s|[:,-]|$)|[,.!?;]|$)/i);
+  if (managerNeed) {
+    const cleaned = cleanCandidate(managerNeed[1]);
+    if (cleaned) return cleaned;
+  }
   return '';
 }
 
@@ -2309,6 +2314,39 @@ function applyManagerStageHints(input) {
   const chatId = getMemoryChatId(input?.chatId || input);
   if (!chatId || !text) return;
 
+  const product = extractLastProduct(text);
+  const size = extractSize(text);
+  const insoleCm = extractInsoleCm(text);
+  const price = extractOrderPrice(text);
+  const city = extractCity(text);
+  const deliveryService = extractDeliveryService(text);
+  const pickupPoint = extractPickupPoint(text);
+  const deliveryAddress = extractDeliveryAddress(text);
+
+  if (product) upsertMemoryFact(chatId, 'lastProduct', product, text);
+  if (size) {
+    upsertMemoryFact(chatId, 'size', size, text);
+    if (/^\d{2}(?:\.\d+)?$/.test(size)) upsertMemoryFact(chatId, 'shoeSize', size, text);
+  }
+  if (insoleCm) upsertMemoryFact(chatId, 'insoleCm', insoleCm, text);
+  if (city) upsertMemoryFact(chatId, 'city', city, text);
+  if (deliveryService) upsertMemoryFact(chatId, 'deliveryService', deliveryService, text);
+  if (pickupPoint) upsertMemoryFact(chatId, 'pickupPoint', pickupPoint, text);
+  if (deliveryAddress) upsertMemoryFact(chatId, 'deliveryAddress', deliveryAddress, text);
+
+  const orderPatch = {
+    product,
+    size,
+    price,
+    deliveryAddress: pickupPoint || deliveryAddress,
+  };
+  if (Object.values(orderPatch).some(Boolean)) {
+    safeCustomerStoreCall('customer.order.manager_context', (store) => store.upsertOrder(chatId, {
+      ...orderPatch,
+      status: 'manager_context',
+    }));
+  }
+
   if (/(передал[аи]?\s+в\s+доставк|передан[ао]?\s+в\s+доставк|отправил[аи]?\b|отправлен[ао]?\b|трек|накладн|номер\s+отправлени)/i.test(text)) {
     setConversationStage(chatId, 'delivery', text);
     safeCustomerStoreCall('customer.order.delivery', (store) => store.upsertOrder(chatId, {
@@ -2383,6 +2421,33 @@ function formatMemoryFacts(facts = {}) {
     .map(([key, label]) => `${label}: ${facts[key].value}`);
 }
 
+function buildManagerHandoffSummary(chatId, options = {}) {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return '';
+  const state = getDialogState(cleanChatId);
+  const recentManagerMessages = getRecentMemoryMessages(
+    cleanChatId,
+    40,
+    options.excludeTraceIds || [],
+  )
+    .filter((message) => message?.role === 'manager' && normalizeMemoryText(message.text))
+    .slice(-5);
+
+  if (!recentManagerMessages.length && state?.aiMode !== 'passive_manager' && !state?.managerLastMessageAt) {
+    return '';
+  }
+
+  const lines = [
+    'Контекст ручного перехвата менеджера:',
+    '- Последние сообщения менеджера важнее старых догадок AI.',
+    '- Не противоречь менеджеру и не начинать сценарий заново после возврата AI.',
+  ];
+  recentManagerMessages.forEach((message) => {
+    lines.push(`- Менеджер: ${normalizeMemoryText(message.text).slice(0, 700)}`);
+  });
+  return lines.join('\n');
+}
+
 function buildMemoryContext(chatId, options = {}) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return { summary: '', history: [], facts: {}, state: null };
@@ -2394,9 +2459,10 @@ function buildMemoryContext(chatId, options = {}) {
   if (dbContext) {
     const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
     const slotSummary = buildSlotSummary(slotSnapshot);
+    const managerHandoffSummary = buildManagerHandoffSummary(cleanChatId, options);
     return {
       ...dbContext,
-      summary: [dbContext.summary, slotSummary].filter(Boolean).join('\n\n'),
+      summary: [dbContext.summary, managerHandoffSummary, slotSummary].filter(Boolean).join('\n\n'),
       slotSnapshot,
     };
   }
@@ -2440,9 +2506,10 @@ function buildMemoryContext(chatId, options = {}) {
 
   const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
   const slotSummary = buildSlotSummary(slotSnapshot);
+  const managerHandoffSummary = buildManagerHandoffSummary(cleanChatId, options);
 
   return {
-    summary: [baseSummary, slotSummary].filter(Boolean).join('\n\n'),
+    summary: [baseSummary, managerHandoffSummary, slotSummary].filter(Boolean).join('\n\n'),
     history: history.reverse(),
     facts,
     state,
