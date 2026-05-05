@@ -3290,10 +3290,10 @@
                     <label class="toggle-line"><input id="qualityNoExtraPhotosEnabled" type="checkbox" /> Не обещать дополнительные фото, мягко вести к фото в каталоге и возврату/обмену</label>
                     <label class="toggle-line"><input id="qualityReturnSoftEnabled" type="checkbox" /> Мягко упоминать возврат/обмен, если клиент сомневается</label>
                     <label class="toggle-line"><input id="qualityReturnNoDatesEnabled" type="checkbox" /> Не называть сроки возврата, если они не указаны вручную</label>
-                    <label class="toggle-line"><input id="qualityReturnInspectEnabled" type="checkbox" /> Просить спокойно осмотреть товар при получении</label>
+                    <label class="toggle-line"><input id="qualityReturnInspectEnabled" type="checkbox" /> Просить примерить, осмотреть и проверить товар при получении</label>
                     <div class="field">
                       <div class="field-label">Формулировка возврата / обмена</div>
-                      <textarea id="qualityReturnText" placeholder="При получении спокойно осмотрите товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина."></textarea>
+                      <textarea id="qualityReturnText" placeholder="При получении в ПВЗ или у курьера спокойно примерьте, осмотрите и проверьте товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина."></textarea>
                     </div>
                     <div class="field">
                       <div class="field-label">Дополнительные правила качества</div>
@@ -3581,6 +3581,8 @@
                         <option value="discount">Просит скидку</option>
                         <option value="quality">Спрашивает про оригинальность</option>
                         <option value="extra_photos">Просит дополнительные фото</option>
+                        <option value="photo_size_real">Фото бирки и реальные фото</option>
+                        <option value="pickup_fitting_return">Примерка, возврат и самовывоз</option>
                         <option value="store_offline">Спрашивает про офлайн-магазин</option>
                         <option value="delivery">Уточняет доставку</option>
                         <option value="payment">Готов оплатить</option>
@@ -5806,6 +5808,24 @@
           product: 'New Balance 1906R',
           price: '5490 ₽',
           size: '42',
+          insole: '',
+          delivery: '',
+        },
+        photo_size_real: {
+          message: 'Мерила оригинал в магазине, подошли эти. Фото у вас реальные?',
+          receipt: '',
+          product: 'Lacoste Elite Active',
+          price: '5490 ₽',
+          size: '41',
+          insole: '',
+          delivery: '',
+        },
+        pickup_fitting_return: {
+          message: 'Возможна ли примерка, возврат, самовывоз?',
+          receipt: '',
+          product: 'New Balance 1906R',
+          price: '5490 ₽',
+          size: '41',
           insole: '',
           delivery: '',
         },
