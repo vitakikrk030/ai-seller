@@ -3083,10 +3083,19 @@ function finalizeWaitForCustomerContinuation(input = {}, reply = '') {
 }
 
 function hasPriorDialogContext(input = {}) {
+  if (hasPriorDialogHistory(input)) return true;
+  const summary = normalizeMemoryText(input?.memoryContext?.summary || '');
+  const withoutCurrentTechnicalContext = summary
+    .replace(/контекст оформления для ai control\..*$/i, '')
+    .replace(/контекст корзины iwak[\s\S]*?(?=(?:память клиента|контекст ручного перехвата менеджера|$))/gi, '')
+    .trim();
+  return /(?:память клиента|клиент уже|текущий заказ|контекст ручного перехвата менеджера|менеджер:|последний заказ)/i.test(withoutCurrentTechnicalContext);
+}
+
+function hasPriorDialogHistory(input = {}) {
   const history = input?.memoryContext?.history;
   if (Array.isArray(history) && history.some((message) => normalizeMemoryText(message?.content))) return true;
-  const summary = normalizeMemoryText(input?.memoryContext?.summary || '');
-  return /(?:память клиента|последн|клиент уже|текущий заказ|менеджер:|товар:|размер:|телефон:|город:)/i.test(summary);
+  return false;
 }
 
 function capitalizeFirstLetter(text = '') {
@@ -3112,17 +3121,17 @@ function stripRepeatedGreeting(reply = '') {
 }
 
 function startsWithGreetingText(text = '') {
-  return /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b/i.test(normalizeMemoryText(text));
+  return /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s!,.:\-])/i.test(normalizeMemoryText(text));
 }
 
 function shouldAnswerInitialGreeting(input = {}) {
-  if (hasPriorDialogContext(input)) return false;
+  if (hasPriorDialogHistory(input)) return false;
   return startsWithGreetingText(input?.text || '');
 }
 
 function finalizeRepeatedGreetingReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
-  if (!finalReply || !hasPriorDialogContext(input)) return finalReply;
+  if (!finalReply || !hasPriorDialogHistory(input)) return finalReply;
   const stripped = stripRepeatedGreeting(finalReply);
   if (!stripped || stripped === finalReply) return finalReply;
   return stripped;
@@ -3130,9 +3139,9 @@ function finalizeRepeatedGreetingReply(input = {}, reply = '') {
 
 function finalizeTimeAwareGreetingReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
-  if (!finalReply || hasPriorDialogContext(input)) return finalReply;
+  if (!finalReply || hasPriorDialogHistory(input)) return finalReply;
   const replaced = finalReply.replace(
-    /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b[!,.:\-\s]*/i,
+    /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s!,.:\-])[!,.:\-\s]*/i,
     `${getTimeAwareGreeting()}! `
   ).trim();
   if (replaced !== finalReply || !shouldAnswerInitialGreeting(input)) return replaced;
