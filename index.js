@@ -2835,7 +2835,7 @@ function buildSoftOrderStartReply(input = {}) {
   const price = normalizeMemoryText(details.price || snapshot.price || extractOrderPrice(input?.text));
   const sizeText = size ? `${size} размер` : 'эту модель';
   const priceText = price ? `, цена ${formatMoneyAmount(price)}` : '';
-  return `Здравствуйте! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
+  return `${getTimeAwareGreeting()}! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
 }
 
 function asksOnlyForSize(reply = '') {
@@ -2900,6 +2900,15 @@ function finalizeRepeatedGreetingReply(input = {}, reply = '') {
   const stripped = stripRepeatedGreeting(finalReply);
   if (!stripped || stripped === finalReply) return finalReply;
   return stripped;
+}
+
+function finalizeTimeAwareGreetingReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || hasPriorDialogContext(input)) return finalReply;
+  return finalReply.replace(
+    /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b[!,.:\-\s]*/i,
+    `${getTimeAwareGreeting()}! `
+  ).trim();
 }
 
 function buildShoeSizeInsoleIssueReply(issue) {
@@ -3118,6 +3127,7 @@ function finalizeAiReply(input, reply) {
     return getStaleReceiptAckFallback(input);
   }
   finalReply = finalizeWaitForCustomerContinuation(input, finalReply);
+  finalReply = finalizeTimeAwareGreetingReply(input, finalReply);
   finalReply = finalizeRepeatedGreetingReply(input, finalReply);
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
@@ -5999,6 +6009,37 @@ function buildGuidanceSection(title, rows, freeText = '') {
   return [title, ...body.map((row) => `- ${row}`)].join('\n');
 }
 
+function getMskDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    hour: Number(map.hour || 0),
+    minute: Number(map.minute || 0),
+    label: `${map.hour || '00'}:${map.minute || '00'}`,
+  };
+}
+
+function getTimeAwareGreeting(date = new Date()) {
+  const { hour } = getMskDateParts(date);
+  if (hour >= 5 && hour < 12) return 'Доброе утро';
+  if (hour >= 12 && hour < 18) return 'Добрый день';
+  return 'Добрый вечер';
+}
+
+function getTimeGuidance() {
+  const { label } = getMskDateParts();
+  return buildGuidanceSection('Время и приветствие:', [
+    `Сейчас ${label} МСК.`,
+    `Если это первое приветствие в диалоге, использовать по времени: ${getTimeAwareGreeting()}.`,
+    'Не здороваться повторно, если диалог уже начат.',
+  ]);
+}
+
 function getIwakCoreGuidance(config) {
   return buildGuidanceSection('Ядро IWAK:', [
     parseConfigBoolean(config.core_hot_lead_enabled, true)
@@ -6311,6 +6352,7 @@ function buildSystemPrompt(config, memoryContext = null, queryText = '') {
   const parts = [];
   const control = [
     'AI Control:',
+    getTimeGuidance(),
     getToneGuidance(config.tone),
     getResponseLengthGuidance(config.response_length),
     getPersonaGuidance(config),
