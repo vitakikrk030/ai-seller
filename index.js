@@ -2959,6 +2959,49 @@ function finalizeAvailabilityIssueReply(input = {}, reply = '') {
   return buildAvailabilityIssueReply(issue);
 }
 
+function getApproxInsoleCmForSize(sizeValue) {
+  const size = Math.round(normalizeNumericValue(sizeValue));
+  const range = SHOE_SIZE_INSOLE_RANGES[size];
+  if (!range) return '';
+  return formatCm((range[0] + range[1]) / 2);
+}
+
+function isPhotoSizeRealityQuestion(input = {}) {
+  const source = String(input.text || '');
+  return /(?:фото\s+у\s+вас\s+реальн|фото\s+реальн|реальн(?:ые|ое)?\s+фото)/i.test(source)
+    && /(?:мерил|мерила|мерили|подошл|размер|бирк|оригинал)/i.test(source);
+}
+
+function finalizePhotoSizeRealityReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !isPhotoSizeRealityQuestion(input)) return finalReply;
+
+  const snapshot = input?.memoryContext?.slotSnapshot || {};
+  const size = extractShoeSize(input.text) || snapshot.size || '';
+  const approxCm = getApproxInsoleCmForSize(size);
+  if (!size || !approxCm) return finalReply;
+
+  const sizeCmPattern = new RegExp(`${String(size).replace('.', '[.,]')}[\\s\\S]{0,80}${String(approxCm).replace('.', '[.,]')}\\s*(?:см|cm)|${String(approxCm).replace('.', '[.,]')}\\s*(?:см|cm)[\\s\\S]{0,80}${String(size).replace('.', '[.,]')}`, 'i');
+  if (sizeCmPattern.test(finalReply)) return finalReply;
+
+  return `Да, фото у нас реальные. Вижу у вас ${size} размер — это примерно ${approxCm} см по стельке. Если этот размер подошёл, можно оформлять ${size}.`;
+}
+
+function isStoreOfflineQuestion(text = '') {
+  return /(?:шоурум|офлайн|магазин|адрес|приехать|подъехать|померить|примерить|садовод)/i.test(String(text || ''));
+}
+
+function finalizeStoreOfflineReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !isStoreOfflineQuestion(input.text)) return finalReply;
+  if (!/(?:павильон|склад|сотрудник|содержание|расход)/i.test(finalReply) && finalReply.length <= 260) return finalReply;
+
+  const sadovod = /садовод/i.test(String(input.text || ''))
+    ? 'На Садоводе раньше были, сейчас уже нет. '
+    : '';
+  return `${sadovod}Сейчас работаем только онлайн, шоурума нет. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем. При получении можно спокойно примерить, осмотреть и проверить товар.`;
+}
+
 function finalizeEarlyOrderContactRequest(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   if (!finalReply || !isFreshStructuredOrderLead(input)) return finalReply;
@@ -3132,6 +3175,8 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
+  finalReply = finalizePhotoSizeRealityReply(input, finalReply);
+  finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
