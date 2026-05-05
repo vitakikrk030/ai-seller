@@ -232,6 +232,8 @@ const runtimeConfig = {
   order_collect_receipt_enabled: process.env.ORDER_COLLECT_RECEIPT_ENABLED !== 'false',
   order_step_mode: process.env.ORDER_STEP_MODE || 'natural',
   order_rules_text: process.env.ORDER_RULES_TEXT || '',
+  order_chat_enabled: process.env.ORDER_CHAT_ENABLED === 'true',
+  order_chat_id: process.env.ORDER_CHAT_ID || '',
   response_guard_enabled: process.env.RESPONSE_GUARD_ENABLED !== 'false',
   response_guard_no_fake_payment_enabled: process.env.RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED !== 'false',
   response_guard_no_repeat_known_enabled: process.env.RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED !== 'false',
@@ -2047,6 +2049,154 @@ function isPaymentProofInput(input) {
   const text = String(input.text || '').toLowerCase();
   if (isPaymentProofText(text)) return true;
   return false;
+}
+
+function getOrderChatId(config = runtimeConfig) {
+  return String(config.order_chat_id || '').trim();
+}
+
+function isOrderChat(config = runtimeConfig, chatId = '') {
+  const target = getOrderChatId(config);
+  return Boolean(target) && String(chatId || '') === target;
+}
+
+function isOrderChatEnabled(config = runtimeConfig) {
+  return parseConfigBoolean(config.order_chat_enabled, false) && Boolean(getOrderChatId(config));
+}
+
+function getMskDateTimeLabel(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.day || '00'}.${map.month || '00'}.${map.year || '0000'} ${map.hour || '00'}:${map.minute || '00'}`;
+}
+
+function extractProductLink(text) {
+  const source = String(text || '');
+  const match = source.match(/(?:https?:\/\/)?(?:www\.)?iwak\.ru\/product\/[^\s<>"']+/i);
+  return match ? stripTrailingUrlNoise(match[0].startsWith('http') ? match[0] : `https://${match[0]}`) : '';
+}
+
+function compactOrderValue(value, fallback = '...') {
+  const cleaned = normalizeMemoryText(value).replace(/\s+/g, ' ').trim();
+  return cleaned || fallback;
+}
+
+function formatOrderChatCustomer(input = {}, profile = {}) {
+  const customer = profile.customer || {};
+  const username = compactOrderValue(input.username || customer.username, '');
+  const firstName = compactOrderValue(
+    [input.firstName || customer.firstName, input.lastName || customer.lastName].filter(Boolean).join(' '),
+    '',
+  );
+  if (username && firstName) return `@${username.replace(/^@/, '')} / ${firstName}`;
+  if (username) return `@${username.replace(/^@/, '')}`;
+  if (firstName) return firstName;
+  return compactOrderValue(input.userId || input.chatId);
+}
+
+function buildOrderChatMessage(input = {}) {
+  const profile = getCustomerProfileSnapshot(input.chatId) || {};
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const text = String(input.text || '');
+  const productSource = [
+    order.product,
+    facts.lastProduct?.value,
+    facts.interest?.value,
+    text,
+  ].filter(Boolean).join('\n');
+  const productLink = extractProductLink(productSource);
+  const productName = compactOrderValue(
+    order.product || facts.lastProduct?.value || extractLastProduct(productSource),
+  );
+  const size = compactOrderValue(order.size || facts.size?.value || facts.shoeSize?.value || extractSize(text));
+  const insole = compactOrderValue(facts.insoleCm?.value || extractInsoleCm(text), '');
+  const fullName = compactOrderValue(order.fullName || facts.fullName?.value || extractFullName(text));
+  const phone = compactOrderValue(order.phone || facts.phone?.value || extractPhone(text));
+  const city = compactOrderValue(facts.city?.value || extractCity(text));
+  const deliveryService = compactOrderValue(facts.deliveryService?.value || extractDeliveryService(text), '');
+  const pickupOrAddress = compactOrderValue(
+    facts.pickupPoint?.value || order.deliveryAddress || facts.deliveryAddress?.value || extractPickupPoint(text) || extractDeliveryAddress(text),
+    '',
+  );
+  const delivery = compactOrderValue([deliveryService, pickupOrAddress].filter(Boolean).join(' / '));
+  const insoleLine = insole ? `${insole} см` : '...';
+
+  return [
+    'НОВЫЙ ЗАКАЗ',
+    getMskDateTimeLabel(new Date()),
+    '',
+    `Клиент: ${formatOrderChatCustomer(input, profile)}`,
+    `Товар: ${productName}`,
+    `Ссылка: ${compactOrderValue(productLink)}`,
+    `Размер: ${size}`,
+    `Стелька: ${insoleLine}`,
+    `ФИО: ${fullName}`,
+    `Телефон: ${phone}`,
+    `Город: ${city}`,
+    `Доставка: ${delivery}`,
+  ].join('\n');
+}
+
+async function maybeSendOrderChatNotification(config, input = {}) {
+  if (!isOrderChatEnabled(config)) return false;
+  if (isOrderChat(config, input.chatId)) return false;
+  if (!isPaymentProofInput(input)) return false;
+
+  const chatId = getMemoryChatId(input.chatId);
+  if (!chatId) return false;
+  const receiptKey = String(input.messageId || input.traceId || `${chatId}:${input.receivedAt || Date.now()}`);
+  const state = memoryStore.states[chatId] || {};
+  if (state.lastOrderChatReceiptKey === receiptKey) {
+    logEvent('ORDER_CHAT', {
+      traceId: input.traceId,
+      userId: input.userId,
+      chatId: input.chatId,
+      orderChatId: getOrderChatId(config),
+      status: 'skipped',
+      reason: 'duplicate_receipt',
+    });
+    return false;
+  }
+
+  const text = buildOrderChatMessage(input);
+  const context = {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: getOrderChatId(config),
+    updateType: 'order_chat',
+    businessConnectionId: '',
+    messageType: 'order_notification',
+    useReply: false,
+  };
+  const result = await sendTelegramMessage(config, context, text);
+  if (!result) return false;
+
+  memoryStore.states[chatId] = {
+    ...state,
+    lastOrderChatReceiptKey: receiptKey,
+    lastOrderChatSentAt: new Date().toISOString(),
+    lastOrderChatTelegramMessageId: String(result.message_id || ''),
+    updatedAt: new Date().toISOString(),
+  };
+  persistMemoryStore();
+  logEvent('ORDER_CHAT', {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    orderChatId: getOrderChatId(config),
+    telegramMessageId: result.message_id || '',
+    status: 'ok',
+  });
+  return true;
 }
 
 function inferConversationStage(input) {
@@ -4064,6 +4214,8 @@ function getRuntimeSnapshot() {
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
     order_step_mode: runtimeConfig.order_step_mode,
     order_rules_text: runtimeConfig.order_rules_text,
+    order_chat_enabled: parseConfigBoolean(runtimeConfig.order_chat_enabled, false),
+    order_chat_id: runtimeConfig.order_chat_id || '',
     response_guard_enabled: parseConfigBoolean(runtimeConfig.response_guard_enabled, true),
     response_guard_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_fake_payment_enabled, true),
     response_guard_no_repeat_known_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_repeat_known_enabled, true),
@@ -4377,6 +4529,7 @@ function applyConfigUpdate(body) {
     ['delivery_tracking_enabled', 'DELIVERY_TRACKING_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
+  applyBooleanConfig(body, 'order_chat_enabled', 'ORDER_CHAT_ENABLED', false);
   applyBooleanConfig(body, 'contacts_instagram_enabled', 'CONTACTS_INSTAGRAM_ENABLED', false);
 
   [
@@ -4384,6 +4537,7 @@ function applyConfigUpdate(body) {
     ['facts_rules_text', 'FACTS_RULES_TEXT'],
     ['smalltalk_rules_text', 'SMALLTALK_RULES_TEXT'],
     ['order_rules_text', 'ORDER_RULES_TEXT'],
+    ['order_chat_id', 'ORDER_CHAT_ID'],
     ['response_guard_rules_text', 'RESPONSE_GUARD_RULES_TEXT'],
     ['receipt_check_success_text', 'RECEIPT_CHECK_SUCCESS_TEXT'],
     ['receipt_check_mismatch_text', 'RECEIPT_CHECK_MISMATCH_TEXT'],
@@ -9704,6 +9858,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.order_collect_receipt_enabled = true;
   runtimeConfig.order_step_mode = 'natural';
   runtimeConfig.order_rules_text = '';
+  runtimeConfig.order_chat_enabled = false;
+  runtimeConfig.order_chat_id = '';
   runtimeConfig.response_guard_enabled = true;
   runtimeConfig.response_guard_no_fake_payment_enabled = true;
   runtimeConfig.response_guard_no_repeat_known_enabled = true;
@@ -9830,6 +9986,8 @@ app.delete('/config', (req, res) => {
   process.env.ORDER_COLLECT_RECEIPT_ENABLED = 'true';
   process.env.ORDER_STEP_MODE = 'natural';
   process.env.ORDER_RULES_TEXT = '';
+  process.env.ORDER_CHAT_ENABLED = 'false';
+  process.env.ORDER_CHAT_ID = '';
   process.env.RESPONSE_GUARD_ENABLED = 'true';
   process.env.RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED = 'true';
   process.env.RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED = 'true';
@@ -9982,6 +10140,21 @@ app.post('/api/telegram/webhook', async (req, res) => {
         status: 'ok',
       });
 
+      if (isOrderChat(config, chatId)) {
+        logEvent('MESSAGE_STATUS', {
+          traceId,
+          userId,
+          chatId,
+          updateType: updateContext.updateType,
+          businessConnectionId: updateContext.businessConnectionId,
+          messageId: updateContext.messageId,
+          messageType: input.messageType,
+          messageStatus: 'order_chat_ignored',
+          status: 'ok',
+        });
+        return;
+      }
+
       const memoryText = getMemoryMessageText(input);
       const memoryEnabled = parseConfigBoolean(config.memory_enabled, true);
       const managerTakeoverEnabled = parseConfigBoolean(config.manager_takeover_enabled, true);
@@ -10029,6 +10202,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
       if (memoryEnabled) {
         updateCustomerMemoryFromInput(input);
       }
+      await maybeSendOrderChatNotification(config, input);
       appendMemoryMessage(input, 'user', memoryText);
       markLatestClientTrace(input);
 
