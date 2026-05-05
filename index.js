@@ -2985,7 +2985,18 @@ function containsReceiptPaymentHandling(reply = '') {
 function shouldForceMediaReceiptAcknowledgement(input = {}, reply = '') {
   if (!input.hasMedia) return false;
   if (isNonPaymentMediaHintText(input.text)) return false;
+  if (!input.hasPaymentProofInput && !isPaymentProofInput(input)) return false;
   return containsReceiptPaymentHandling(reply);
+}
+
+function isGenericMediaOnlyText(text = '') {
+  const normalized = String(text || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+  if (isPaymentProofText(normalized) || isNonPaymentMediaHintText(normalized)) return false;
+  return /(?:клиент|пользователь)\s+прислал\s+(?:медиа|фото|видео|файл|документ)|^\[?(?:photo|video|document|media|batch)\]?/i.test(normalized);
 }
 
 function isSimplePositiveAckText(text = '') {
@@ -3000,6 +3011,7 @@ function isSimplePositiveAckText(text = '') {
 function getStaleReceiptAckFallback(input = {}) {
   if (isDeliveryMediaHintText(input.text)) return 'Да, подойдёт. Пришлите, пожалуйста, адрес или название ПВЗ текстом, чтобы не ошибиться.';
   if (isProductMediaHintText(input.text)) return 'Понял. Подскажите, что именно по этой модели хотите уточнить?';
+  if (input.hasMedia && isGenericMediaOnlyText(input.text)) return 'Фото/видео получил. Подскажите, какой размер интересует?';
   if (isSimplePositiveAckText(input.text)) return 'Пожалуйста.';
   return 'Подскажите, что хотите уточнить?';
 }
