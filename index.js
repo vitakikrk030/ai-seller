@@ -40,7 +40,15 @@ const IWAK_CART_MAX_ITEMS = 20;
 const IWAK_CART_FETCH_TIMEOUT_MS = 4500;
 const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
 const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'https://iwak.ru/api/products').replace(/\/$/, '');
-const DEFAULT_QUALITY_RETURN_TEXT = 'При получении в ПВЗ или у курьера спокойно примерьте, осмотрите и проверьте товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
+const DEFAULT_QUALITY_RETURN_TEXT = 'При получении в ПВЗ или у курьера спокойно примерьте, осмотрите и проверьте товар. Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина. Главное — сохранить товарный вид, упаковку и весь комплект.';
+const RETURN_CONDITION_RULE_TEXT = [
+  'Условия возврата/обмена: возврат возможен, если товар сохранил товарный вид, упаковку и комплектность.',
+  'Обувь: коробка целая, без сильных повреждений; кроссовки без заметных следов носки, подошва чистая; все вложения, шнурки и дополнительные аксессуары на месте.',
+  'Одежда: без следов носки, пятен, запахов и повреждений; бирки, упаковка и комплект сохранены, если они были.',
+  'Сумки и аксессуары: без следов использования, царапин и повреждений; упаковка и комплект на месте.',
+  'Клиенту не вываливать весь список заранее. Если спрашивает кратко, отвечать коротко: главное сохранить товарный вид, упаковку и весь комплект.',
+  'Не обещать возврат или обмен товара в любом состоянии.',
+].join('\n');
 const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но сейчас заказы оформляем в диалоге. По доставке: Яндекс Доставка и Ozon бесплатные, остальные транспортные компании оплачиваются по тарифам службы. Перед отправкой товар проверяем.';
 const DELIVERY_COST_RULE_TEXT = 'Доставка: Яндекс Доставка и Ozon бесплатные. CDEK/СДЭК, Почта России, WB/Wildberries и другие транспортные компании оплачиваются по тарифам выбранной службы. Не писать, что вся доставка бесплатная.';
 const DEFAULT_CONTACTS_WEBSITE = 'https://iwak.ru';
@@ -3381,6 +3389,31 @@ function finalizeDeliveryFittingReply(input = {}, reply = '') {
   return 'Да, конечно. При получении можно спокойно забрать товар, примерить и осмотреть. Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина.';
 }
 
+function isReturnOrExchangeQuestion(text = '') {
+  return /(?:возврат|обмен|вернуть|поменять|не\s+подойд|если\s+не\s+подойд|услови[яй]\s+возврат|услови[яй]\s+обмен)/i.test(String(text || ''));
+}
+
+function replyMentionsReturnConditions(reply = '') {
+  return /(?:товарн(?:ый|ого)\s+вид|упаков|комплект|след(?:ы|ов)?\s+(?:носк|использ)|подошв|бирк|пятн|запах|поврежд|чист(?:ый|ая|ое|ым))/i.test(String(reply || ''));
+}
+
+function containsOverbroadReturnPromise(reply = '') {
+  return /(?:в\s+любом\s+состоянии|всегда\s+мож(?:но|ете)|без\s+условий|без\s+проблем\s+(?:верн|обмен|помен)|просто\s+(?:верн[её]те|поменя(?:ем|ете)))/i.test(String(reply || ''));
+}
+
+function finalizeReturnConditionReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !isReturnOrExchangeQuestion(input.text)) return finalReply;
+
+  const condition = 'Главное — сохранить товарный вид, упаковку и весь комплект: без следов носки/использования, чистым и без повреждений.';
+  if (containsOverbroadReturnPromise(finalReply)) {
+    return `Да, если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина. ${condition}`;
+  }
+  if (replyMentionsReturnConditions(finalReply)) return finalReply;
+  if (!/(?:возврат|обмен|верн|помен|не\s+подойд)/i.test(finalReply)) return finalReply;
+  return `${finalReply.replace(/\s+$/g, '')} ${condition}`;
+}
+
 function isPhotoSizeRealityQuestion(input = {}) {
   const source = String(input.text || '');
   return /(?:фото\s+у\s+вас\s+реальн|фото\s+реальн|реальн(?:ые|ое)?\s+фото)/i.test(source)
@@ -3602,6 +3635,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
   finalReply = finalizeDeliveryFittingReply(input, finalReply);
+  finalReply = finalizeReturnConditionReply(input, finalReply);
   finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
@@ -6676,6 +6710,8 @@ function getQualityGuidance(config) {
     parseConfigBoolean(config.quality_return_no_dates_enabled, true)
       && 'Не называть сроки возврата/обмена, если срок не указан вручную в AI Control. Не писать "14 дней", "всегда можете" или "политика возврата".',
     parseConfigBoolean(config.quality_return_soft_enabled, true)
+      && RETURN_CONDITION_RULE_TEXT,
+    parseConfigBoolean(config.quality_return_soft_enabled, true)
       && String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()
       && `Мягкая формулировка возврата/обмена: ${String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()}`,
   ], config.quality_rules_text);
@@ -7653,6 +7689,10 @@ const SCENARIO_TEST_DEFINITIONS = {
     title: 'Примерка, возврат и самовывоз',
     defaultMessage: 'Возможна ли примерка, возврат, самовывоз?',
   },
+  return_conditions: {
+    title: 'Условия возврата',
+    defaultMessage: 'Если не подойдёт, смогу вернуть? Какие условия?',
+  },
   store_offline: {
     title: 'Спрашивает про офлайн-магазин',
     defaultMessage: 'А где вы находитесь? Можно приехать в магазин или на Садовод?',
@@ -7978,6 +8018,24 @@ function evaluateScenarioReply(reply, scenario, config = runtimeConfig) {
       scenarioTextHasAny(lower, [/возврат|обмен/i])
         && !scenarioTextHasAny(lower, [/14\s*(?:дн|дней|дня)|политик[аеуы]\s+возврат|без\s+условий/i]),
       'Возврат/обмен нужен мягко и без сроков, если сроки не заданы в AI Control.'
+    );
+  }
+
+  if (scenario.id === 'return_conditions') {
+    addScenarioCheck(
+      checks,
+      'return_conditions_clear',
+      'Условия возврата названы коротко',
+      scenarioTextHasAny(lower, [/товарн(?:ый|ого)\s+вид|упаков|комплект/i])
+        && scenarioTextHasAny(lower, [/след(?:ы|ов)?\s+(?:носк|использ)|чист|поврежд/i]),
+      'На прямой вопрос про возврат нужно коротко назвать минимальные условия: товарный вид, упаковка, комплект, без следов носки/использования.'
+    );
+    addScenarioCheck(
+      checks,
+      'no_overbroad_return',
+      'Нет обещания возврата в любом состоянии',
+      !scenarioTextHasAny(lower, [/в\s+любом\s+состоянии|без\s+условий|всегда\s+мож(?:но|ете)|без\s+проблем\s+(?:верн|обмен|помен)/i]),
+      'Нельзя обещать возврат без условий: потом приезжают убитые коробки, грязная подошва или неполный комплект.'
     );
   }
 
