@@ -41,7 +41,8 @@ const IWAK_CART_FETCH_TIMEOUT_MS = 4500;
 const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
 const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'https://iwak.ru/api/products').replace(/\/$/, '');
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении в ПВЗ или у курьера спокойно примерьте, осмотрите и проверьте товар. Если что-то не подойдёт, напишите нам — вопрос решим через возврат или обмен по правилам магазина.';
-const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но от офлайн-точки отказались: содержание павильона, склада и сотрудников стало сильно дороже, и это отражалось бы на цене товара. Поэтому оставили онлайн-формат, чтобы держать адекватные цены. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем.';
+const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но сейчас заказы оформляем в диалоге. По доставке: Яндекс Доставка и Ozon бесплатные, остальные транспортные компании оплачиваются по тарифам службы. Перед отправкой товар проверяем.';
+const DELIVERY_COST_RULE_TEXT = 'Доставка: Яндекс Доставка и Ozon бесплатные. CDEK/СДЭК, Почта России, WB/Wildberries и другие транспортные компании оплачиваются по тарифам выбранной службы. Не писать, что вся доставка бесплатная.';
 const DEFAULT_CONTACTS_WEBSITE = 'https://iwak.ru';
 const DEFAULT_DELIVERY_TRACKING_TEXT = [
   'Когда клиент спрашивает, как отслеживать доставку или сколько она идет, отвечай просто: после оформления накладной статусы обычно появляются в приложении или личном кабинете выбранной службы доставки, если номер телефона клиента там зарегистрирован. Клиент сможет видеть цепочку статусов от приемки до выдачи/доставки.',
@@ -3176,6 +3177,20 @@ function finalizeDeliveryTrackingReply(input = {}, reply = '') {
   return `После оформления накладной статус обычно появляется в приложении или личном кабинете${serviceText}, если ваш номер телефона там зарегистрирован. Там можно будет отслеживать путь заказа до получения.`;
 }
 
+function finalizeDeliveryCostReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !/доставк[ауы][\s\S]{0,80}бесплатн/i.test(finalReply)) return finalReply;
+  const service = extractDeliveryService(input?.text)
+    || input?.memoryContext?.slotSnapshot?.deliveryService
+    || '';
+  if (/^(?:Яндекс Доставка|Ozon)$/i.test(service)) return finalReply;
+
+  return finalReply
+    .replace(/Доставка\s+у\s+нас\s+бесплатная\.?/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании.')
+    .replace(/Доставка\s+бесплатная\.?/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании.')
+    .replace(/доставка\s+бесплатная/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании');
+}
+
 function buildMissingOrderFieldsReply(snapshot = {}) {
   const missing = getMissingOrderSlots(snapshot);
   if (!missing.length) return 'Отлично, всё есть. Можно переходить к оплате.';
@@ -3199,7 +3214,7 @@ function buildSoftOrderStartReply(input = {}) {
   const price = normalizeMemoryText(details.price || snapshot.price || extractOrderPrice(input?.text));
   const sizeText = size ? `${size} размер` : 'эту модель';
   const priceText = price ? `, цена ${formatMoneyAmount(price)}` : '';
-  return `${getTimeAwareGreeting()}! ${sizeText} есть${priceText}. Доставка бесплатная. Оформим?`;
+  return `${getTimeAwareGreeting()}! ${sizeText} есть${priceText}. Яндекс и Ozon по доставке бесплатные, остальные службы — по тарифам. Оформим?`;
 }
 
 function asksOnlyForSize(reply = '') {
@@ -3389,7 +3404,7 @@ function finalizeStoreOfflineReply(input = {}, reply = '') {
   const returnPart = /возврат|обмен/i.test(String(input.text || ''))
     ? ' Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина.'
     : '';
-  return `${sadovod}Сейчас работаем только онлайн, шоурума нет. Заказ оформляем здесь, доставка бесплатная, перед отправкой товар проверяем. При получении можно спокойно примерить, осмотреть и проверить товар.${returnPart}`;
+  return `${sadovod}Сейчас работаем только онлайн, шоурума нет. Заказ оформляем здесь, перед отправкой товар проверяем. Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам. При получении можно спокойно примерить, осмотреть и проверить товар.${returnPart}`;
 }
 
 function finalizeEarlyOrderContactRequest(input = {}, reply = '') {
@@ -3566,6 +3581,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeDeliveryChoiceReply(input, finalReply);
   finalReply = finalizeDeliveryTrackingReply(input, finalReply);
+  finalReply = finalizeDeliveryCostReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
@@ -6566,7 +6582,7 @@ function getOrderPathGuidance(config) {
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
     'Не отправлять клиенту полную анкету оформления, если он просто уточняет наличие, размер или стельку. В таком случае ответить только по вопросу.',
     'Ссылка или фото товара не всегда означает новый заказ. Если до этого клиент обсуждал скидку, сравнение цены, внешний пример или написал "сейчас скину модель", считать новую ссылку/фото продолжением этого вопроса, а не начинать оформление и не спрашивать размер.',
-    'В первом ответе на корзину или готовый заказ не начинать резко с ФИО и телефона. Сначала мягко подтвердить товар/размер/цену, сказать что доставка бесплатная, и спросить коротко: "Оформим?" Контакты просить уже после согласия клиента.',
+    'В первом ответе на корзину или готовый заказ не начинать резко с ФИО и телефона. Сначала мягко подтвердить товар/размер/цену, сказать про доставку: Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам, и спросить коротко: "Оформим?" Контакты просить уже после согласия клиента.',
     'Если клиент уже хочет оформлять, спрашивать только ближайшие 1-2 недостающих поля из контекста оформления, а не весь список ФИО/телефон/город/служба/ПВЗ сразу.',
   ], config.order_rules_text);
 }
@@ -6662,7 +6678,7 @@ function getStoreTrustGuidance(config) {
     parseConfigBoolean(config.store_trust_no_address_enabled, true)
       && 'Не выдумывать адрес, павильон, точку выдачи или возможность приехать. Не писать "приезжайте", "можно подъехать" или "адрес такой-то".',
     parseConfigBoolean(config.store_trust_safe_purchase_enabled, true)
-      && 'После объяснения онлайн-формата мягко вернуть к безопасной покупке: заказ оформляем в диалоге, доставка бесплатная, перед отправкой товар проверяем, при получении можно спокойно осмотреть.',
+      && 'После объяснения онлайн-формата мягко вернуть к безопасной покупке: заказ оформляем в диалоге, перед отправкой товар проверяем, при получении можно спокойно осмотреть. По доставке: Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам.',
     String(config.store_trust_text || DEFAULT_STORE_TRUST_TEXT).trim()
       && `Базовая формулировка. Не копировать дословно, использовать как смысл:\n${String(config.store_trust_text || DEFAULT_STORE_TRUST_TEXT).trim()}`,
   ]);
@@ -6751,6 +6767,7 @@ function getVisibleDeliveryGuidance(config) {
   if (!text && !trackingText) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
   return [
     'Доставка из AI Control:',
+    DELIVERY_COST_RULE_TEXT,
     text && text,
     trackingText && `Отслеживание доставки:\n${trackingText}`,
     String(config.delivery_style_text || '').trim() && `Стиль сообщения доставки: ${String(config.delivery_style_text).trim()}`,
@@ -9164,7 +9181,7 @@ function buildInboxDraft(profile = {}, status = {}) {
     return `${appeal}подскажите, пожалуйста, получилось оплатить ${product}? Если удобно, пришлите чек — я сразу передам на проверку.`;
   }
   if (status.key === 'waiting_data') {
-    return `${appeal}чтобы спокойно оформить заказ, пришлите, пожалуйста, ФИО, телефон и удобный пункт выдачи. Доставка у нас бесплатная.`;
+    return `${appeal}чтобы спокойно оформить заказ, пришлите, пожалуйста, ФИО, телефон и удобный пункт выдачи. Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам.`;
   }
   if (status.key === 'waiting_receipt') {
     return `${appeal}чек получил, спасибо. Передал на проверку, как сверим — напишу по заказу.`;
