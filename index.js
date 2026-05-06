@@ -3313,6 +3313,47 @@ function finalizePaymentAmountReply(input = {}, reply = '') {
   return `${line}\n${finalReply}`;
 }
 
+function stripObviousMediaNarration(reply = '') {
+  let source = String(reply || '').trim();
+  if (!source) return '';
+  const patterns = [
+    /^\s*вижу,\s*(?:что\s*)?(?:вы\s*)?(?:прислали|отправили|скинули)\s+фото\s+(?:кроссовок|товара|модели|обуви)?[.!,:;\-\s]*/i,
+    /^\s*вижу\s+(?:ваше\s*)?фото\s+(?:кроссовок|товара|модели|обуви)?[.!,:;\-\s]*/i,
+    /^\s*фото\s+(?:кроссовок|товара|модели|обуви)\s+(?:получил|получила|вижу)[.!,:;\-\s]*/i,
+    /^\s*(?:на\s+фото|на\s+изображении)\s+вижу\s+(?:кроссовки|товар|модель|обувь)[.!,:;\-\s]*/i,
+  ];
+  let previous = '';
+  while (source !== previous) {
+    previous = source;
+    patterns.forEach((pattern) => {
+      source = source.replace(pattern, '').trim();
+    });
+  }
+  return capitalizeFirstLetter(source || String(reply || '').trim());
+}
+
+function finalizeProductMediaReply(input = {}, reply = '') {
+  let finalReply = String(reply || '').trim();
+  if (!finalReply || !input.hasMedia) return finalReply;
+  finalReply = stripObviousMediaNarration(finalReply);
+
+  const text = normalizeMemoryText(input.text || '');
+  const asksSizeAvailability = /(?:есть|налич|будет|остал[аио]с|доступн)[\s\S]{0,80}(?:\d{2}|размер)|(?:\d{2}\s*размер)[\s\S]{0,80}(?:есть|налич|будет|остал[аио]с|доступн)/i.test(text);
+  const hasInventoryFacts = Boolean(input?.memoryContext?.slotSnapshot?.availableShoeSizePairs?.length);
+  if (
+    asksSizeAvailability
+    && !hasInventoryFacts
+    && /(?:^|[.!?\n]\s*)(?:да,\s*)?(?:эта\s+)?модель\s+есть\s+в\s+\d{2}\s+размере|(?:^|[.!?\n]\s*)да,\s*(?:есть|в\s+наличии)/i.test(finalReply)
+  ) {
+    const size = extractSize(text);
+    return size
+      ? `По фото понял, какая модель. ${size} размер по наличию лучше уточню, чтобы не сказать наугад.`
+      : 'По фото понял, какая модель. Наличие лучше уточню, чтобы не сказать наугад.';
+  }
+
+  return finalReply;
+}
+
 function buildMissingOrderFieldsReply(snapshot = {}) {
   const missing = getMissingOrderSlots(snapshot);
   if (!missing.length) return 'Отлично, всё есть. Можно переходить к оплате.';
@@ -3760,6 +3801,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeDeliveryTrackingReply(input, finalReply);
   finalReply = finalizeDeliveryCostReply(input, finalReply);
   finalReply = finalizePaymentAmountReply(input, finalReply);
+  finalReply = finalizeProductMediaReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
