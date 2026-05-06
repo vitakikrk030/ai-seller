@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 function nowIso() {
   return new Date().toISOString();
@@ -44,28 +44,34 @@ function createCustomerStore(options = {}) {
     const userId = clean(input.userId || chatId, 80);
     const existing = statements.getCustomerByChatId.get(chatId);
     const timestamp = nowIso();
+    const shouldUpdateIdentity = input.updateIdentity !== false
+      && !['manager', 'manager_auto', 'bot'].includes(clean(input.messageSource, 40));
 
     if (existing) {
-      statements.updateCustomerTelegram.run({
-        id: existing.id,
-        telegram_user_id: userId,
-        username: clean(input.username, 120) || existing.username || '',
-        first_name: clean(input.firstName, 120) || existing.first_name || '',
-        last_name: clean(input.lastName, 120) || existing.last_name || '',
-        phone: clean(input.phoneNumber, 80) || existing.phone || '',
-        last_seen_at: timestamp,
-        updated_at: timestamp,
-      });
+      if (shouldUpdateIdentity) {
+        statements.updateCustomerTelegram.run({
+          id: existing.id,
+          telegram_user_id: userId,
+          username: clean(input.username, 120) || existing.username || '',
+          first_name: clean(input.firstName, 120) || existing.first_name || '',
+          last_name: clean(input.lastName, 120) || existing.last_name || '',
+          phone: clean(input.phoneNumber, 80) || existing.phone || '',
+          last_seen_at: timestamp,
+          updated_at: timestamp,
+        });
+      } else {
+        statements.touchCustomer.run({ id: existing.id, updated_at: timestamp, last_seen_at: existing.last_seen_at || timestamp });
+      }
       return statements.getCustomerById.get(existing.id);
     }
 
     const result = statements.insertCustomer.run({
-      telegram_user_id: userId,
+      telegram_user_id: shouldUpdateIdentity ? userId : chatId,
       telegram_chat_id: chatId,
-      username: clean(input.username, 120),
-      first_name: clean(input.firstName, 120),
-      last_name: clean(input.lastName, 120),
-      phone: clean(input.phoneNumber, 80),
+      username: shouldUpdateIdentity ? clean(input.username, 120) : '',
+      first_name: shouldUpdateIdentity ? clean(input.firstName, 120) : '',
+      last_name: shouldUpdateIdentity ? clean(input.lastName, 120) : '',
+      phone: shouldUpdateIdentity ? clean(input.phoneNumber, 80) : '',
       created_at: timestamp,
       updated_at: timestamp,
       last_seen_at: timestamp,
@@ -148,6 +154,13 @@ function createCustomerStore(options = {}) {
       auto_takeover_at: clean(patch.autoTakeoverAt ?? patch.auto_takeover_at ?? previous.auto_takeover_at, 80),
       last_manager_trace_id: clean(patch.lastManagerTraceId ?? patch.last_manager_trace_id ?? previous.last_manager_trace_id, 80),
       last_client_trace_id: clean(patch.lastClientTraceId ?? patch.last_client_trace_id ?? previous.last_client_trace_id, 80),
+      order_chat_pending_receipt_key: clean(patch.orderChatPendingReceiptKey ?? patch.order_chat_pending_receipt_key ?? previous.order_chat_pending_receipt_key, 120),
+      order_chat_pending_digest: clean(patch.orderChatPendingDigest ?? patch.order_chat_pending_digest ?? previous.order_chat_pending_digest, 120),
+      order_chat_pending_at: clean(patch.orderChatPendingAt ?? patch.order_chat_pending_at ?? previous.order_chat_pending_at, 80),
+      last_order_chat_receipt_key: clean(patch.lastOrderChatReceiptKey ?? patch.last_order_chat_receipt_key ?? previous.last_order_chat_receipt_key, 120),
+      last_order_chat_digest: clean(patch.lastOrderChatDigest ?? patch.last_order_chat_digest ?? previous.last_order_chat_digest, 120),
+      last_order_chat_sent_at: clean(patch.lastOrderChatSentAt ?? patch.last_order_chat_sent_at ?? previous.last_order_chat_sent_at, 80),
+      last_order_chat_telegram_message_id: clean(patch.lastOrderChatTelegramMessageId ?? patch.last_order_chat_telegram_message_id ?? previous.last_order_chat_telegram_message_id, 80),
       updated_at: nowIso(),
     };
     statements.upsertDialogState.run(next);
@@ -443,13 +456,16 @@ function createCustomerStore(options = {}) {
       });
 
       Object.entries(memoryStore.facts || {}).forEach(([chatId, facts]) => {
-        getOrCreateByTelegram({ chatId, userId: chatId });
+        const customer = getOrCreateByTelegram({ chatId, userId: chatId, updateIdentity: false });
+        const existingFacts = customer ? getFactMapByCustomerId(customer.id, statements) : {};
         Object.entries(facts || {}).forEach(([key, fact]) => {
-          upsertFact(chatId, key, fact?.value, fact?.source || '', fact?.confidence || 'explicit');
+          if (existingFacts[key]?.value) return;
+          upsertFact({ chatId, userId: chatId, updateIdentity: false }, key, fact?.value, fact?.source || '', fact?.confidence || 'explicit');
         });
       });
 
       Object.entries(memoryStore.states || {}).forEach(([chatId, state]) => {
+        if (getDialogState(chatId)) return;
         setDialogState(chatId, {
           stage: state.stage || '',
           aiMode: state.aiMode || '',
@@ -671,6 +687,18 @@ function runMigrations(db) {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(5, nowIso());
   }
 
+  const hasV6 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(6);
+  if (!hasV6) {
+    addColumnIfMissing(db, 'dialog_states', 'order_chat_pending_receipt_key', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'order_chat_pending_digest', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'order_chat_pending_at', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'last_order_chat_receipt_key', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'last_order_chat_digest', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'last_order_chat_sent_at', 'TEXT');
+    addColumnIfMissing(db, 'dialog_states', 'last_order_chat_telegram_message_id', 'TEXT');
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(6, nowIso());
+  }
+
 }
 
 function addColumnIfMissing(db, table, column, definition) {
@@ -739,12 +767,18 @@ function prepareStatements(db) {
       INSERT INTO dialog_states (
         customer_id, stage, ai_mode, mode_source, source, manager_active_at,
         manager_last_message_at, pending_since, auto_takeover_at,
-        last_manager_trace_id, last_client_trace_id, updated_at
+        last_manager_trace_id, last_client_trace_id,
+        order_chat_pending_receipt_key, order_chat_pending_digest, order_chat_pending_at,
+        last_order_chat_receipt_key, last_order_chat_digest, last_order_chat_sent_at,
+        last_order_chat_telegram_message_id, updated_at
       )
       VALUES (
         @customer_id, @stage, @ai_mode, @mode_source, @source, @manager_active_at,
         @manager_last_message_at, @pending_since, @auto_takeover_at,
-        @last_manager_trace_id, @last_client_trace_id, @updated_at
+        @last_manager_trace_id, @last_client_trace_id,
+        @order_chat_pending_receipt_key, @order_chat_pending_digest, @order_chat_pending_at,
+        @last_order_chat_receipt_key, @last_order_chat_digest, @last_order_chat_sent_at,
+        @last_order_chat_telegram_message_id, @updated_at
       )
       ON CONFLICT(customer_id) DO UPDATE SET
         stage = excluded.stage,
@@ -757,6 +791,13 @@ function prepareStatements(db) {
         auto_takeover_at = excluded.auto_takeover_at,
         last_manager_trace_id = excluded.last_manager_trace_id,
         last_client_trace_id = excluded.last_client_trace_id,
+        order_chat_pending_receipt_key = excluded.order_chat_pending_receipt_key,
+        order_chat_pending_digest = excluded.order_chat_pending_digest,
+        order_chat_pending_at = excluded.order_chat_pending_at,
+        last_order_chat_receipt_key = excluded.last_order_chat_receipt_key,
+        last_order_chat_digest = excluded.last_order_chat_digest,
+        last_order_chat_sent_at = excluded.last_order_chat_sent_at,
+        last_order_chat_telegram_message_id = excluded.last_order_chat_telegram_message_id,
         updated_at = excluded.updated_at
     `),
     getDialogState: db.prepare('SELECT * FROM dialog_states WHERE customer_id = ?'),
@@ -896,6 +937,13 @@ function mapStateRow(row) {
     autoTakeoverAt: row.auto_takeover_at || '',
     lastManagerTraceId: row.last_manager_trace_id || '',
     lastClientTraceId: row.last_client_trace_id || '',
+    orderChatPendingReceiptKey: row.order_chat_pending_receipt_key || '',
+    orderChatPendingDigest: row.order_chat_pending_digest || '',
+    orderChatPendingAt: row.order_chat_pending_at || '',
+    lastOrderChatReceiptKey: row.last_order_chat_receipt_key || '',
+    lastOrderChatDigest: row.last_order_chat_digest || '',
+    lastOrderChatSentAt: row.last_order_chat_sent_at || '',
+    lastOrderChatTelegramMessageId: row.last_order_chat_telegram_message_id || '',
     updatedAt: row.updated_at || '',
   };
 }

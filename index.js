@@ -1310,12 +1310,46 @@ function safeCustomerStoreCall(scope, action, fallback = null) {
   }
 }
 
+function hasCustomerStore() {
+  return Boolean(customerStore);
+}
+
+function shouldUseLegacyMemoryFallback() {
+  return !hasCustomerStore() || process.env.MEMORY_LEGACY_FALLBACK === 'true';
+}
+
+function shouldWriteLegacyMemory() {
+  return !hasCustomerStore() || process.env.MEMORY_LEGACY_WRITE === 'true';
+}
+
+function getLegacyDialogState(chatId) {
+  const cleanChatId = getMemoryChatId(chatId);
+  return cleanChatId ? memoryStore.states[cleanChatId] || null : null;
+}
+
+function setDialogStatePatch(chatId, patch = {}, scope = 'customer.state.patch') {
+  const cleanChatId = getMemoryChatId(chatId);
+  if (!cleanChatId) return null;
+  const dbState = safeCustomerStoreCall(scope, (store) => store.setDialogState(cleanChatId, patch));
+  if (dbState) return dbState;
+  if (!shouldUseLegacyMemoryFallback()) return null;
+  const next = {
+    ...(memoryStore.states[cleanChatId] || {}),
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  memoryStore.states[cleanChatId] = next;
+  persistMemoryStore();
+  return next;
+}
+
 function appendMemoryMessage(input, role, text) {
   const chatId = getMemoryChatId(input);
   const cleanText = normalizeMemoryText(text);
   if (!chatId || !cleanText) return;
 
-  safeCustomerStoreCall('customer.message.append', (store) => store.appendMessage(input, role, cleanText));
+  const dbMessage = safeCustomerStoreCall('customer.message.append', (store) => store.appendMessage(input, role, cleanText));
+  if (dbMessage && !shouldWriteLegacyMemory()) return;
 
   const telegramMessageId = role !== 'assistant' ? String(input.messageId || '') : '';
   const traceId = String(input.traceId || '');
@@ -1349,7 +1383,9 @@ function upsertMemoryFact(chatId, key, value, source) {
   const cleanValue = normalizeMemoryText(value);
   if (!cleanChatId || !key || !cleanValue) return;
 
-  safeCustomerStoreCall('customer.fact.upsert', (store) => store.upsertFact(cleanChatId, key, cleanValue, source));
+  const dbFact = safeCustomerStoreCall('customer.fact.upsert', (store) => store.upsertFact(cleanChatId, key, cleanValue, source));
+  if (dbFact && !shouldWriteLegacyMemory()) return;
+  if (!shouldUseLegacyMemoryFallback() && !shouldWriteLegacyMemory()) return;
 
   if (!memoryStore.facts[cleanChatId]) memoryStore.facts[cleanChatId] = {};
   memoryStore.facts[cleanChatId][key] = {
@@ -1363,7 +1399,9 @@ function upsertMemoryFact(chatId, key, value, source) {
 function setConversationStage(chatId, stage, source) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId || !stage) return;
-  safeCustomerStoreCall('customer.state.stage', (store) => store.setDialogState(cleanChatId, { stage, source }));
+  const dbState = safeCustomerStoreCall('customer.state.stage', (store) => store.setDialogState(cleanChatId, { stage, source }));
+  if (dbState && !shouldWriteLegacyMemory()) return;
+  if (!shouldUseLegacyMemoryFallback() && !shouldWriteLegacyMemory()) return;
   memoryStore.states[cleanChatId] = {
     ...(memoryStore.states[cleanChatId] || {}),
     stage,
@@ -1385,11 +1423,12 @@ function upsertBusinessConnection(connection = {}) {
     updatedAt: new Date().toISOString(),
   };
 
+  const dbConnection = safeCustomerStoreCall('customer.business_connection.upsert', (store) => store.upsertBusinessConnection(normalized));
+  if (dbConnection && !shouldWriteLegacyMemory()) return dbConnection;
   memoryStore.businessConnections[id] = {
     ...(memoryStore.businessConnections[id] || {}),
     ...normalized,
   };
-  safeCustomerStoreCall('customer.business_connection.upsert', (store) => store.upsertBusinessConnection(normalized));
   persistMemoryStore();
   return memoryStore.businessConnections[id];
 }
@@ -1398,6 +1437,7 @@ function getBusinessConnectionById(id) {
   const cleanId = String(id || '').trim();
   const dbConnection = safeCustomerStoreCall('customer.business_connection.get', (store) => store.getBusinessConnection(cleanId));
   if (dbConnection) return dbConnection;
+  if (!shouldUseLegacyMemoryFallback()) return null;
   return cleanId ? memoryStore.businessConnections[cleanId] || null : null;
 }
 
@@ -1410,6 +1450,7 @@ function getBusinessConnectionByUserChatId(chatId) {
       : null
   ));
   if (dbConnection) return dbConnection;
+  if (!shouldUseLegacyMemoryFallback()) return null;
   return Object.values(memoryStore.businessConnections || {})
     .filter((connection) => String(connection.userChatId || '') === cleanChatId && connection.isEnabled !== false)
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
@@ -1453,7 +1494,7 @@ function rememberBusinessConnectionChat(businessConnectionId, chatId) {
 function setDialogAiMode(chatId, mode, source = '') {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId || !mode) return null;
-  const previous = memoryStore.states[cleanChatId] || {};
+  const previous = getDialogState(cleanChatId) || {};
   const next = {
     ...previous,
     aiMode: mode,
@@ -1464,26 +1505,20 @@ function setDialogAiMode(chatId, mode, source = '') {
     delete next.autoTakeoverAt;
     delete next.pendingSince;
   }
-  memoryStore.states[cleanChatId] = next;
-  safeCustomerStoreCall('customer.state.mode', (store) => store.setDialogState(cleanChatId, next));
-  persistMemoryStore();
-  return next;
+  return setDialogStatePatch(cleanChatId, next, 'customer.state.mode');
 }
 
 function markLatestClientTrace(input) {
   const cleanChatId = getMemoryChatId(input?.chatId || input);
   const traceId = String(input?.traceId || '').trim();
   if (!cleanChatId || !traceId) return null;
-  const previous = memoryStore.states[cleanChatId] || {};
+  const previous = getDialogState(cleanChatId) || {};
   const next = {
     ...previous,
     lastClientTraceId: traceId,
     updatedAt: new Date().toISOString(),
   };
-  memoryStore.states[cleanChatId] = next;
-  safeCustomerStoreCall('customer.state.last_client', (store) => store.setDialogState(cleanChatId, next));
-  persistMemoryStore();
-  return next;
+  return setDialogStatePatch(cleanChatId, next, 'customer.state.last_client');
 }
 
 function setManagerActive(chatId, input, source = '') {
@@ -1491,8 +1526,8 @@ function setManagerActive(chatId, input, source = '') {
   if (!cleanChatId) return null;
   cancelManagerReturnTimer(cleanChatId);
   const now = new Date().toISOString();
-  memoryStore.states[cleanChatId] = {
-    ...(memoryStore.states[cleanChatId] || {}),
+  const next = {
+    ...(getDialogState(cleanChatId) || {}),
     aiMode: 'passive_manager',
     managerActiveAt: now,
     managerLastMessageAt: now,
@@ -1502,22 +1537,21 @@ function setManagerActive(chatId, input, source = '') {
     lastManagerTraceId: input?.traceId || '',
     updatedAt: now,
   };
-  safeCustomerStoreCall('customer.state.manager_active', (store) => store.setDialogState(cleanChatId, memoryStore.states[cleanChatId]));
-  persistMemoryStore();
-  return memoryStore.states[cleanChatId];
+  return setDialogStatePatch(cleanChatId, next, 'customer.state.manager_active');
 }
 
 function getDialogState(chatId) {
   const cleanChatId = getMemoryChatId(chatId);
   const dbState = safeCustomerStoreCall('customer.state.get', (store) => store.getDialogState(cleanChatId));
   if (dbState) return dbState;
-  return cleanChatId ? memoryStore.states[cleanChatId] || null : null;
+  return shouldUseLegacyMemoryFallback() ? getLegacyDialogState(cleanChatId) : null;
 }
 
 function getCustomerProfileSnapshot(chatId) {
   const cleanChatId = getMemoryChatId(chatId);
   const profile = safeCustomerStoreCall('customer.profile.get', (store) => store.getCustomerProfile(cleanChatId));
   if (profile) return profile;
+  if (!shouldUseLegacyMemoryFallback()) return null;
   return {
     customer: null,
     facts: memoryStore.facts[cleanChatId] || {},
@@ -1918,6 +1952,8 @@ function extractDeliveryService(text) {
 function extractPickupPoint(text) {
   const source = String(text || '').trim();
   if (!source) return '';
+  if (isDeliveryTrackingQuestion(source)) return '';
+  if (/(?:сколько|как\s+долго|по\s+времени|срок|когда\s+прид[её]т)/i.test(source)) return '';
   const lines = source.split(/\n/).map((line) => line.trim()).filter(Boolean);
   const explicit = lines.find((line) => /(пвз|пункт\s+выдачи|ozon|озон|wildberries|\bwb\b|сд[эе]к|cdek|яндекс|почта)/i.test(line) && line.length >= 6);
   if (explicit) return explicit;
@@ -2226,7 +2262,7 @@ async function maybeSendOrderChatNotification(config, input = {}) {
   const chatId = getMemoryChatId(input.chatId);
   if (!chatId) return false;
   const receiptKey = String(input.messageId || input.traceId || `${chatId}:${input.receivedAt || Date.now()}`);
-  const state = memoryStore.states[chatId] || {};
+  const state = getDialogState(chatId) || {};
   const text = buildOrderChatMessage(input);
   const digest = crypto.createHash('sha256').update(text).digest('hex').slice(0, 24);
   const now = Date.now();
@@ -2246,14 +2282,13 @@ async function maybeSendOrderChatNotification(config, input = {}) {
     return false;
   }
 
-  memoryStore.states[chatId] = {
+  setDialogStatePatch(chatId, {
     ...state,
     orderChatPendingReceiptKey: receiptKey,
     orderChatPendingDigest: digest,
     orderChatPendingAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  };
-  persistMemoryStore();
+  }, 'customer.state.order_chat_pending');
 
   const context = {
     traceId: input.traceId,
@@ -2267,8 +2302,8 @@ async function maybeSendOrderChatNotification(config, input = {}) {
   const result = await sendTelegramMessage(config, context, text);
   if (!result) return false;
 
-  memoryStore.states[chatId] = {
-    ...(memoryStore.states[chatId] || state),
+  setDialogStatePatch(chatId, {
+    ...(getDialogState(chatId) || state),
     lastOrderChatReceiptKey: receiptKey,
     lastOrderChatDigest: digest,
     lastOrderChatSentAt: new Date().toISOString(),
@@ -2277,8 +2312,7 @@ async function maybeSendOrderChatNotification(config, input = {}) {
     orderChatPendingDigest: '',
     orderChatPendingAt: '',
     updatedAt: new Date().toISOString(),
-  };
-  persistMemoryStore();
+  }, 'customer.state.order_chat_sent');
   logEvent('ORDER_CHAT', {
     traceId: input.traceId,
     userId: input.userId,
@@ -2306,7 +2340,7 @@ function updateCustomerMemoryFromInput(input) {
   if (!chatId) return;
   const profileSnapshot = getCustomerProfileSnapshot(chatId) || {};
   const lastOrderSnapshot = profileSnapshot.lastOrder || {};
-  const factsSnapshot = profileSnapshot.facts || memoryStore.facts[chatId] || {};
+  const factsSnapshot = profileSnapshot.facts || {};
 
   const phone = extractPhone(input.text);
   if (phone) upsertMemoryFact(chatId, 'phone', phone, source);
@@ -2354,7 +2388,7 @@ function updateCustomerMemoryFromInput(input) {
       : (deliveryAddress || factsSnapshot.deliveryAddress?.value || pickupPoint || factsSnapshot.pickupPoint?.value || lastOrderSnapshot.deliveryAddress || lastOrderSnapshot.delivery_address || ''),
   };
 
-  const slotContextText = [lastProduct, memoryStore.facts[chatId]?.lastProduct?.value, memoryStore.facts[chatId]?.interest?.value, input.text].filter(Boolean).join(' ');
+  const slotContextText = [lastProduct, factsSnapshot.lastProduct?.value, factsSnapshot.interest?.value, input.text].filter(Boolean).join(' ');
   if (detectShoeContextFromText(slotContextText)) {
     upsertMemoryFact(chatId, 'shoeContext', 'true', source);
   }
@@ -2399,7 +2433,6 @@ function updateCustomerMemoryFromInput(input) {
     }));
   }
 
-  persistMemoryStore();
 }
 
 function applyManagerStageHints(input) {
@@ -2460,6 +2493,7 @@ function getRecentMemoryMessages(chatId, limit = MEMORY_RECENT_LIMIT, excludeTra
   if (!cleanChatId) return [];
   const dbMessages = safeCustomerStoreCall('customer.messages.recent', (store) => store.getRecentMessages(cleanChatId, limit, excludeTraceIds));
   if (Array.isArray(dbMessages) && dbMessages.length) return dbMessages;
+  if (!shouldUseLegacyMemoryFallback()) return [];
   return memoryStore.messages
     .filter((message) => message.chatId === cleanChatId)
     .filter((message) => !excluded.has(message.traceId))
@@ -2556,6 +2590,17 @@ function buildMemoryContext(chatId, options = {}) {
     return {
       ...dbContext,
       summary: [dbContext.summary, managerHandoffSummary, slotSummary].filter(Boolean).join('\n\n'),
+      slotSnapshot,
+    };
+  }
+  if (!shouldUseLegacyMemoryFallback()) {
+    const slotSnapshot = buildSlotSnapshot(cleanChatId, options.currentInput || null);
+    const slotSummary = buildSlotSummary(slotSnapshot);
+    return {
+      summary: slotSummary,
+      history: [],
+      facts: {},
+      state: null,
       slotSnapshot,
     };
   }
@@ -3533,7 +3578,7 @@ function finalizeCartSwitchReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   const profile = input.cartContext?.orderDetails ? null : getCustomerProfileSnapshot(input.chatId);
   const cleanChatId = getMemoryChatId(input);
-  const memoryCart = memoryStore.facts[cleanChatId]?.currentCart?.value || profile?.facts?.currentCart?.value || '';
+  const memoryCart = profile?.facts?.currentCart?.value || (shouldUseLegacyMemoryFallback() ? memoryStore.facts[cleanChatId]?.currentCart?.value : '');
   const details = input.cartContext?.orderDetails || (memoryCart ? {
     product: memoryCart,
     price: extractOrderPrice(memoryCart) || extractMoneyAmounts(memoryCart)[0] || '',
@@ -4143,16 +4188,14 @@ function scheduleManagerReturn(input) {
 
   const delayMs = getConfigManagerReturnDelayMs(input.config);
   const now = new Date();
-  memoryStore.states[key] = {
-    ...(memoryStore.states[key] || {}),
+  setDialogStatePatch(key, {
+    ...(getDialogState(key) || {}),
     aiMode: 'passive_manager',
     pendingSince: now.toISOString(),
     autoTakeoverAt: new Date(now.getTime() + delayMs).toISOString(),
     lastClientTraceId: input.traceId || '',
     updatedAt: now.toISOString(),
-  };
-  safeCustomerStoreCall('customer.state.manager_wait', (store) => store.setDialogState(key, memoryStore.states[key]));
-  persistMemoryStore();
+  }, 'customer.state.manager_wait');
 
   const previousTimer = managerReturnTimers.get(key);
   if (previousTimer) clearTimeout(previousTimer);
@@ -4227,17 +4270,21 @@ function enqueueInputForBatch(input) {
 function clearMemoryForChat(chatId) {
   const cleanChatId = getMemoryChatId(chatId);
   if (!cleanChatId) return false;
-  safeCustomerStoreCall('customer.clear', (store) => store.clearCustomer(cleanChatId));
-  memoryStore.messages = memoryStore.messages.filter((message) => message.chatId !== cleanChatId);
-  delete memoryStore.facts[cleanChatId];
-  delete memoryStore.states[cleanChatId];
-  persistMemoryStore();
+  const cleared = safeCustomerStoreCall('customer.clear', (store) => store.clearCustomer(cleanChatId), false);
+  if (!cleared || shouldWriteLegacyMemory()) {
+    memoryStore.messages = memoryStore.messages.filter((message) => message.chatId !== cleanChatId);
+    delete memoryStore.facts[cleanChatId];
+    delete memoryStore.states[cleanChatId];
+    persistMemoryStore();
+  }
   return true;
 }
 
-cleanupMemoryStore();
-persistMemoryStore();
-setInterval(() => persistMemoryStore(), 24 * 60 * 60 * 1000).unref();
+if (shouldWriteLegacyMemory()) {
+  cleanupMemoryStore();
+  persistMemoryStore();
+  setInterval(() => persistMemoryStore(), 24 * 60 * 60 * 1000).unref();
+}
 
 function parseCookies(cookieHeader) {
   return String(cookieHeader || '')
@@ -10447,7 +10494,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
       input.username = username;
       input.phoneNumber = phoneNumber;
       input.receivedAt = Date.now();
-      safeCustomerStoreCall('customer.upsert', (store) => store.getOrCreateByTelegram(input));
       logEvent('IN', {
         traceId,
         received: true,
@@ -10485,6 +10531,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
         });
         return;
       }
+
+      safeCustomerStoreCall('customer.upsert', (store) => store.getOrCreateByTelegram(input));
 
       const memoryText = getMemoryMessageText(input);
       const memoryEnabled = parseConfigBoolean(config.memory_enabled, true);
