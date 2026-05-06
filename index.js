@@ -2150,6 +2150,29 @@ function extractProductLink(text) {
   return match ? stripTrailingUrlNoise(match[0].startsWith('http') ? match[0] : `https://${match[0]}`) : '';
 }
 
+function extractIwakProductLinks(text) {
+  const source = String(text || '');
+  const matches = source.match(/(?<![\w./-])(?:https?:\/\/)?(?:www\.)?iwak\.ru\/product\/[^\s<>"']+/gi) || [];
+  return Array.from(new Set(matches
+    .map(stripTrailingUrlNoise)
+    .map((raw) => (raw.startsWith('http') ? raw : `https://${raw}`))
+    .filter(Boolean)));
+}
+
+function getIwakProductIdFromLink(link = '') {
+  try {
+    const url = new URL(String(link || '').startsWith('http') ? link : `https://${link}`);
+    if (!['iwak.ru', 'www.iwak.ru'].includes(url.hostname.toLowerCase())) return null;
+    if (!url.pathname.startsWith('/product/')) return null;
+    const match = url.pathname.match(/-(\d+)(?:\/)?$/);
+    if (!match) return null;
+    const id = Number(match[1]);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function extractIwakOrderLink(text) {
   const source = String(text || '');
   const productLink = extractProductLink(source);
@@ -2213,9 +2236,12 @@ function buildOrderChatMessage(input = {}) {
   const productSource = [
     order.product,
     facts.lastProduct?.value,
+    facts.currentProduct?.value,
     facts.currentCart?.value,
+    facts.currentProductLink?.value,
     facts.currentCartLink?.value,
     facts.lastProduct?.source,
+    facts.currentProduct?.source,
     facts.currentCart?.source,
     facts.interest?.value,
     facts.interest?.source,
@@ -2223,7 +2249,7 @@ function buildOrderChatMessage(input = {}) {
   ].filter(Boolean).join('\n');
   const productLink = extractIwakOrderLink(productSource);
   const productName = compactOrderValue(
-    cleanOrderProductName(facts.currentCart?.value || order.product || facts.lastProduct?.value || extractLastProduct(productSource)),
+    cleanOrderProductName(facts.currentCart?.value || facts.currentProduct?.value || order.product || facts.lastProduct?.value || extractLastProduct(productSource)),
   );
   const size = compactOrderValue(facts.size?.value || facts.shoeSize?.value || extractSize(text) || order.size);
   const insole = compactOrderValue(facts.insoleCm?.value || extractInsoleCm(text) || getApproxInsoleBySize(size), '');
@@ -2378,7 +2404,7 @@ function updateCustomerMemoryFromInput(input) {
   if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
   const orderPrice = extractOrderPrice(source) || extractPaymentProofAmount(source);
   const commonOrderPatch = {
-    product: lastProduct || (factsSnapshot.currentCart?.value || lastOrderSnapshot.product || factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
+    product: lastProduct || (factsSnapshot.currentCart?.value || factsSnapshot.currentProduct?.value || lastOrderSnapshot.product || factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
     size: size || factsSnapshot.size?.value || factsSnapshot.shoeSize?.value || lastOrderSnapshot.size || '',
     price: orderPrice || lastOrderSnapshot.price || '',
     fullName: fullName || lastOrderSnapshot.fullName || lastOrderSnapshot.full_name || factsSnapshot.fullName?.value || '',
@@ -3244,6 +3270,49 @@ function finalizeDeliveryCostReply(input = {}, reply = '') {
     .replace(/доставка\s+бесплатная/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании');
 }
 
+function getKnownOrderPrice(input = {}) {
+  const snapshot = input?.memoryContext?.slotSnapshot || {};
+  const facts = input?.memoryContext?.facts || {};
+  const details = input?.cartContext?.orderDetails || input?.productContext?.orderDetails || {};
+  const profile = getCustomerProfileSnapshot(input.chatId) || {};
+  const lastOrder = profile.lastOrder || {};
+  return normalizeMemoryText(
+    details.price
+    || snapshot.price
+    || lastOrder.price
+    || facts.currentCart?.value && (extractOrderPrice(facts.currentCart.value) || extractMoneyAmounts(facts.currentCart.value)[0])
+    || facts.currentProduct?.value && (extractOrderPrice(facts.currentProduct.value) || extractMoneyAmounts(facts.currentProduct.value)[0])
+    || extractOrderPrice(input?.memoryContext?.summary)
+    || extractOrderPrice(input?.text)
+  );
+}
+
+function replyContainsPaymentDetails(input = {}, reply = '') {
+  const text = String(reply || '');
+  const config = input.config || runtimeConfig;
+  const configuredDigits = getDigitsOnly(config.payment_card_number);
+  return /(?:реквизит|получатель|банк|способ\s+оплаты|жду\s+.*чек|перевод\s+на\s+карту)/i.test(text)
+    || (configuredDigits && getDigitsOnly(text).includes(configuredDigits.slice(-Math.min(10, configuredDigits.length))));
+}
+
+function finalizePaymentAmountReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !replyContainsPaymentDetails(input, finalReply)) return finalReply;
+
+  const price = getKnownOrderPrice(input);
+  if (!price) return finalReply;
+  const amountText = formatMoneyAmount(price);
+  const amountDigits = getDigitsOnly(amountText);
+  if (!amountText || (amountDigits && getDigitsOnly(finalReply).includes(amountDigits))) return finalReply;
+  if (/сумм[ауы]\s+(?:к\s+оплате|перевода|итого|заказа)/i.test(finalReply)) return finalReply;
+
+  const line = `Сумма к оплате: ${amountText}.`;
+  if (/способ\s+оплаты|реквизит|получатель|банк/i.test(finalReply)) {
+    return finalReply.replace(/(Способ\s+оплаты|Реквизиты|Получатель|Банк)/i, `${line}\n$1`);
+  }
+  return `${line}\n${finalReply}`;
+}
+
 function buildMissingOrderFieldsReply(snapshot = {}) {
   const missing = getMissingOrderSlots(snapshot);
   if (!missing.length) return 'Отлично, всё есть. Можно переходить к оплате.';
@@ -3262,7 +3331,7 @@ function buildMissingOrderFieldsReply(snapshot = {}) {
 
 function buildSoftOrderStartReply(input = {}) {
   const snapshot = input?.memoryContext?.slotSnapshot || {};
-  const details = input?.cartContext?.orderDetails || {};
+  const details = input?.cartContext?.orderDetails || input?.productContext?.orderDetails || {};
   const size = normalizeMemoryText(details.size || snapshot.size || extractSize(input?.text));
   const price = normalizeMemoryText(details.price || snapshot.price || extractOrderPrice(input?.text));
   const sizeText = size ? `${size} размер` : 'эту модель';
@@ -3339,6 +3408,19 @@ function startsWithGreetingText(text = '') {
   return /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s!,.:\-])/i.test(normalizeMemoryText(text));
 }
 
+function collapseDuplicateLeadingGreetings(reply = '') {
+  let source = String(reply || '').trim();
+  if (!source) return '';
+  const greetingPattern = '(?:здравствуйте|добрый\\s+день|доброе\\s+утро|добрый\\s+вечер|привет)';
+  const duplicate = new RegExp(`^(${greetingPattern})([!,.\\-:]*\\s+)(${greetingPattern})(?=$|[\\s!,.\\-:])([!,.\\-:]*\\s*)`, 'i');
+  let previous = '';
+  while (source !== previous) {
+    previous = source;
+    source = source.replace(duplicate, '$1! ');
+  }
+  return source.trim();
+}
+
 function shouldAnswerInitialGreeting(input = {}) {
   if (hasPriorDialogHistory(input)) return false;
   return startsWithGreetingText(input?.text || '');
@@ -3353,14 +3435,15 @@ function finalizeRepeatedGreetingReply(input = {}, reply = '') {
 }
 
 function finalizeTimeAwareGreetingReply(input = {}, reply = '') {
-  const finalReply = String(reply || '').trim();
+  const finalReply = collapseDuplicateLeadingGreetings(reply);
   if (!finalReply || hasPriorDialogHistory(input)) return finalReply;
   const replaced = finalReply.replace(
     /^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)(?=$|[\s!,.:\-])[!,.:\-\s]*/i,
     `${getTimeAwareGreeting()}! `
   ).trim();
-  if (replaced !== finalReply || !shouldAnswerInitialGreeting(input)) return replaced;
-  return `${getTimeAwareGreeting()}! ${finalReply}`;
+  const collapsed = collapseDuplicateLeadingGreetings(replaced);
+  if (collapsed !== finalReply || !shouldAnswerInitialGreeting(input)) return collapsed;
+  return collapseDuplicateLeadingGreetings(`${getTimeAwareGreeting()}! ${finalReply}`);
 }
 
 function buildShoeSizeInsoleIssueReply(issue) {
@@ -3676,6 +3759,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeDeliveryChoiceReply(input, finalReply);
   finalReply = finalizeDeliveryTrackingReply(input, finalReply);
   finalReply = finalizeDeliveryCostReply(input, finalReply);
+  finalReply = finalizePaymentAmountReply(input, finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
@@ -3927,6 +4011,55 @@ function buildIwakCartOrderDetails(cartItems, productsById) {
   };
 }
 
+function buildIwakProductContext(productLinks, productsById, missingIds = []) {
+  const lines = [];
+  productLinks.forEach((link) => {
+    const id = getIwakProductIdFromLink(link);
+    const product = id ? productsById.get(id) : null;
+    if (!product) return;
+    const title = [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${id}`;
+    const priceText = formatCartPrice(product.price);
+    lines.push(`${lines.length + 1}. ${title}${priceText ? `, цена ${priceText}` : ''}. Ссылка: ${link}`);
+  });
+
+  if (!lines.length) return '';
+
+  return [
+    'Контекст товара IWAK:',
+    'Клиент отправил ссылку на товар IWAK. Система прочитала карточку товара.',
+    ...lines,
+    missingIds.length ? `Не удалось прочитать товары ID: ${missingIds.join(', ')}.` : '',
+    '',
+    'Важно: отвечай по этим фактам. Не выдумывай название, цену, размер или наличие.',
+    'Если клиент спрашивает про этот товар, используй название и цену из контекста товара IWAK.',
+  ].filter(Boolean).join('\n');
+}
+
+function buildIwakProductOrderDetails(productLinks, productsById) {
+  const lines = [];
+  let total = 0;
+  let hasTotal = true;
+
+  productLinks.forEach((link) => {
+    const id = getIwakProductIdFromLink(link);
+    const product = id ? productsById.get(id) : null;
+    if (!product) return;
+    const title = [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${id}`;
+    const price = normalizeCartPriceValue(product.price);
+    if (price === null) hasTotal = false;
+    else total += price;
+    lines.push(`${title}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
+  });
+
+  if (!lines.length) return null;
+  return {
+    product: lines.length === 1 ? lines[0] : `Товары IWAK: ${lines.join('; ')}`,
+    size: '',
+    price: hasTotal ? Math.round(total) : '',
+    itemCount: lines.length,
+  };
+}
+
 async function enrichIwakCartContext(input) {
   const startedAt = Date.now();
   const cartItems = getIwakCartItemsFromText(input.text);
@@ -3992,6 +4125,70 @@ async function enrichIwakCartContext(input) {
   };
 }
 
+async function enrichIwakProductContext(input) {
+  const startedAt = Date.now();
+  const productLinks = extractIwakProductLinks(input.text);
+  if (!productLinks.length) return null;
+
+  const productIds = Array.from(new Set(productLinks
+    .map(getIwakProductIdFromLink)
+    .filter((id) => Number.isSafeInteger(id) && id > 0))).slice(0, IWAK_CART_MAX_ITEMS);
+  if (!productIds.length) return null;
+
+  const productsById = new Map();
+  const errors = [];
+  const results = await Promise.allSettled(productIds.map(async (id) => {
+    const product = await fetchIwakProduct(id);
+    return { id, product };
+  }));
+
+  results.forEach((result, index) => {
+    const id = productIds[index];
+    if (result.status === 'fulfilled') {
+      productsById.set(id, result.value.product);
+    } else {
+      errors.push({ id, message: result.reason?.message || String(result.reason || 'unknown_error') });
+    }
+  });
+
+  const foundIds = Array.from(productsById.keys());
+  const missingIds = productIds.filter((id) => !productsById.has(id));
+  const summary = buildIwakProductContext(productLinks, productsById, missingIds);
+  const orderDetails = buildIwakProductOrderDetails(productLinks, productsById);
+  const baseLog = {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    productIds,
+    foundProductIds: foundIds,
+    durationMs: Date.now() - startedAt,
+  };
+
+  if (!summary) {
+    logEvent('PRODUCT_CONTEXT_FAILED', {
+      ...baseLog,
+      error: errors.map((item) => `${item.id}:${item.message}`).join('; ') || 'no_products_found',
+      status: 'error',
+    });
+    return null;
+  }
+
+  logEvent(foundIds.length === productIds.length ? 'PRODUCT_CONTEXT_OK' : 'PRODUCT_CONTEXT_PARTIAL', {
+    ...baseLog,
+    error: errors.map((item) => `${item.id}:${item.message}`).join('; '),
+    status: foundIds.length === productIds.length ? 'ok' : 'partial',
+  });
+
+  return {
+    summary,
+    productLinks,
+    productIds,
+    foundProductIds: foundIds,
+    missingProductIds: missingIds,
+    orderDetails,
+  };
+}
+
 function appendCartContextToMemory(input, cartContext) {
   if (!cartContext?.summary) return;
   input.cartContext = cartContext;
@@ -4018,6 +4215,29 @@ function appendCartContextToMemory(input, cartContext) {
   }));
 }
 
+function appendProductContextToMemory(input, productContext) {
+  if (!productContext?.summary) return;
+  input.productContext = productContext;
+  input.memoryContext = input.memoryContext || { summary: '', history: [], facts: {}, state: null };
+  input.memoryContext.summary = [input.memoryContext.summary, productContext.summary]
+    .filter((part) => String(part || '').trim())
+    .join('\n\n');
+
+  const chatId = getMemoryChatId(input);
+  const details = productContext.orderDetails;
+  if (!chatId || !details?.product) return;
+
+  upsertMemoryFact(chatId, 'currentProduct', details.product, input.text || productContext.summary);
+  upsertMemoryFact(chatId, 'lastProduct', details.product, input.text || productContext.summary);
+  const productLink = productContext.productLinks?.[0] || extractProductLink(input.text || '');
+  if (productLink) upsertMemoryFact(chatId, 'currentProductLink', productLink, input.text || productContext.summary);
+  safeCustomerStoreCall('customer.order.product_link', (store) => store.upsertOrder(chatId, {
+    product: details.product,
+    price: details.price || '',
+    status: 'draft',
+  }));
+}
+
 async function processInputBatch(inputs) {
   if (!inputs.length) return;
 
@@ -4039,6 +4259,9 @@ async function processInputBatch(inputs) {
       limit: getConfigMemoryLimit(batchInput.config),
       currentInput: batchInput,
     }) : { summary: '', history: [], facts: {}, state: null };
+
+    const productContext = await enrichIwakProductContext(batchInput);
+    appendProductContextToMemory(batchInput, productContext);
 
     const cartContext = await enrichIwakCartContext(batchInput);
     appendCartContextToMemory(batchInput, cartContext);
