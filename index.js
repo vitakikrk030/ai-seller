@@ -3398,7 +3398,7 @@ function replyMentionsReturnConditions(reply = '') {
 }
 
 function containsOverbroadReturnPromise(reply = '') {
-  return /(?:в\s+любом\s+состоянии|всегда\s+мож(?:но|ете)|без\s+условий|без\s+проблем\s+(?:верн|обмен|помен)|просто\s+(?:верн[её]те|поменя(?:ем|ете)))/i.test(String(reply || ''));
+  return /(?:в\s+любом\s+состоянии|всегда\s+мож(?:но|ете)|без\s+условий|без\s+проблем\s+(?:верн|обмен|помен)|(?:верн|обмен|помен)[\s\S]{0,40}без\s+проблем|просто\s+(?:верн[её]те|поменя(?:ем|ете)))/i.test(String(reply || ''));
 }
 
 function finalizeReturnConditionReply(input = {}, reply = '') {
