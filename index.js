@@ -2142,7 +2142,7 @@ function getApproxInsoleBySize(sizeValue = '') {
     42: '26.5',
     43: '27.2',
     44: '28',
-    45: '28.7',
+    45: '29',
     46: '29.5',
   };
   return table[size] || '';
@@ -3360,9 +3360,25 @@ function finalizeAvailabilityIssueReply(input = {}, reply = '') {
 
 function getApproxInsoleCmForSize(sizeValue) {
   const size = Math.round(normalizeNumericValue(sizeValue));
+  if (size === 45) return '29';
   const range = SHOE_SIZE_INSOLE_RANGES[size];
   if (!range) return '';
   return formatCm((range[0] + range[1]) / 2);
+}
+
+function isDeliveryFittingQuestion(text = '') {
+  return /(?:примерк|примерить|померить)/i.test(String(text || ''))
+    && /(?:доставк|получени|пвз|курьер|забер|забрать|прид[её]т|товар)/i.test(String(text || ''));
+}
+
+function finalizeDeliveryFittingReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !isDeliveryFittingQuestion(input.text)) return finalReply;
+  const deniesFitting = /(?:примерк[аи]?\s+(?:в\s+доставк[еуы]\s+)?нет|без\s+примерк|нельзя\s+пример|не\s+мож(?:ете|но)\s+пример)/i.test(finalReply);
+  const alreadyGood = /(?:можно|сможете|можете)[\s\S]{0,80}(?:примерить|померить|осмотреть|проверить)/i.test(finalReply)
+    && !deniesFitting;
+  if (alreadyGood) return finalReply;
+  return 'Да, конечно. При получении можно спокойно забрать товар, примерить и осмотреть. Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина.';
 }
 
 function isPhotoSizeRealityQuestion(input = {}) {
@@ -3396,7 +3412,7 @@ function finalizeStoreOfflineReply(input = {}, reply = '') {
   if (!finalReply || !isStoreOfflineQuestion(input.text)) return finalReply;
   const inputMentionsSadovod = /садовод/i.test(String(input.text || ''));
   const hasUnaskedSadovod = /садовод/i.test(finalReply) && !inputMentionsSadovod;
-  if (!hasUnaskedSadovod && !/(?:павильон|склад|сотрудник|содержание|расход)/i.test(finalReply) && finalReply.length <= 260) return finalReply;
+  if (!hasUnaskedSadovod && !/(?:павильон|склад|сотрудник|содержание|расход|примерк[аи]?\s+(?:в\s+доставк[еуы]\s+)?нет|без\s+примерк|нельзя\s+пример)/i.test(finalReply) && finalReply.length <= 260) return finalReply;
 
   const sadovod = inputMentionsSadovod
     ? 'На Садоводе раньше были, сейчас уже нет. '
@@ -3585,6 +3601,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
+  finalReply = finalizeDeliveryFittingReply(input, finalReply);
   finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
@@ -6563,7 +6580,7 @@ function getOrderPathGuidance(config) {
     parseConfigBoolean(config.order_collect_insole_enabled, true)
       && 'Для обуви уточнить длину стельки в сантиметрах, если её ещё нет.',
     parseConfigBoolean(config.order_collect_insole_enabled, true)
-      && 'Если клиент прислал фото бирки/размера или написал, что в магазине ему подошёл конкретный EU-размер, не гонять его повторно за стелькой. Подтвердить размер живо, как менеджер, и дать ориентир по стельке из таблицы: 36≈23 см, 37≈23.5 см, 38≈24 см, 39≈25 см, 40≈25.5 см, 41≈26 см, 42≈26.5 см, 43≈27.2 см, 44≈28 см, 45≈28.7 см, 46≈29.5 см. Хороший тон: "Да, вижу у вас 41 размер — это примерно 26 см по стельке." Не писать сухо: "На фото 41 размер".',
+      && 'Если клиент прислал фото бирки/размера или написал, что в магазине ему подошёл конкретный EU-размер, не гонять его повторно за стелькой. Подтвердить размер живо, как менеджер, и дать ориентир по стельке из таблицы: 36≈23 см, 37≈23.5 см, 38≈24 см, 39≈25 см, 40≈25.5 см, 41≈26 см, 42≈26.5 см, 43≈27.2 см, 44≈28 см, 45≈29 см, 46≈29.5 см. Хороший тон: "Да, вижу у вас 41 размер — это примерно 26 см по стельке." Не писать сухо: "На фото 41 размер".',
     'Для обуви проверять связку размера и стельки: если размер и сантиметры выглядят несоответствием, не продолжать оформление, а мягко переспросить. Например, 44 размер и 29 см по стельке выглядят подозрительно: 29 см ближе к 45-46.',
     'Если менеджер в диалоге написал остатки по модели, например "остались 42-26,5 43-27,5", считать это главным фактом по наличию. Если размер или стелька клиента не попадает в эти остатки, не оформлять заказ и не спрашивать доставку/ФИО/телефон; коротко сказать, какие размеры остались, и предложить другую модель или размер.',
     parseConfigBoolean(config.order_collect_full_name_enabled, true)
@@ -6655,7 +6672,7 @@ function getQualityGuidance(config) {
     parseConfigBoolean(config.quality_return_soft_enabled, true)
       && 'Если клиент сомневается по фото или качеству, мягко подвести к возврату/обмену без давления и без юридического тона.',
     parseConfigBoolean(config.quality_return_inspect_enabled, true)
-      && 'Просить при получении в ПВЗ или у курьера спокойно примерить, осмотреть и проверить товар, чтобы сразу убедиться, что всё подходит.',
+      && 'На вопрос про примерку в доставке/при получении отвечать: да, при получении можно спокойно забрать товар, примерить, осмотреть и проверить. Не писать "примерки в доставке нет". Если что-то не подойдёт, клиент пишет нам — решим через возврат или обмен по правилам магазина.',
     parseConfigBoolean(config.quality_return_no_dates_enabled, true)
       && 'Не называть сроки возврата/обмена, если срок не указан вручную в AI Control. Не писать "14 дней", "всегда можете" или "политика возврата".',
     parseConfigBoolean(config.quality_return_soft_enabled, true)
@@ -6670,7 +6687,7 @@ function getStoreTrustGuidance(config) {
     parseConfigBoolean(config.store_trust_online_only_enabled, true)
       && 'Если клиент спрашивает про офлайн-магазин, адрес, шоурум, где посмотреть или можно ли приехать: коротко сказать, что сейчас работаем только онлайн, шоурума нет.',
     parseConfigBoolean(config.store_trust_online_only_enabled, true)
-      && 'Если в одном вопросе есть примерка, возврат и самовывоз/ПВЗ: не отвечать так, будто примерки нет. Разделить смысл: шоурума/офлайн-магазина нет, но при получении в ПВЗ или у курьера можно спокойно примерить, осмотреть и проверить товар.',
+      && 'Если в одном вопросе есть примерка, возврат и самовывоз/ПВЗ: не отвечать так, будто примерки нет. Разделить смысл: шоурума/офлайн-магазина нет, но после получения клиент может спокойно забрать товар, примерить, осмотреть и проверить.',
     parseConfigBoolean(config.store_trust_sadovod_history_enabled, true)
       && 'Если клиент спрашивает про Садовод: коротко сказать, что раньше действительно работали на Садоводе, но сейчас уже нет.',
     parseConfigBoolean(config.store_trust_cost_reason_enabled, true)
