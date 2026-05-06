@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 function nowIso() {
   return new Date().toISOString();
@@ -699,6 +699,25 @@ function runMigrations(db) {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(6, nowIso());
   }
 
+  const hasV7 = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(7);
+  if (!hasV7) {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_customers_last_seen
+        ON customers(last_seen_at DESC, updated_at DESC, id DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_orders_customer_created
+        ON orders(customer_id, created_at DESC, id DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_messages_customer_role_trace
+        ON messages(customer_id, role, trace_id)
+        WHERE trace_id IS NOT NULL AND trace_id != '';
+
+      CREATE INDEX IF NOT EXISTS idx_business_connections_user_chat
+        ON business_connections(user_chat_id, is_enabled, updated_at DESC);
+    `);
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(7, nowIso());
+  }
+
 }
 
 function addColumnIfMissing(db, table, column, definition) {
@@ -713,7 +732,7 @@ function prepareStatements(db) {
     getCustomerById: db.prepare('SELECT * FROM customers WHERE id = ?'),
     listCustomers: db.prepare(`
       SELECT * FROM customers
-      ORDER BY datetime(last_seen_at) DESC, datetime(updated_at) DESC, id DESC
+      ORDER BY last_seen_at DESC, updated_at DESC, id DESC
       LIMIT @limit
     `),
     insertCustomer: db.prepare(`
@@ -814,8 +833,8 @@ function prepareStatements(db) {
       )
     `),
     getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
-    getLastOrder: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC LIMIT 1'),
-    getOrdersByCustomerId: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY datetime(created_at) DESC, id DESC'),
+    getLastOrder: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC, id DESC LIMIT 1'),
+    getOrdersByCustomerId: db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC, id DESC'),
     updateOrder: db.prepare(`
       UPDATE orders
       SET product = @product,
