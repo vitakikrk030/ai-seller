@@ -39,6 +39,7 @@ const RECEIPT_ACK_REPLY = 'Чек получил, спасибо.';
 const IWAK_CART_MAX_ITEMS = 20;
 const IWAK_CART_FETCH_TIMEOUT_MS = 4500;
 const IWAK_CART_PRODUCT_CACHE_TTL_MS = 10 * 60 * 1000;
+const IWAK_READER_VISION_IMAGE_LIMIT = Math.max(0, Math.min(3, Number(process.env.IWAK_READER_VISION_IMAGE_LIMIT) || 2));
 const IWAK_PRODUCT_API_BASE_URL = (process.env.IWAK_PRODUCT_API_BASE_URL || 'https://iwak.ru/api/products').replace(/\/$/, '');
 const DEFAULT_QUALITY_RETURN_TEXT = 'При получении в ПВЗ или у курьера спокойно примерьте, осмотрите и проверьте товар. Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина. Главное — сохранить товарный вид, упаковку и весь комплект.';
 const RETURN_CONDITION_RULE_TEXT = [
@@ -50,7 +51,314 @@ const RETURN_CONDITION_RULE_TEXT = [
   'Не обещать возврат или обмен товара в любом состоянии.',
 ].join('\n');
 const DEFAULT_STORE_TRUST_TEXT = 'Сейчас работаем только онлайн. Раньше действительно были на Садоводе, но сейчас заказы оформляем в диалоге. По доставке: Яндекс Доставка и Ozon бесплатные, остальные транспортные компании оплачиваются по тарифам службы. Перед отправкой товар проверяем.';
+const DEFAULT_DELIVERY_FREE_SERVICES = 'Яндекс Доставка, Ozon';
+const DEFAULT_DELIVERY_PAID_SERVICES = 'CDEK/СДЭК, Почта России, WB/Wildberries, другие транспортные компании';
 const DELIVERY_COST_RULE_TEXT = 'Доставка: Яндекс Доставка и Ozon бесплатные. CDEK/СДЭК, Почта России, WB/Wildberries и другие транспортные компании оплачиваются по тарифам выбранной службы. Не писать, что вся доставка бесплатная.';
+const DEFAULT_READER_NODE_RULES_TEXT = [
+  'Все ссылки iwak.ru/product и iwak.ru/cart читать до ответа AI.',
+  'Из карточки товара показывать продавцу название, бренд, цену, цвет, категорию, размеры и фото.',
+  'Если ссылка не прочитана, не выдумывать товар, цену, цвет или наличие.',
+  'Фото карточки товара передавать как контекст товара, а не как фото клиента.',
+].join('\n');
+const DEFAULT_ORDER_CHAT_TEMPLATE_TEXT = [
+  'НОВЫЙ ЗАКАЗ',
+  '{date_time}',
+  '',
+  'Клиент: {customer}',
+  'Товар: {product}',
+  'Ссылка: {link}',
+  'Размер: {size}',
+  'Стелька: {insole}',
+  'ФИО: {full_name}',
+  'Телефон: {phone}',
+  'Город: {city}',
+  'Доставка: {delivery}',
+].join('\n');
+const DEFAULT_MEMORY_NODE_RULES_TEXT = [
+  'Память хранит только факты клиента: ФИО, телефон, размер, стельку, город, ПВЗ/адрес, товар, заказ и режим диалога.',
+  'Не писать в lastProduct сырые приветствия, ссылки, корзины целиком или обычный текст клиента.',
+  'Если товарный факт загрязнён, ремонт памяти меняет только currentProduct/lastProduct и показывает до/после.',
+  'Источник факта должен быть виден в интерфейсе.',
+].join('\n');
+const DEFAULT_PAYMENT_GUARD_RULES_TEXT = [
+  'Перед реквизитами всегда показывать сумму к оплате, если цена заказа известна.',
+  'После чека отвечать только что чек получен, без финального подтверждения оплаты.',
+  'Если чек/сумма/банк/получатель расходятся, мягко просить проверить данные.',
+  'Заказник отправляет заказ после реального чека или квитанции.',
+].join('\n');
+const DEFAULT_PAYMENT_STYLE_TEXT = 'Коротко, спокойно, без давления. Реквизиты давать только когда заказ собран и клиент готов оплатить.';
+const DEFAULT_PAYMENT_LAYOUT_TEXT = 'Сначала сумма к оплате, затем способ оплаты, реквизиты, получатель, банк и просьба прислать чек после перевода.';
+const DEFAULT_PAYMENT_EXAMPLE_TEXT = [
+  'Сумма к оплате: {amount}.',
+  'Способ оплаты: перевод на карту.',
+  'Реквизиты: {card}',
+  'Получатель: {recipient}',
+  'Банк: {bank}',
+  '',
+  'После оплаты пришлите, пожалуйста, чек.',
+].join('\n');
+const DEFAULT_DELIVERY_RULES_TEXT = 'Яндекс Доставка и Ozon бесплатные. Остальные транспортные компании оплачиваются по тарифам выбранной службы. По ПВЗ/адресу всегда уточнять выбранную службу доставки.';
+const DEFAULT_DELIVERY_STYLE_TEXT = 'Коротко и понятно: не оправдываться, не обещать точные сроки без данных, не говорить что вся доставка бесплатная.';
+const DEFAULT_DELIVERY_LAYOUT_TEXT = 'Сначала условия стоимости по выбранной службе, затем что нужно для оформления: город, служба доставки, ПВЗ или адрес.';
+const DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT = [
+  'Яндекс Доставка | бесплатно | обычно 1-3 дня | ПВЗ/пункты выдачи | вся РФ | рекомендовать, если клиент хочет выгодно и удобно',
+  'Ozon | бесплатно | обычно 2-4 дня | ПВЗ/постамат | вся РФ | рекомендовать, если клиент хочет бесплатный ПВЗ/постамат',
+  'Курьер по Москве | платно отдельно | в течение дня в удобное время | курьер | только Москва | предлагать только если клиент в Москве и ему нужна срочная доставка сегодня',
+  'CDEK/СДЭК | платно по тарифам службы | обычно 2-5 дней | ПВЗ; курьер только если клиент сам просит | вся РФ | предлагать, если клиент сам хочет СДЭК или ему важнее конкретный ПВЗ/служба',
+  'Почта России | платно по тарифам службы | обычно 3-7 дней | отделение | вся РФ | предлагать, если клиенту удобно отделение Почты России',
+  'WB/Wildberries | платно по тарифам службы | обычно 2-5 дней | ПВЗ | вся РФ | предлагать, если клиент сам просит WB',
+].join('\n');
+const DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT = [
+  'Роль: консультант-решатель по доставке. Клиент не хочет разбираться в службах — помоги выбрать за него.',
+  'Не перечисляй все способы доставки без необходимости. Предлагай 1-2 лучших варианта под город и приоритет клиента.',
+  'Если клиент хочет дешевле/выгодно/бесплатно — сначала рекомендовать Яндекс Доставку или Ozon и объяснить, что так он не переплачивает.',
+  'Если клиент хочет быстрее или конкретную службу — сравнить: бесплатный вариант может быть чуть дольше, выбранная платная служба идёт по тарифу.',
+  'Курьера предлагать только для Москвы: это платная срочная доставка в течение дня в удобное время клиента.',
+  'Для других городов не предлагать курьера от себя; предлагать ПВЗ/постамат или выбранную транспортную компанию.',
+  'Если город или приоритет неясен, спросить коротко: город и что важнее — бесплатно, быстрее или удобный ПВЗ/курьер.',
+  'Говорить живо: "я бы предложил", "чтобы не переплачивать", "давайте поставлю самый выгодный вариант".',
+].join('\n');
+const DEFAULT_DELIVERY_EXAMPLE_TEXT = [
+  'Смотрите, я бы предложил Яндекс Доставку или Ozon: они у нас бесплатные, так не придётся переплачивать за доставку.',
+  'СДЭК тоже можно, но он уже платный по тарифу службы.',
+  'Если вам удобно, давайте поставлю бесплатный вариант и оформим заказ.',
+].join('\n');
+const DEFAULT_CORE_RULES_TEXT = [
+  'Клиент чаще всего уже пришёл покупать: не уводить его в каталог и не устраивать анкету без причины.',
+  'Если товар опубликован на iwak.ru и клиент прислал ссылку/корзину, считать товар доступным к заказу, пока менеджер явно не написал другое.',
+  'Не делать вид, что AI сам проверил склад и остатки, если в AI Control нет отдельного источника остатков.',
+  'Вести клиента к понятному следующему шагу: размер, стелька, оформление, доставка или оплата.',
+].join('\n');
+const DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT = [
+  'нет на сайте',
+  'не нашёл',
+  'а такие есть',
+  'есть в наличии',
+  'можете найти',
+  'можете достать',
+  'нужна такая модель',
+  'нужен такой цвет',
+  'нужен другой размер',
+  'на сайте нет размера',
+  'посмотрите по складу',
+  'можно заказать не с сайта',
+].join('\n');
+const DEFAULT_PROBLEM_SOLVER_RULES_TEXT = [
+  'Роль: решатель наличия и нестандартных запросов. Сайт не равен всему складу: если товара нет на сайте или AI его не видит, не говорить сразу "нет".',
+  'Задача: не отпустить клиента, а найти путь: уточнить модель, фото, ссылку, цвет, размер; предложить проверить вручную; подобрать аналог.',
+  'Можно говорить: "на сайте сейчас не вижу, но такое бывает — не всё успевают выставить"; "могу уточнить/передать на проверку"; "пришлите фото или модель, посмотрим, что можно найти".',
+  'Если товар опубликован на iwak.ru, считать его доступным к заказу, пока менеджер не сказал обратное.',
+  'Если товара/размера нет в видимых данных, не обещать наличие, цену, срок поставки или бронь. Говорить как старший менеджер: спокойно, уверенно, без отказа с порога.',
+  'Если нужен ручной поиск по складу или вне сайта, коротко собрать минимум: модель/фото/ссылка, размер, желаемый цвет. Не превращать в анкету.',
+  'Если клиенту нужен редкий товар, предложить 1-2 пути: проверить вручную или подобрать максимально похожий вариант.',
+].join('\n');
+const DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT = [
+  'Нет в наличии.',
+  'Такого нет.',
+  'На сайте нет, значит нет.',
+  'Мы таким не занимаемся.',
+  'Не знаю.',
+  'Смотрите сами на сайте.',
+  'Есть 100%, оформляем.',
+].join('\n');
+const DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT = [
+  'Клиент: А такие есть? На сайте не нашёл.',
+  'Ответ: На сайте сейчас не вижу, но такое бывает — не всё успевают выставить. Пришлите, пожалуйста, фото/модель и размер, я сориентирую, что можно найти или подобрать похожее.',
+  '',
+  'Клиент: Есть такой цвет в 42?',
+  'Ответ: По сайту сейчас вижу не всё. Давайте сделаем аккуратно: уточню по модели и 42 размеру, а если именно этого цвета не будет, подберу максимально похожий вариант.',
+].join('\n');
+const DEFAULT_FACTS_RULES_TEXT = [
+  'Не выдумывать товар, цену, скидки, доставку, сроки, реквизиты, наличие, адрес, шоурум или соцсети.',
+  'Все ссылки iwak.ru читать до ответа; если чтение не удалось, честно опираться только на текст клиента.',
+  'Если данные уже есть в памяти или текущем сообщении, не спрашивать их повторно.',
+  'Если клиент/менеджер дал свежий факт, свежий факт важнее старой памяти.',
+].join('\n');
+const DEFAULT_SMALLTALK_RULES_TEXT = [
+  'Можно говорить живо и по-человечески, но без лишнего флуда, если клиент решает покупку.',
+  'Юмор допустим только если клиент сам задал такой тон.',
+  'Не уходить от продажи: после живого ответа вернуть разговор к товару или следующему шагу.',
+].join('\n');
+const DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT = [
+  'дорого',
+  'подумаю',
+  'не уверен',
+  'боюсь не подойдет',
+  'а если не подойдет',
+  'а скидка есть',
+  'на маркетплейсе дешевле',
+  'на Садоводе дешевле',
+  'это оригинал',
+  'вы не мошенники',
+  'как вернуть',
+  'долго доставка',
+  'какой лучше выбрать',
+].join('\n');
+const DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT = [
+  'Рынок РФ: клиент хочет выгодно, быстро, без риска и чтобы за него спокойно решили.',
+  'Главная стратегия: не давить, а снижать тревогу клиента и вести к понятному решению.',
+  'Доверие важнее красивых слов: говорить честно, спокойно, без фальши и без лишних обещаний.',
+  'Если клиенту сложно выбрать, продавец берёт роль консультанта: предлагает 1-2 лучших варианта и объясняет почему.',
+  'Цена почти всегда в голове клиента: подсвечивать выгоду через бесплатную доставку Яндекс/Ozon, проверку перед отправкой, примерку при получении, обмен/возврат по правилам.',
+  'Не отпускать клиента на потом, если можно снять барьер сейчас: размер, доставка, цена, доверие, возврат или качество.',
+  'Писать как опытный продавец-перекуп: "я бы предложил", "чтобы не переплачивать", "давайте сделаем аккуратно", "так будет спокойнее".',
+].join('\n');
+const DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT = [
+  'Снятие риска: признать страх клиента и дать страховку через примерку, проверку, возврат/обмен по правилам.',
+  'Выбор из двух: предложить выгодный вариант и быстрый вариант, не сваливать весь список на клиента.',
+  'Решение за клиента: "я бы поставил этот вариант, так не переплатите".',
+  'Социальная спокойная уверенность: не хвалиться, а уверенно объяснять, как обычно делают клиенты в такой ситуации.',
+  'Мягкое закрытие: вместо давления спросить "давайте поставлю этот вариант?" или "оформим так, чтобы не переплачивать?".',
+  'Работа с ценой: не спорить и не обесценивать сравнение; показать, что цена держится за счёт сервиса, проверки, доставки и нормального решения вопроса после получения.',
+  'Работа с недоверием: не оправдываться, не шутить, не торопить оплату; спокойно показать порядок покупки и условия.',
+].join('\n');
+const DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT = [
+  'Давить срочностью без факта: "только сегодня", "последняя пара", "завтра будет дороже".',
+  'Манипулировать страхом или делать клиента виноватым.',
+  'Обещать скидку, наличие, оригинальность, сроки или возврат в любом состоянии без подтверждения.',
+  'Спорить с клиентом, если он сравнил цену с маркетплейсом, Садоводом или другим магазином.',
+  'Отвечать сухо: "выбирайте сами", "как хотите", "ну смотрите".',
+  'Сыпать продажными шаблонами, которые звучат как инфобизнес или call-центр.',
+].join('\n');
+const DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT = [
+  'Клиент: Дорого, на маркетплейсе дешевле.',
+  'Ответ: Понимаю. По цене сейчас держим фикс, но у нас плюс в том, что перед отправкой проверяем пару, помогаем с размером и Яндекс/Ozon доставка бесплатная. Если хотите без переплаты по доставке, я бы поставил бесплатный вариант.',
+  '',
+  'Клиент: Я подумаю.',
+  'Ответ: Конечно. Чтобы проще было решить, скажу по делу: главный риск обычно в размере. Могу сразу сориентировать по стельке и подобрать самый спокойный вариант, а при получении вы сможете примерить и проверить.',
+  '',
+  'Клиент: Боюсь, вдруг не подойдёт.',
+  'Ответ: Понимаю вас. Давайте сделаем аккуратно: подберём размер по стельке/вашему обычному размеру, при получении спокойно примерите, и если что-то не подойдёт — решим обмен или возврат по правилам магазина.',
+].join('\n');
+const DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT = [
+  'Обувь / кроссовки / кеды / ботинки, EU -> ориентир стельки:',
+  '35≈22.5 см',
+  '36≈23 см',
+  '37≈23.5 см',
+  '38≈24 см',
+  '39≈25 см',
+  '40≈25.5 см',
+  '41≈26 см',
+  '42≈26.5 см',
+  '43≈27.5 см',
+  '44≈28 см',
+  '45≈29 см',
+  '46≈29.5 см',
+  '47≈30 см',
+  'Допуск: у разных фабрик и моделей возможна разница примерно 0.3-0.5 см. Если клиент прислал бирку/фото конкретной пары, свежая бирка важнее общей таблицы.',
+].join('\n');
+const DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT = [
+  'Обувь: если клиент назвал EU-размер, дать ориентир по стельке из таблицы и не гонять за замером без причины. Если клиент сам спрашивает "сколько см", отвечать сразу.',
+  'Обувь: стельку уточнять только когда посадка реально важна, есть сомнение, клиент между размерами или размер/стелька конфликтуют.',
+  'Одежда верх/костюмы/футболки/худи: не спрашивать стельку. Работать с размером XS/S/M/L/XL/XXL и при необходимости аккуратно спросить рост/вес или параметры груди/талии/бедер.',
+  'Брюки/джинсы/шорты: ориентироваться на размер одежды, талию/бедра и рост. Если клиент сомневается, спросить талию или какой размер обычно носит.',
+  'Нижнее бельё/трусы: ориентироваться на размер одежды или талию/бедра; говорить деликатно, без лишних подробностей.',
+  'Носки: ориентироваться на диапазон размера обуви, например 36-40, 41-45. Стельку не спрашивать.',
+  'Сумки/рюкзаки/аксессуары: размера обуви/одежды нет. Если клиент спрашивает "какой размер", отвечать про габариты, вместимость, формат и фото товара; если габаритов нет в карточке, честно сказать, что точные размеры лучше уточнить по товару.',
+  'Кепки/шапки: если есть размерная сетка, использовать её; если клиент сомневается, спросить окружность головы в см.',
+  'Ремни: ориентироваться на талию в см или обычный размер брюк.',
+].join('\n');
+const DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT = [
+  'Не просить стельку для одежды, носков, сумок, аксессуаров и белья.',
+  'Не говорить точную посадку как гарантию: использовать "примерно", "ориентир", "обычно".',
+  'Если клиент уже показал бирку/размер или написал, что в магазине размер подошёл, подтвердить живо: "Да, вижу у вас 41 размер — это примерно 26 см по стельке."',
+  'Если размер и сантиметры конфликтуют, мягко остановить оформление и переспросить. Пример: 44 и 29 см конфликтуют, 29 см ближе к 45.',
+  'Если клиент пишет "обычно ношу 43, хочу на полразмера больше", предложить ближайший вариант и объяснить по стельке, не отправлять клиента замерять как единственный путь.',
+  'Если товарная карточка/менеджер дал конкретную размерную сетку по модели, она важнее общей таблицы.',
+].join('\n');
+const DEFAULT_SIZE_FIT_EXAMPLES_TEXT = [
+  'Клиент: 45. Сколько см стелька?',
+  'Ответ: 45 размер — это примерно 29 см по стельке.',
+  '',
+  'Клиент: Есть ли размер у сумки?',
+  'Ответ: По сумке лучше ориентироваться не на размер одежды, а на габариты и вместимость. Сейчас посмотрю по карточке, какие размеры указаны.',
+  '',
+  'Клиент: Носки на 43 подойдут?',
+  'Ответ: Если носки идут на диапазон 41-45, на 43 размер подойдут спокойно.',
+  '',
+  'Клиент: Хочу костюм S, подойдёт?',
+  'Ответ: По одежде лучше ориентироваться на ваш обычный размер и посадку. Если обычно носите S, можно брать S; если сомневаетесь, подскажите рост и вес — сориентирую аккуратнее.',
+].join('\n');
+const DEFAULT_ORDER_RULES_TEXT = [
+  'Если клиент прислал все данные одним сообщением, собрать их и не переспрашивать.',
+  'Не отправлять полную анкету сразу: просить ближайшие 1-2 недостающих поля.',
+  'Если клиент сказал "сейчас посмотрю/скину/пришлю", коротко принять и ждать.',
+  'Если клиент выбрал размер, фиксировать выбранный размер и использовать стельку как ориентир, а не как повод гонять клиента по кругу.',
+].join('\n');
+const DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT = [
+  'подумаю',
+  'позже',
+  'вечером',
+  'завтра',
+  'потом',
+  'сейчас не могу',
+  'замерю',
+  'посмотрю',
+  'спрошу',
+  'скину потом',
+  'не уверен',
+  'боюсь не подойдет',
+].join('\n');
+const DEFAULT_SOFT_RETENTION_RULES_TEXT = [
+  'Роль: мягкое удержание. Клиента нельзя отпускать сухим "хорошо, жду", если можно снять барьер сейчас.',
+  'Не давить и не торопить. Смысл: помочь клиенту принять решение легче, а не заставить.',
+  'Формула ответа: понял вас -> снять барьер -> дать готовый ориентир -> страховка через примерку/обмен/возврат -> мягкий следующий шаг.',
+  'Если клиент откладывает из-за размера или стельки, дать ориентир по EU-размеру и сантиметрам из таблицы, не требовать замер как единственный путь.',
+  'Если клиент пишет "подумаю" или "позже", коротко уточнить главный страх: размер, доставка, цена или качество, и предложить готовое решение.',
+  'Если клиент говорит, что замерит вечером, можно предложить оформить по обычному размеру с примеркой при получении и обменом/возвратом по правилам магазина.',
+  'Не обещать бронь, скидку, наличие, сроки или возврат в любом состоянии, если этого нет в AI Control.',
+].join('\n');
+const DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT = [
+  'Хорошо, жду.',
+  'Напишите, когда будете готовы.',
+  'Тогда возвращайтесь позже.',
+  'Без стельки не смогу подсказать.',
+  'Решайте сами.',
+].join('\n');
+const DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT = [
+  'Клиент: Вечером замерю.',
+  'Ответ: Понял. Чтобы не откладывать, могу сориентировать сейчас: если обычно носите 42, это примерно 26.5 см по стельке. Можно оформить 42, при получении спокойно примерить, и если вдруг не подойдёт — решим обмен или возврат по правилам магазина.',
+  '',
+  'Клиент: Я подумаю.',
+  'Ответ: Конечно. Чтобы вам было проще решить, скажу по делу: по этой модели лучше ориентироваться на ваш обычный размер, доставка Яндекс/Ozon бесплатная, при получении можно спокойно примерить. Если главный вопрос в размере — подскажу сейчас по стельке.',
+].join('\n');
+const DEFAULT_RESPONSE_GUARD_RULES_TEXT = [
+  'Перед отправкой убрать повторное приветствие в уже начатом диалоге.',
+  'Убрать фразы вроде "вижу, что вы прислали фото" и заменить на живой смысл ответа.',
+  'Не просить уже полученные данные.',
+  'Не отвечать по старому вопросу, если клиент сказал, что сейчас пришлёт модель/фото/ссылку.',
+].join('\n');
+const DEFAULT_SELF_CHECK_RULES_TEXT = [
+  'Самопроверка не заменяет guards: она объясняет смысловой риск ответа и показывает, какой узел открыть.',
+  'Низкий риск можно исправлять автоматически до отправки: повторное приветствие, роботная фраза про фото, ручное обещание трека.',
+  'Средний риск только логировать и показывать в trace: ответ длинный, лишний вопрос, слабой следующий шаг.',
+  'Высокий риск: ссылка iwak.ru не прочитана, цена/товар не подтверждены, менеджер ведёт диалог, чек сомнительный. Блокировать только если включена отдельная галочка.',
+  'Самопроверка не меняет AI Control и не создаёт урок без подтверждения владельца.',
+].join('\n');
+const DEFAULT_RECEIPT_CHECK_RULES_TEXT = [
+  'Фото товара, скрин ПВЗ, карта доставки, ссылка или обычная картинка не являются чеком.',
+  'Чеком считать только чек, квитанцию, скрин оплаты или PDF оплаты.',
+  'После настоящего чека клиенту отвечать коротко: "Чек получил, спасибо."',
+  'Финальную проверку оплаты делает менеджер вручную.',
+].join('\n');
+const DEFAULT_QUALITY_RULES_TEXT = [
+  'На вопрос про оригинальность отвечать честно: хорошая фабричная реплика.',
+  'На вопрос про примерку при получении отвечать: да, можно спокойно забрать товар, примерить, осмотреть и проверить.',
+  'Для возврата/обмена важно сохранить товарный вид, упаковку и комплект.',
+  'Не обещать возврат товара в убитом состоянии, грязной подошве, без коробки или без аксессуаров.',
+].join('\n');
+const DEFAULT_MEDIA_NODE_RULES_TEXT = [
+  'Перед ответом понять тип медиа: товар, бирка/размер, чек, PDF, ПВЗ, карта доставки, адрес, скрин сайта или другое.',
+  'Если это фото товара/бирки, отвечать по содержанию фото живо: "вижу у вас 41 размер", а не сухо "на фото".',
+  'Если это скрин ПВЗ/адреса, использовать его для доставки, а не просить адрес повторно.',
+  'Если медиа не распознано, не выдумывать детали и мягко уточнить.',
+].join('\n');
+const DEFAULT_MANAGER_NODE_RULES_TEXT = [
+  'Если менеджер перехватил диалог, AI молчит и не влезает.',
+  'После возврата AI обязан внимательно прочитать последние сообщения менеджера и клиента.',
+  'Факты от менеджера важнее старой памяти: остатки, цена, реквизиты, доставка и ручные решения.',
+  'Если менеджер уже отправил реквизиты или принял решение, AI не должен начинать сценарий заново.',
+].join('\n');
 const DEFAULT_CONTACTS_WEBSITE = 'https://iwak.ru';
 const DEFAULT_DELIVERY_TRACKING_TEXT = [
   'Когда клиент спрашивает, как отслеживать доставку или сколько она идет, отвечай просто: после оформления накладной статусы обычно появляются в приложении или личном кабинете выбранной службы доставки, если номер телефона клиента там зарегистрирован. Клиент сможет видеть цепочку статусов от приемки до выдачи/доставки.',
@@ -138,6 +446,7 @@ const MEMORY_FILE_PATH = path.join(dataDir, 'memory.json');
 const TRAINING_FILE_PATH = path.join(dataDir, 'training-examples.json');
 const SAI_GPT_MEMORY_FILE_PATH = path.join(dataDir, 'sai-gpt-memory.json');
 const CUSTOMER_DB_PATH = path.join(dataDir, 'sai.sqlite');
+const WORKLOG_PATH = path.join(__dirname, 'docs', 'SAI_WORKLOG.md');
 const MAX_TRAINING_EXAMPLES = 200;
 const SAI_GPT_MEMORY_MAX_MESSAGES = 200;
 const TRAINING_PROMPT_EXAMPLES = 5;
@@ -215,20 +524,36 @@ const runtimeConfig = {
   core_no_stock_check_enabled: process.env.CORE_NO_STOCK_CHECK_ENABLED !== 'false',
   core_no_catalog_return_enabled: process.env.CORE_NO_CATALOG_RETURN_ENABLED !== 'false',
   core_no_resell_enabled: process.env.CORE_NO_RESELL_ENABLED !== 'false',
-  core_rules_text: process.env.CORE_RULES_TEXT || '',
+  core_rules_text: process.env.CORE_RULES_TEXT || DEFAULT_CORE_RULES_TEXT,
+  problem_solver_enabled: process.env.PROBLEM_SOLVER_ENABLED !== 'false',
+  problem_solver_triggers_text: process.env.PROBLEM_SOLVER_TRIGGERS_TEXT || DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT,
+  problem_solver_rules_text: process.env.PROBLEM_SOLVER_RULES_TEXT || DEFAULT_PROBLEM_SOLVER_RULES_TEXT,
+  problem_solver_forbidden_text: process.env.PROBLEM_SOLVER_FORBIDDEN_TEXT || DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT,
+  problem_solver_examples_text: process.env.PROBLEM_SOLVER_EXAMPLES_TEXT || DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT,
   facts_no_invent_enabled: process.env.FACTS_NO_INVENT_ENABLED !== 'false',
   facts_no_fake_payment_enabled: process.env.FACTS_NO_FAKE_PAYMENT_ENABLED !== 'false',
   facts_no_fake_delivery_enabled: process.env.FACTS_NO_FAKE_DELIVERY_ENABLED !== 'false',
   facts_no_fake_discounts_enabled: process.env.FACTS_NO_FAKE_DISCOUNTS_ENABLED !== 'false',
   facts_no_final_payment_confirm_enabled: process.env.FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED !== 'false',
   facts_no_fake_delivery_time_enabled: process.env.FACTS_NO_FAKE_DELIVERY_TIME_ENABLED !== 'false',
-  facts_rules_text: process.env.FACTS_RULES_TEXT || '',
+  facts_rules_text: process.env.FACTS_RULES_TEXT || DEFAULT_FACTS_RULES_TEXT,
   smalltalk_enabled: process.env.SMALLTALK_ENABLED !== 'false',
   smalltalk_style_enabled: process.env.SMALLTALK_STYLE_ENABLED !== 'false',
   smalltalk_outfit_advice_enabled: process.env.SMALLTALK_OUTFIT_ADVICE_ENABLED !== 'false',
   smalltalk_weather_enabled: process.env.SMALLTALK_WEATHER_ENABLED !== 'false',
   smalltalk_soft_product_link_enabled: process.env.SMALLTALK_SOFT_PRODUCT_LINK_ENABLED !== 'false',
-  smalltalk_rules_text: process.env.SMALLTALK_RULES_TEXT || '',
+  smalltalk_rules_text: process.env.SMALLTALK_RULES_TEXT || DEFAULT_SMALLTALK_RULES_TEXT,
+  sales_psychology_enabled: process.env.SALES_PSYCHOLOGY_ENABLED !== 'false',
+  sales_psychology_triggers_text: process.env.SALES_PSYCHOLOGY_TRIGGERS_TEXT || DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT,
+  sales_psychology_principles_text: process.env.SALES_PSYCHOLOGY_PRINCIPLES_TEXT || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT,
+  sales_psychology_techniques_text: process.env.SALES_PSYCHOLOGY_TECHNIQUES_TEXT || DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT,
+  sales_psychology_forbidden_text: process.env.SALES_PSYCHOLOGY_FORBIDDEN_TEXT || DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT,
+  sales_psychology_examples_text: process.env.SALES_PSYCHOLOGY_EXAMPLES_TEXT || DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT,
+  size_fit_enabled: process.env.SIZE_FIT_ENABLED !== 'false',
+  size_fit_shoe_table_text: process.env.SIZE_FIT_SHOE_TABLE_TEXT || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT,
+  size_fit_category_rules_text: process.env.SIZE_FIT_CATEGORY_RULES_TEXT || DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT,
+  size_fit_validation_rules_text: process.env.SIZE_FIT_VALIDATION_RULES_TEXT || DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT,
+  size_fit_examples_text: process.env.SIZE_FIT_EXAMPLES_TEXT || DEFAULT_SIZE_FIT_EXAMPLES_TEXT,
   order_path_enabled: process.env.ORDER_PATH_ENABLED !== 'false',
   order_collect_size_enabled: process.env.ORDER_COLLECT_SIZE_ENABLED !== 'false',
   order_collect_insole_enabled: process.env.ORDER_COLLECT_INSOLE_ENABLED !== 'false',
@@ -240,7 +565,12 @@ const runtimeConfig = {
   order_collect_payment_enabled: process.env.ORDER_COLLECT_PAYMENT_ENABLED !== 'false',
   order_collect_receipt_enabled: process.env.ORDER_COLLECT_RECEIPT_ENABLED !== 'false',
   order_step_mode: process.env.ORDER_STEP_MODE || 'natural',
-  order_rules_text: process.env.ORDER_RULES_TEXT || '',
+  order_rules_text: process.env.ORDER_RULES_TEXT || DEFAULT_ORDER_RULES_TEXT,
+  soft_retention_enabled: process.env.SOFT_RETENTION_ENABLED !== 'false',
+  soft_retention_triggers_text: process.env.SOFT_RETENTION_TRIGGERS_TEXT || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT,
+  soft_retention_rules_text: process.env.SOFT_RETENTION_RULES_TEXT || DEFAULT_SOFT_RETENTION_RULES_TEXT,
+  soft_retention_forbidden_text: process.env.SOFT_RETENTION_FORBIDDEN_TEXT || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT,
+  soft_retention_examples_text: process.env.SOFT_RETENTION_EXAMPLES_TEXT || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT,
   order_chat_enabled: process.env.ORDER_CHAT_ENABLED === 'true',
   order_chat_id: process.env.ORDER_CHAT_ID || '',
   response_guard_enabled: process.env.RESPONSE_GUARD_ENABLED !== 'false',
@@ -249,7 +579,12 @@ const runtimeConfig = {
   response_guard_human_tone_enabled: process.env.RESPONSE_GUARD_HUMAN_TONE_ENABLED !== 'false',
   response_guard_next_step_enabled: process.env.RESPONSE_GUARD_NEXT_STEP_ENABLED !== 'false',
   response_guard_no_final_payment_enabled: process.env.RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED !== 'false',
-  response_guard_rules_text: process.env.RESPONSE_GUARD_RULES_TEXT || '',
+  response_guard_rules_text: process.env.RESPONSE_GUARD_RULES_TEXT || DEFAULT_RESPONSE_GUARD_RULES_TEXT,
+  self_check_enabled: process.env.SELF_CHECK_ENABLED !== 'false',
+  self_check_autocorrect_low_risk_enabled: process.env.SELF_CHECK_AUTOCORRECT_LOW_RISK_ENABLED !== 'false',
+  self_check_block_high_risk_enabled: process.env.SELF_CHECK_BLOCK_HIGH_RISK_ENABLED === 'true',
+  self_check_create_draft_lessons_enabled: process.env.SELF_CHECK_CREATE_DRAFT_LESSONS_ENABLED === 'true',
+  self_check_rules_text: process.env.SELF_CHECK_RULES_TEXT || DEFAULT_SELF_CHECK_RULES_TEXT,
   receipt_check_enabled: process.env.RECEIPT_CHECK_ENABLED !== 'false',
   receipt_check_amount_enabled: process.env.RECEIPT_CHECK_AMOUNT_ENABLED !== 'false',
   receipt_check_bank_enabled: process.env.RECEIPT_CHECK_BANK_ENABLED !== 'false',
@@ -259,7 +594,7 @@ const runtimeConfig = {
   receipt_check_no_final_confirm_enabled: process.env.RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED !== 'false',
   receipt_check_success_text: process.env.RECEIPT_CHECK_SUCCESS_TEXT || RECEIPT_ACK_REPLY,
   receipt_check_mismatch_text: process.env.RECEIPT_CHECK_MISMATCH_TEXT || 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.',
-  receipt_check_rules_text: process.env.RECEIPT_CHECK_RULES_TEXT || '',
+  receipt_check_rules_text: process.env.RECEIPT_CHECK_RULES_TEXT || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
   quality_replica_honesty_enabled: process.env.QUALITY_REPLICA_HONESTY_ENABLED !== 'false',
   quality_no_original_claims_enabled: process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED !== 'false',
   quality_calm_explanation_enabled: process.env.QUALITY_CALM_EXPLANATION_ENABLED !== 'false',
@@ -268,7 +603,7 @@ const runtimeConfig = {
   quality_return_no_dates_enabled: process.env.QUALITY_RETURN_NO_DATES_ENABLED !== 'false',
   quality_return_inspect_enabled: process.env.QUALITY_RETURN_INSPECT_ENABLED !== 'false',
   quality_return_text: process.env.QUALITY_RETURN_TEXT || DEFAULT_QUALITY_RETURN_TEXT,
-  quality_rules_text: process.env.QUALITY_RULES_TEXT || '',
+  quality_rules_text: process.env.QUALITY_RULES_TEXT || DEFAULT_QUALITY_RULES_TEXT,
   store_trust_enabled: process.env.STORE_TRUST_ENABLED !== 'false',
   store_trust_online_only_enabled: process.env.STORE_TRUST_ONLINE_ONLY_ENABLED !== 'false',
   store_trust_sadovod_history_enabled: process.env.STORE_TRUST_SADOVOD_HISTORY_ENABLED !== 'false',
@@ -296,6 +631,7 @@ const runtimeConfig = {
   persona_age: process.env.PERSONA_AGE || '27',
   conversation_mode: process.env.CONVERSATION_MODE || 'retail',
   media_behavior: process.env.MEDIA_BEHAVIOR || 'answer_from_media',
+  media_node_rules_text: process.env.MEDIA_NODE_RULES_TEXT || DEFAULT_MEDIA_NODE_RULES_TEXT,
   auto_reply_enabled: process.env.AUTO_REPLY_ENABLED !== 'false',
   memory_enabled: process.env.MEMORY_ENABLED === 'true',
   memory_recent_limit: Number(process.env.MEMORY_RECENT_LIMIT || MEMORY_RECENT_LIMIT),
@@ -303,6 +639,7 @@ const runtimeConfig = {
   reply_mode: process.env.REPLY_MODE || 'smart',
   human_typing_mode: process.env.HUMAN_TYPING_MODE || 'natural',
   manager_takeover_enabled: process.env.MANAGER_TAKEOVER_ENABLED !== 'false',
+  manager_node_rules_text: process.env.MANAGER_NODE_RULES_TEXT || DEFAULT_MANAGER_NODE_RULES_TEXT,
   manager_return_delay_ms: Number(process.env.MANAGER_RETURN_DELAY_MS || MANAGER_RETURN_DELAY_MS),
   listen_wait_enabled: process.env.LISTEN_WAIT_ENABLED !== 'false',
   listen_wait_debounce_ms: Number(process.env.LISTEN_WAIT_DEBOUNCE_MS || MULTIPART_RESPONSE_DEBOUNCE_MS),
@@ -313,16 +650,25 @@ const runtimeConfig = {
   payment_recipient_name: process.env.PAYMENT_RECIPIENT_NAME || '',
   payment_bank: process.env.PAYMENT_BANK || '',
   payment_comment: process.env.PAYMENT_COMMENT || '',
-  payment_style_text: process.env.PAYMENT_STYLE_TEXT || '',
-  payment_layout_text: process.env.PAYMENT_LAYOUT_TEXT || '',
+  payment_style_text: process.env.PAYMENT_STYLE_TEXT || DEFAULT_PAYMENT_STYLE_TEXT,
+  payment_layout_text: process.env.PAYMENT_LAYOUT_TEXT || DEFAULT_PAYMENT_LAYOUT_TEXT,
+  payment_guard_rules_text: process.env.PAYMENT_GUARD_RULES_TEXT || DEFAULT_PAYMENT_GUARD_RULES_TEXT,
   payment_bold_mode: process.env.PAYMENT_BOLD_MODE || 'off',
-  payment_example_text: process.env.PAYMENT_EXAMPLE_TEXT || '',
-  delivery_rules_enabled: process.env.DELIVERY_RULES_ENABLED === 'true',
-  delivery_rules_text: process.env.DELIVERY_RULES_TEXT || '',
-  delivery_style_text: process.env.DELIVERY_STYLE_TEXT || '',
-  delivery_layout_text: process.env.DELIVERY_LAYOUT_TEXT || '',
+  payment_example_text: process.env.PAYMENT_EXAMPLE_TEXT || DEFAULT_PAYMENT_EXAMPLE_TEXT,
+  reader_node_rules_text: process.env.READER_NODE_RULES_TEXT || DEFAULT_READER_NODE_RULES_TEXT,
+  order_chat_template_text: process.env.ORDER_CHAT_TEMPLATE_TEXT || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT,
+  memory_node_rules_text: process.env.MEMORY_NODE_RULES_TEXT || DEFAULT_MEMORY_NODE_RULES_TEXT,
+  delivery_rules_enabled: process.env.DELIVERY_RULES_ENABLED !== 'false',
+  delivery_free_services: process.env.DELIVERY_FREE_SERVICES || DEFAULT_DELIVERY_FREE_SERVICES,
+  delivery_paid_services: process.env.DELIVERY_PAID_SERVICES || DEFAULT_DELIVERY_PAID_SERVICES,
+  delivery_rules_text: process.env.DELIVERY_RULES_TEXT || DEFAULT_DELIVERY_RULES_TEXT,
+  delivery_style_text: process.env.DELIVERY_STYLE_TEXT || DEFAULT_DELIVERY_STYLE_TEXT,
+  delivery_layout_text: process.env.DELIVERY_LAYOUT_TEXT || DEFAULT_DELIVERY_LAYOUT_TEXT,
+  delivery_consultant_enabled: process.env.DELIVERY_CONSULTANT_ENABLED !== 'false',
+  delivery_consultant_options_text: process.env.DELIVERY_CONSULTANT_OPTIONS_TEXT || DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT,
+  delivery_consultant_rules_text: process.env.DELIVERY_CONSULTANT_RULES_TEXT || DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT,
   delivery_bold_mode: process.env.DELIVERY_BOLD_MODE || 'off',
-  delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || '',
+  delivery_example_text: process.env.DELIVERY_EXAMPLE_TEXT || DEFAULT_DELIVERY_EXAMPLE_TEXT,
   delivery_tracking_enabled: process.env.DELIVERY_TRACKING_ENABLED !== 'false',
   delivery_tracking_text: process.env.DELIVERY_TRACKING_TEXT || DEFAULT_DELIVERY_TRACKING_TEXT,
   followup_master_enabled: process.env.FOLLOWUP_MASTER_ENABLED === 'true',
@@ -670,6 +1016,7 @@ function normalizeSaiGptPendingAction(action = {}) {
   const allowedTypes = [
     'create_training',
     'set_training_active',
+    'update_config',
     'inspect_chat',
     'search_code',
     'inspect_file',
@@ -775,6 +1122,29 @@ function normalizeSaiGptPendingAction(action = {}) {
     };
   }
 
+  if (type === 'update_config') {
+    const fieldValues = payload.fieldValues && typeof payload.fieldValues === 'object' ? payload.fieldValues : {};
+    const cleanFieldValues = {};
+    Object.entries(fieldValues).slice(0, 12).forEach(([key, value]) => {
+      const cleanKey = String(key || '').trim();
+      if (!isSaiNavigatorEditableConfigKey(cleanKey)) return;
+      cleanFieldValues[cleanKey] = typeof value === 'boolean'
+        ? value
+        : sanitizeSaiGptText(value, 8000);
+    });
+    if (!Object.keys(cleanFieldValues).length) return null;
+    return {
+      id: crypto.randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      payload: {
+        title: sanitizeSaiGptText(payload.title || 'Правка AI Control', 160),
+        reason: normalizeTrainingText(payload.reason || '', 700),
+        fieldValues: cleanFieldValues,
+      },
+    };
+  }
+
   return {
     id: crypto.randomUUID(),
     type,
@@ -785,6 +1155,57 @@ function normalizeSaiGptPendingAction(action = {}) {
       reason: normalizeTrainingText(payload.reason || '', 600),
     },
   };
+}
+
+function isSaiNavigatorEditableConfigKey(key = '') {
+  const cleanKey = String(key || '').trim();
+  if (!cleanKey) return false;
+  if (/(?:token|key|password|secret|url)$/i.test(cleanKey)) return false;
+  if (['ai_url', 'sai_gpt_url', 'stt_base_url', 'webhook_url', 'order_chat_id'].includes(cleanKey)) return false;
+  const exact = new Set([
+    'model',
+    'instruction',
+    'tone',
+    'response_length',
+    'creativity',
+    'persona_style',
+    'persona_age',
+    'conversation_mode',
+    'media_behavior',
+    'reply_mode',
+    'human_typing_mode',
+    'order_step_mode',
+    'payment_method',
+    'payment_comment',
+    'payment_bold_mode',
+    'delivery_bold_mode',
+    'followup_mode',
+  ]);
+  const prefixes = [
+    'core_',
+    'facts_',
+    'smalltalk_',
+    'order_',
+    'response_guard_',
+    'receipt_check_',
+    'quality_',
+    'store_trust_',
+    'contacts_',
+    'dialog_examples_',
+    'media_node_',
+    'manager_',
+    'memory_',
+    'auto_reply_',
+    'listen_wait_',
+    'batch_debounce_',
+    'payment_',
+    'reader_node_',
+    'delivery_',
+    'followup_',
+  ];
+  if (exact.has(cleanKey)) return true;
+  return prefixes.some((prefix) => cleanKey.startsWith(prefix))
+    && !/(?:card_number|recipient_name|bank)$/i.test(cleanKey);
 }
 
 function extractSaiGptPendingAction(reply = '') {
@@ -831,6 +1252,14 @@ function describeSaiGptPendingAction(action = null) {
   if (action.type === 'set_training_active') {
     return `Ожидает подтверждения: ${action.payload?.active === false ? 'выключить' : 'включить'} урок ${action.payload?.id || ''}.`;
   }
+  if (action.type === 'update_config') {
+    const fields = Object.keys(action.payload?.fieldValues || {});
+    return [
+      `Ожидает подтверждения: ${action.payload?.title || 'правка AI Control'}.`,
+      fields.length ? `Поля: ${fields.join(', ')}.` : '',
+      action.payload?.reason ? `Зачем: ${action.payload.reason}` : '',
+    ].filter(Boolean).join('\n');
+  }
   if (action.type === 'inspect_chat') {
     return `Ожидает подтверждения: открыть полный диалог ${action.payload?.chatId || action.payload?.query || 'по поиску'} (${action.payload?.limit || 800} сообщений).`;
   }
@@ -852,7 +1281,7 @@ function describeSaiGptPendingAction(action = null) {
   if (action.type === 'prepare_deploy_plan') {
     return `Ожидает подтверждения: подготовить deploy-план для "${action.payload?.goal || ''}".`;
   }
-  return 'Ожидает подтверждения: системное действие S.AI GPT.';
+  return 'Ожидает подтверждения: системное действие S.AI Штурмана.';
 }
 
 function formatSaiGptJsonBlock(title, value) {
@@ -882,7 +1311,7 @@ function resolveSaiGptProjectFile(file = '') {
 
 function inspectSaiGptProjectFile(payload = {}) {
   const resolved = resolveSaiGptProjectFile(payload.file);
-  if (!resolved) throw new Error('Файл не найден или недоступен для S.AI GPT.');
+  if (!resolved) throw new Error('Файл не найден или недоступен для S.AI Штурмана.');
   const content = fs.readFileSync(resolved, 'utf8');
   const lines = content.split('\n');
   const pattern = String(payload.pattern || '').trim().toLowerCase();
@@ -974,6 +1403,30 @@ function executeSaiGptPendingAction(action = null, selectedChatId = '') {
     });
     return `Готово, урок ${item.id} ${item.active === false ? 'выключен' : 'включён'}.`;
   }
+  if (action.type === 'update_config') {
+    const fieldValues = action.payload?.fieldValues && typeof action.payload.fieldValues === 'object'
+      ? action.payload.fieldValues
+      : {};
+    const before = {};
+    const patch = {};
+    Object.entries(fieldValues).forEach(([key, value]) => {
+      if (!isSaiNavigatorEditableConfigKey(key)) return;
+      before[key] = runtimeConfig[key];
+      patch[key] = value;
+    });
+    if (!Object.keys(patch).length) throw new Error('В правке нет разрешённых полей AI Control.');
+    applyConfigUpdate(patch);
+    logEvent('SAI_GPT_ACTION', {
+      status: 'ok',
+      action: action.type,
+      fields: Object.keys(patch),
+    });
+    return [
+      `Готово, применил правку AI Control: ${action.payload?.title || 'настройки обновлены'}.`,
+      '',
+      ...Object.entries(patch).map(([key, value]) => `${key}: ${before[key] === undefined ? '—' : before[key]} -> ${value}`),
+    ].join('\n');
+  }
   if (action.type === 'inspect_chat') {
     const matches = findSaiGptInboxProfiles(action.payload || {});
     if (!matches.length) return 'Не нашёл подходящий диалог в Inbox. Попробуй дать chatId, username, имя или точную фразу.';
@@ -1008,7 +1461,7 @@ function executeSaiGptPendingAction(action = null, selectedChatId = '') {
         'Найти точные функции/роуты через search_code или inspect_file.',
         'Сформулировать минимальный diff-кандидат.',
         'Показать риски для клиентской магистрали.',
-        'После отдельного подтверждения вносить код обычным деплоем, не через S.AI GPT.',
+        'После отдельного подтверждения вносить код обычным деплоем, не через S.AI Штурмана.',
       ],
     });
   }
@@ -2182,9 +2635,15 @@ function extractIwakOrderLink(text) {
 }
 
 function cleanOrderProductName(value = '') {
-  return normalizeMemoryText(value)
+  let text = normalizeMemoryText(value);
+  text = text.replace(/https?:\/\/\S+/gi, '').replace(/(?:товар|ссылка|корзина)\s*:\s*/gi, ' ');
+  const explicitProduct = text.match(/(?:хочу\s+заказать|подскажите(?:,\s*пожалуйста)?\s+по\s+товару)\s*[:\-]?\s*([^:]+?)(?=\s+(?:цена|товар|ссылка|размер)\s*:|$)/i);
+  if (explicitProduct) text = explicitProduct[1];
+  return text
     .replace(/\s*,?\s*размер\s+\d{2}(?:[.,]5)?\b/gi, '')
+    .replace(/\s+[—-]\s*\d{2}(?:[.,]5)?\b/gi, '')
     .replace(/\s*,?\s*цена\s*₽?\s*\d[\d\s.,]*(?:₽|руб(?:\.|лей|ля|ль)?|р\.?)?/gi, '')
+    .replace(/\s*[:：]\s*$/g, '')
     .replace(/\s*,?\s*₽\s*\d[\d\s.,]*\s*$/i, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+,/g, ',')
@@ -2194,6 +2653,43 @@ function cleanOrderProductName(value = '') {
 function compactOrderValue(value, fallback = '...') {
   const cleaned = normalizeMemoryText(value).replace(/\s+/g, ' ').trim();
   return cleaned || fallback;
+}
+
+function normalizeProductMemoryValue(value = '') {
+  const cleaned = cleanOrderProductName(value);
+  if (!cleaned || cleaned.length < 3) return '';
+  if (/^(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b/i.test(cleaned)) return '';
+  if (/(?:https?:\/\/|www\.|iwak\.ru\/|товар\s*:|ссылка\s*:|корзина\s*:|цена\s*:)/i.test(cleaned)) return '';
+  if (cleaned.length > 120) return '';
+  return cleaned;
+}
+
+function getReaderProductTitle(details = {}) {
+  const products = Array.isArray(details.products) ? details.products : [];
+  const titles = products
+    .map((product) => normalizeProductMemoryValue(product.title || [product.brand, product.name].filter(Boolean).join(' — ')))
+    .filter(Boolean);
+  if (titles.length) return Array.from(new Set(titles)).join('; ');
+  return normalizeProductMemoryValue(details.product || '');
+}
+
+function pickOrderField(candidates = [], fallback = '...') {
+  const picked = candidates.find((item) => normalizeMemoryText(item?.value));
+  if (!picked) return { value: fallback, source: 'empty', raw: '' };
+  return {
+    value: compactOrderValue(picked.value, fallback),
+    source: picked.source || 'unknown',
+    raw: normalizeMemoryText(picked.value),
+  };
+}
+
+function extractOrderContextSize(text = '') {
+  const source = String(text || '');
+  const explicit = extractSize(source);
+  if (explicit) return explicit;
+  const productLine = source.match(/(?:хочу\s+заказать|товар|корзина|состав\s+корзины)\s*[:\-]?\s*([^\n]+)/i)?.[1] || source;
+  const match = productLine.match(/[—-]\s*(\d{2}(?:[.,]5)?|XXS|XS|S|M|L|XL|XXL|XXXL)(?=\s|$|[,.])/i);
+  return match ? normalizeSizeToken(match[1]) : '';
 }
 
 function getApproxInsoleBySize(sizeValue = '') {
@@ -2229,6 +2725,10 @@ function formatOrderChatCustomer(input = {}, profile = {}) {
 }
 
 function buildOrderChatMessage(input = {}) {
+  return buildOrderChatSnapshot(input).message;
+}
+
+function buildOrderChatSnapshot(input = {}) {
   const profile = getCustomerProfileSnapshot(input.chatId) || {};
   const facts = profile.facts || {};
   const order = profile.lastOrder || {};
@@ -2247,37 +2747,103 @@ function buildOrderChatMessage(input = {}) {
     facts.interest?.source,
     text,
   ].filter(Boolean).join('\n');
-  const productLink = extractIwakOrderLink(productSource);
-  const productName = compactOrderValue(
-    cleanOrderProductName(facts.currentCart?.value || facts.currentProduct?.value || order.product || facts.lastProduct?.value || extractLastProduct(productSource)),
-  );
-  const size = compactOrderValue(facts.size?.value || facts.shoeSize?.value || extractSize(text) || order.size);
-  const insole = compactOrderValue(facts.insoleCm?.value || extractInsoleCm(text) || getApproxInsoleBySize(size), '');
-  const fullName = compactOrderValue(facts.fullName?.value || extractFullName(text) || order.full_name || order.fullName);
-  const phone = compactOrderValue(facts.phone?.value || extractPhone(text) || order.phone);
-  const pickupOrAddress = compactOrderValue(
-    facts.deliveryAddress?.value || facts.pickupPoint?.value || order.deliveryAddress || order.delivery_address || extractDeliveryAddress(text) || extractPickupPoint(text),
-    '',
-  );
-  const city = compactOrderValue(facts.city?.value || extractCity(pickupOrAddress) || extractCity(text));
-  const deliveryService = compactOrderValue(facts.deliveryService?.value || extractDeliveryService(text), '');
-  const delivery = compactOrderValue([deliveryService, pickupOrAddress].filter(Boolean).join(' / '));
-  const insoleLine = insole ? `${insole} см` : '...';
+  const productLink = pickOrderField([
+    { value: extractIwakOrderLink(productSource), source: 'link:product/cart context' },
+  ]);
+  const productName = pickOrderField([
+    { value: cleanOrderProductName(facts.currentCart?.value), source: 'fact:currentCart' },
+    { value: cleanOrderProductName(facts.currentProduct?.value), source: 'fact:currentProduct' },
+    { value: cleanOrderProductName(order.product), source: 'order.product' },
+    { value: cleanOrderProductName(facts.lastProduct?.value), source: 'fact:lastProduct' },
+    { value: cleanOrderProductName(extractLastProduct(productSource)), source: 'extract:productSource' },
+  ]);
+  const size = pickOrderField([
+    { value: facts.size?.value, source: 'fact:size' },
+    { value: facts.shoeSize?.value, source: 'fact:shoeSize' },
+    { value: extractOrderContextSize(text), source: 'extract:currentText' },
+    { value: extractOrderContextSize(productSource), source: 'extract:productContext' },
+    { value: order.size, source: 'order.size' },
+  ]);
+  const insole = pickOrderField([
+    { value: facts.insoleCm?.value, source: 'fact:insoleCm' },
+    { value: extractInsoleCm(text), source: 'extract:currentText' },
+    { value: getApproxInsoleBySize(size.value), source: 'standard:size table' },
+  ], '');
+  const fullName = pickOrderField([
+    { value: facts.fullName?.value, source: 'fact:fullName' },
+    { value: extractFullName(text), source: 'extract:currentText' },
+    { value: order.full_name || order.fullName, source: 'order.fullName' },
+  ]);
+  const phone = pickOrderField([
+    { value: facts.phone?.value, source: 'fact:phone' },
+    { value: extractPhone(text), source: 'extract:currentText' },
+    { value: order.phone, source: 'order.phone' },
+  ]);
+  const pickupOrAddress = pickOrderField([
+    { value: facts.deliveryAddress?.value, source: 'fact:deliveryAddress' },
+    { value: facts.pickupPoint?.value, source: 'fact:pickupPoint' },
+    { value: order.deliveryAddress || order.delivery_address, source: 'order.deliveryAddress' },
+    { value: extractDeliveryAddress(text), source: 'extract:currentText.deliveryAddress' },
+    { value: extractPickupPoint(text), source: 'extract:currentText.pickupPoint' },
+  ], '');
+  const city = pickOrderField([
+    { value: facts.city?.value, source: 'fact:city' },
+    { value: extractCity(pickupOrAddress.value), source: 'extract:deliveryAddress' },
+    { value: extractCity(text), source: 'extract:currentText' },
+  ]);
+  const deliveryService = pickOrderField([
+    { value: facts.deliveryService?.value, source: 'fact:deliveryService' },
+    { value: extractDeliveryService(text), source: 'extract:currentText' },
+  ], '');
+  const delivery = pickOrderField([
+    { value: [deliveryService.value, pickupOrAddress.value].filter((item) => item && item !== '...').join(' / '), source: [deliveryService.source, pickupOrAddress.source].filter(Boolean).join(' + ') },
+  ]);
+  const insoleLine = insole.value ? `${insole.value} см` : '...';
+  const fields = {
+    customer: { value: formatOrderChatCustomer(input, profile), source: 'telegram/customer profile' },
+    product: productName,
+    link: productLink,
+    size,
+    insole: { ...insole, value: insoleLine },
+    fullName,
+    phone,
+    city,
+    delivery,
+  };
+  const missing = Object.entries(fields)
+    .filter(([key, item]) => key !== 'insole' && (!item.value || item.value === '...'))
+    .map(([key]) => key);
 
-  return [
-    'НОВЫЙ ЗАКАЗ',
-    getMskDateTimeLabel(new Date()),
-    '',
-    `Клиент: ${formatOrderChatCustomer(input, profile)}`,
-    `Товар: ${productName}`,
-    `Ссылка: ${compactOrderValue(productLink)}`,
-    `Размер: ${size}`,
-    `Стелька: ${insoleLine}`,
-    `ФИО: ${fullName}`,
-    `Телефон: ${phone}`,
-    `Город: ${city}`,
-    `Доставка: ${delivery}`,
-  ].join('\n');
+  const template = runtimeConfig.order_chat_template_text || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT;
+  const replacements = {
+    date_time: getMskDateTimeLabel(new Date()),
+    customer: fields.customer.value,
+    product: fields.product.value,
+    link: fields.link.value,
+    size: fields.size.value,
+    insole: insoleLine,
+    full_name: fields.fullName.value,
+    phone: fields.phone.value,
+    city: fields.city.value,
+    delivery: fields.delivery.value,
+  };
+  const message = Object.entries(replacements).reduce((result, [key, value]) => (
+    result.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '...')
+  ), template).trim();
+
+  return {
+    message,
+    fields,
+    missing,
+    profile: {
+      chatId: profile.customer?.chatId || input.chatId || '',
+      username: profile.customer?.username || input.username || '',
+      firstName: profile.customer?.firstName || input.firstName || '',
+      lastName: profile.customer?.lastName || input.lastName || '',
+    },
+    order,
+    state: profile.state || null,
+  };
 }
 
 async function maybeSendOrderChatNotification(config, input = {}) {
@@ -2289,7 +2855,8 @@ async function maybeSendOrderChatNotification(config, input = {}) {
   if (!chatId) return false;
   const receiptKey = String(input.messageId || input.traceId || `${chatId}:${input.receivedAt || Date.now()}`);
   const state = getDialogState(chatId) || {};
-  const text = buildOrderChatMessage(input);
+  const snapshot = buildOrderChatSnapshot(input);
+  const text = snapshot.message;
   const digest = crypto.createHash('sha256').update(text).digest('hex').slice(0, 24);
   const now = Date.now();
   const lastSentAt = Date.parse(state.lastOrderChatSentAt || '');
@@ -2304,6 +2871,8 @@ async function maybeSendOrderChatNotification(config, input = {}) {
       orderChatId: getOrderChatId(config),
       status: 'skipped',
       reason: isSamePending ? 'duplicate_pending' : isSameRecent ? 'duplicate_digest' : 'duplicate_receipt',
+      fields: snapshot.fields,
+      missing: snapshot.missing,
     });
     return false;
   }
@@ -2346,6 +2915,8 @@ async function maybeSendOrderChatNotification(config, input = {}) {
     orderChatId: getOrderChatId(config),
     telegramMessageId: result.message_id || '',
     status: 'ok',
+    fields: snapshot.fields,
+    missing: snapshot.missing,
   });
   return true;
 }
@@ -2400,11 +2971,11 @@ function updateCustomerMemoryFromInput(input) {
   const pickupPoint = extractPickupPoint(input.text);
   if (pickupPoint) upsertMemoryFact(chatId, 'pickupPoint', pickupPoint, source);
 
-  const lastProduct = extractLastProduct(input.text);
+  const lastProduct = normalizeProductMemoryValue(extractLastProduct(input.text));
   if (lastProduct) upsertMemoryFact(chatId, 'lastProduct', lastProduct, source);
   const orderPrice = extractOrderPrice(source) || extractPaymentProofAmount(source);
   const commonOrderPatch = {
-    product: lastProduct || (factsSnapshot.currentCart?.value || factsSnapshot.currentProduct?.value || lastOrderSnapshot.product || factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
+    product: lastProduct || normalizeProductMemoryValue(factsSnapshot.currentCart?.value || factsSnapshot.currentProduct?.value || lastOrderSnapshot.product || factsSnapshot.lastProduct?.value || factsSnapshot.interest?.value || ''),
     size: size || factsSnapshot.size?.value || factsSnapshot.shoeSize?.value || lastOrderSnapshot.size || '',
     price: orderPrice || lastOrderSnapshot.price || '',
     fullName: fullName || lastOrderSnapshot.fullName || lastOrderSnapshot.full_name || factsSnapshot.fullName?.value || '',
@@ -2421,7 +2992,6 @@ function updateCustomerMemoryFromInput(input) {
 
   if (input.hasLinkInput || isProductMediaHintText(input.text)) {
     upsertMemoryFact(chatId, 'interest', getMemoryMessageText(input), source);
-    upsertMemoryFact(chatId, 'lastProduct', getMemoryMessageText(input), source);
   }
 
   const stage = inferConversationStage(input);
@@ -3262,12 +3832,16 @@ function finalizeDeliveryCostReply(input = {}, reply = '') {
   const service = extractDeliveryService(input?.text)
     || input?.memoryContext?.slotSnapshot?.deliveryService
     || '';
-  if (/^(?:Яндекс Доставка|Ozon)$/i.test(service)) return finalReply;
+  const config = input.config || runtimeConfig;
+  if (isFreeDeliveryService(service, config)) return finalReply;
+  const freeText = getFreeDeliveryServices(config).join(' и ');
+  const paidText = getPaidDeliveryServices(config).join(', ');
+  const replacement = `${freeText} бесплатные, ${paidText} — по тарифам выбранной компании.`;
 
   return finalReply
-    .replace(/Доставка\s+у\s+нас\s+бесплатная\.?/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании.')
-    .replace(/Доставка\s+бесплатная\.?/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании.')
-    .replace(/доставка\s+бесплатная/gi, 'Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам выбранной компании');
+    .replace(/Доставка\s+у\s+нас\s+бесплатная\.?/gi, replacement)
+    .replace(/Доставка\s+бесплатная\.?/gi, replacement)
+    .replace(/доставка\s+бесплатная/gi, replacement);
 }
 
 function getKnownOrderPrice(input = {}) {
@@ -3817,6 +4391,178 @@ function finalizeAiReply(input, reply) {
   return finalReply;
 }
 
+function getSelfCheckLevelRank(level = '') {
+  if (level === 'high') return 3;
+  if (level === 'medium') return 2;
+  if (level === 'low') return 1;
+  return 0;
+}
+
+function buildSelfCheckIssue(level, node, title, detail, action = '') {
+  return {
+    level,
+    node,
+    title,
+    detail,
+    action,
+  };
+}
+
+function evaluateSelfCheck(input = {}, reply = '', rawReply = '') {
+  const config = input.config || runtimeConfig;
+  if (!parseConfigBoolean(config.self_check_enabled, true)) {
+    return {
+      enabled: false,
+      status: 'off',
+      risk: 'off',
+      node: 'selfcheck',
+      issues: [],
+      originalReply: String(reply || '').trim(),
+      correctedReply: String(reply || '').trim(),
+      changed: false,
+      blocked: false,
+    };
+  }
+
+  const issues = [];
+  let correctedReply = String(reply || '').trim();
+  const rawText = String(rawReply || '').trim();
+
+  if (input.hasLinkInput && !input.productContext && !input.cartContext) {
+    issues.push(buildSelfCheckIssue(
+      'high',
+      'reader',
+      'Ссылка iwak.ru не подтверждена reader-данными',
+      'В сообщении была ссылка или корзина, но в контексте ответа нет product/cart результата.',
+      'Открыть iwak.ru Reader и проверить, почему ссылка не прочиталась.'
+    ));
+  }
+
+  const noMediaNarration = stripObviousMediaNarration(correctedReply).trim();
+  if (input.hasMedia && noMediaNarration && noMediaNarration !== correctedReply) {
+    correctedReply = noMediaNarration;
+    issues.push(buildSelfCheckIssue(
+      'low',
+      'media',
+      'Роботная фраза про медиа',
+      'Ответ начинался с лишнего описания вроде "вижу, что вы прислали фото".',
+      'Оставлять смысл ответа без технического описания входящего медиа.'
+    ));
+  }
+
+  const noRepeatGreeting = stripRepeatedGreeting(correctedReply).trim();
+  if (hasPriorDialogHistory(input) && noRepeatGreeting && noRepeatGreeting !== correctedReply) {
+    correctedReply = noRepeatGreeting;
+    issues.push(buildSelfCheckIssue(
+      'low',
+      'guards',
+      'Повторное приветствие',
+      'В уже начатом диалоге ответ снова начинался с приветствия.',
+      'Оставлять приветствие только в первом контакте.'
+    ));
+  }
+
+  if (isDeliveryTrackingQuestion(input.text) && containsManualTrackingPromise(correctedReply)) {
+    const nextReply = finalizeDeliveryTrackingReply(input, correctedReply);
+    if (nextReply && nextReply !== correctedReply) correctedReply = nextReply;
+    issues.push(buildSelfCheckIssue(
+      'low',
+      'delivery',
+      'Лишнее обещание ручного трека',
+      'Клиент спрашивал про отслеживание, а ответ обещал, что менеджер вручную пришлёт трек.',
+      'Говорить, что статусы обычно появляются в приложении/личном кабинете службы по номеру телефона после создания накладной.'
+    ));
+  }
+
+  if (isDeliveryFittingQuestion(input.text) && /(?:примерк[аи]?\s+(?:в\s+доставк[еуы]\s+)?нет|без\s+примерк|нельзя\s+пример|не\s+мож(?:ете|но)\s+пример)/i.test(correctedReply)) {
+    const nextReply = finalizeDeliveryFittingReply(input, correctedReply);
+    if (nextReply && nextReply !== correctedReply) correctedReply = nextReply;
+    issues.push(buildSelfCheckIssue(
+      'medium',
+      'returns',
+      'Ответ неправильно понял примерку',
+      'Клиент спрашивал, можно ли примерить при получении, а ответ мог отрицать примерку.',
+      'Отвечать: при получении можно спокойно осмотреть и примерить, если не подойдёт — возврат/обмен по правилам.'
+    ));
+  }
+
+  if (replyContainsPaymentDetails(input, correctedReply)) {
+    const fixedPaymentReply = finalizePaymentAmountReply(input, correctedReply);
+    if (fixedPaymentReply && fixedPaymentReply !== correctedReply) {
+      correctedReply = fixedPaymentReply;
+      issues.push(buildSelfCheckIssue(
+        'low',
+        'payment',
+        'Перед реквизитами не было суммы',
+        'Ответ с реквизитами должен сначала показывать сумму к оплате, если цена известна.',
+        'Открыть Оплата и проверить правило суммы перед реквизитами.'
+      ));
+    }
+  }
+
+  if (correctedReply.length > 850 && !/(?:чек|квитанц|реквизит|заказ)/i.test(input.text || '')) {
+    issues.push(buildSelfCheckIssue(
+      'medium',
+      'prompt',
+      'Ответ слишком длинный',
+      'Ответ выглядит перегруженным для обычного клиентского вопроса.',
+      'Укоротить Prompt и тон: отвечать проще, без оправданий и длинных объяснений.'
+    ));
+  }
+
+  if (rawText && rawText !== correctedReply && !issues.length) {
+    issues.push(buildSelfCheckIssue(
+      'low',
+      'guards',
+      'Ответ был изменён перед отправкой',
+      'Финальный ответ отличается от сырого ответа модели.',
+      'Смотреть Prompt Trace: какие guards или корректоры поменяли текст.'
+    ));
+  }
+
+  const highestIssue = issues.reduce((current, issue) => (
+    getSelfCheckLevelRank(issue.level) > getSelfCheckLevelRank(current.level) ? issue : current
+  ), { level: 'ok', node: 'selfcheck' });
+  const risk = highestIssue.level || 'ok';
+  const allowAutocorrect = parseConfigBoolean(config.self_check_autocorrect_low_risk_enabled, true);
+  const changed = correctedReply !== String(reply || '').trim();
+  const shouldKeepCorrection = allowAutocorrect && getSelfCheckLevelRank(risk) <= getSelfCheckLevelRank('low');
+  const finalCorrectedReply = shouldKeepCorrection ? correctedReply : String(reply || '').trim();
+  const blocked = risk === 'high' && parseConfigBoolean(config.self_check_block_high_risk_enabled, false);
+
+  return {
+    enabled: true,
+    status: blocked ? 'blocked' : issues.length ? 'risk' : 'ok',
+    risk,
+    node: highestIssue.node || 'selfcheck',
+    issues,
+    originalReply: String(reply || '').trim(),
+    correctedReply: finalCorrectedReply,
+    changed: finalCorrectedReply !== String(reply || '').trim(),
+    blocked,
+    draftLessonSuggested: issues.length > 0 && parseConfigBoolean(config.self_check_create_draft_lessons_enabled, false),
+  };
+}
+
+function logSelfCheckTrace(input = {}, selfCheck = {}) {
+  if (!input?.traceId || !selfCheck?.enabled) return;
+  logEvent('SELF_CHECK', {
+    traceId: input.traceId,
+    userId: input.userId,
+    chatId: input.chatId,
+    updateType: input.updateType || '',
+    businessConnectionId: input.businessConnectionId || '',
+    messageType: input.messageType,
+    status: selfCheck.status || 'ok',
+    risk: selfCheck.risk || 'ok',
+    node: selfCheck.node || 'selfcheck',
+    changed: Boolean(selfCheck.changed),
+    blocked: Boolean(selfCheck.blocked),
+    issues: selfCheck.issues || [],
+    draftLessonSuggested: Boolean(selfCheck.draftLessonSuggested),
+  });
+}
+
 async function waitForPendingOrderReplySettle(context) {
   if (!context?.pendingStructuredOrder) return true;
   const deadline = Date.now() + ORDER_PENDING_REPLY_SETTLE_MS;
@@ -3951,19 +4697,48 @@ function formatCartPrice(value) {
   return `₽${new Intl.NumberFormat('ru-RU').format(Math.round(numeric))}`;
 }
 
+function normalizeIwakAssetUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    return new URL(text, 'https://iwak.ru').toString();
+  } catch {
+    return text;
+  }
+}
+
+function getIwakProductImages(source = {}) {
+  const raw = Array.isArray(source.images)
+    ? source.images
+    : Array.isArray(source.photos)
+      ? source.photos
+      : [];
+  const main = source.image || source.imageUrl || source.thumbnail || source.photo || '';
+  return Array.from(new Set([main, ...raw]
+    .map((item) => (typeof item === 'string' ? item : item?.url || item?.src || ''))
+    .map(normalizeIwakAssetUrl)
+    .filter(Boolean)));
+}
+
 function pickCartProductPayload(data, requestedId) {
   const source = data?.product || data?.data?.product || data?.data || data || {};
   const brand = typeof source.brand === 'object'
     ? (source.brand?.name || source.brand?.title || '')
     : (source.brand || '');
-  const image = source.image || source.imageUrl || source.thumbnail || source.photo || '';
+  const images = getIwakProductImages(source);
   return {
     id: Number(source.id || requestedId),
     brand: String(brand || '').trim(),
     name: String(source.name || source.title || '').trim(),
     price: source.price ?? source.currentPrice ?? source.salePrice ?? null,
     originalPrice: source.originalPrice ?? source.oldPrice ?? null,
-    image: typeof image === 'string' ? image : '',
+    category: String(source.category || source.type || '').trim(),
+    gender: String(source.gender || '').trim(),
+    color: String(source.color || source.colorName || '').trim(),
+    colorHex: String(source.colorHex || source.hex || '').trim(),
+    sizes: Array.isArray(source.sizes) ? source.sizes.map((item) => String(item || '').trim()).filter(Boolean) : [],
+    image: images[0] || '',
+    images,
   };
 }
 
@@ -4002,7 +4777,13 @@ function buildIwakCartContext(cartItems, productsById, missingIds = []) {
     } else {
       total += numericPrice;
     }
-    lines.push(`${lines.length + 1}. ${title}, размер ${item.size}${priceText ? `, цена ${priceText}` : ''}`);
+    const meta = [
+      product.category ? `категория: ${product.category}` : '',
+      product.color ? `цвет: ${product.color}` : '',
+      product.sizes?.length ? `размеры в карточке: ${product.sizes.join(', ')}` : '',
+      product.image ? `фото товара: ${product.image}` : '',
+    ].filter(Boolean).join('; ');
+    lines.push(`${lines.length + 1}. ${title}, размер ${item.size}${priceText ? `, цена ${priceText}` : ''}${meta ? `. ${meta}` : ''}`);
   });
 
   if (!lines.length) return '';
@@ -4021,7 +4802,8 @@ function buildIwakCartContext(cartItems, productsById, missingIds = []) {
     'Если в диалоге уже был другой товар/другая цена, свежая корзина важнее старой памяти.',
     'Фразы клиента рядом со свежей корзиной вроде "давайте эти", "вот эти", "лучше эти", "не, давайте вот эти" означают смену товара на эту корзину.',
     'Не продолжай старый товар, старый размер или старую цену, если клиент прислал новую корзину и выбирает её.',
-    'Не выдумывай товары, цены или размеры, которых нет в этом контексте.',
+    'Не выдумывай товары, цены, цвет, фото или размеры, которых нет в этом контексте.',
+    runtimeConfig.reader_node_rules_text || DEFAULT_READER_NODE_RULES_TEXT,
   ].filter((line) => line !== '');
 
   return context.join('\n');
@@ -4041,15 +4823,39 @@ function buildIwakCartOrderDetails(cartItems, productsById) {
     if (price === null) hasTotal = false;
     else total += price;
     sizes.push(item.size);
-    lines.push(`${title}, размер ${item.size}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
+    lines.push(`${title}${product.color ? `, цвет ${product.color}` : ''}, размер ${item.size}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
   });
 
   if (!lines.length) return null;
+  const products = cartItems
+    .map((item) => {
+      const product = productsById.get(item.id);
+      if (!product) return null;
+      return {
+        id: product.id || item.id,
+        brand: product.brand || '',
+        name: product.name || '',
+        title: [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${item.id}`,
+        category: product.category || '',
+        color: product.color || '',
+        colorHex: product.colorHex || '',
+        size: item.size || '',
+        price: normalizeCartPriceValue(product.price),
+        image: product.image || '',
+        images: Array.isArray(product.images) ? product.images.slice(0, 6) : [],
+        sizes: Array.isArray(product.sizes) ? product.sizes : [],
+      };
+    })
+    .filter(Boolean);
   return {
     product: lines.length === 1 ? lines[0] : `Корзина IWAK: ${lines.join('; ')}`,
     size: Array.from(new Set(sizes.filter(Boolean))).join(', '),
     price: hasTotal ? Math.round(total) : '',
     itemCount: lines.length,
+    image: products[0]?.image || '',
+    color: Array.from(new Set(products.map((item) => item.color).filter(Boolean))).join(', '),
+    category: Array.from(new Set(products.map((item) => item.category).filter(Boolean))).join(', '),
+    products,
   };
 }
 
@@ -4061,7 +4867,13 @@ function buildIwakProductContext(productLinks, productsById, missingIds = []) {
     if (!product) return;
     const title = [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${id}`;
     const priceText = formatCartPrice(product.price);
-    lines.push(`${lines.length + 1}. ${title}${priceText ? `, цена ${priceText}` : ''}. Ссылка: ${link}`);
+    const meta = [
+      product.category ? `категория: ${product.category}` : '',
+      product.color ? `цвет: ${product.color}` : '',
+      product.sizes?.length ? `размеры в карточке: ${product.sizes.join(', ')}` : '',
+      product.image ? `фото товара: ${product.image}` : '',
+    ].filter(Boolean).join('; ');
+    lines.push(`${lines.length + 1}. ${title}${priceText ? `, цена ${priceText}` : ''}${meta ? `. ${meta}` : ''}. Ссылка: ${link}`);
   });
 
   if (!lines.length) return '';
@@ -4072,8 +4884,9 @@ function buildIwakProductContext(productLinks, productsById, missingIds = []) {
     ...lines,
     missingIds.length ? `Не удалось прочитать товары ID: ${missingIds.join(', ')}.` : '',
     '',
-    'Важно: отвечай по этим фактам. Не выдумывай название, цену, размер или наличие.',
-    'Если клиент спрашивает про этот товар, используй название и цену из контекста товара IWAK.',
+    'Важно: отвечай по этим фактам. Не выдумывай название, цену, цвет, фото, размер или наличие.',
+    'Если клиент спрашивает про этот товар, используй название, цвет, категорию, фото и цену из контекста товара IWAK.',
+    runtimeConfig.reader_node_rules_text || DEFAULT_READER_NODE_RULES_TEXT,
   ].filter(Boolean).join('\n');
 }
 
@@ -4090,15 +4903,40 @@ function buildIwakProductOrderDetails(productLinks, productsById) {
     const price = normalizeCartPriceValue(product.price);
     if (price === null) hasTotal = false;
     else total += price;
-    lines.push(`${title}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
+    lines.push(`${title}${product.color ? `, цвет ${product.color}` : ''}${price === null ? '' : `, цена ${formatCartPrice(price)}`}`);
   });
 
   if (!lines.length) return null;
+  const products = productLinks
+    .map((link) => {
+      const id = getIwakProductIdFromLink(link);
+      const product = id ? productsById.get(id) : null;
+      if (!product) return null;
+      return {
+        id: product.id || id,
+        brand: product.brand || '',
+        name: product.name || '',
+        title: [product.brand, product.name].filter(Boolean).join(' — ') || `Товар ID ${id}`,
+        category: product.category || '',
+        color: product.color || '',
+        colorHex: product.colorHex || '',
+        price: normalizeCartPriceValue(product.price),
+        link,
+        image: product.image || '',
+        images: Array.isArray(product.images) ? product.images.slice(0, 6) : [],
+        sizes: Array.isArray(product.sizes) ? product.sizes : [],
+      };
+    })
+    .filter(Boolean);
   return {
     product: lines.length === 1 ? lines[0] : `Товары IWAK: ${lines.join('; ')}`,
     size: '',
     price: hasTotal ? Math.round(total) : '',
     itemCount: lines.length,
+    image: products[0]?.image || '',
+    color: Array.from(new Set(products.map((item) => item.color).filter(Boolean))).join(', '),
+    category: Array.from(new Set(products.map((item) => item.category).filter(Boolean))).join(', '),
+    products,
   };
 }
 
@@ -4140,6 +4978,7 @@ async function enrichIwakCartContext(input) {
     itemCount: cartItems.length,
     foundCount: foundIds.length,
     durationMs: Date.now() - startedAt,
+    orderDetails,
   };
 
   if (!summary) {
@@ -4203,7 +5042,9 @@ async function enrichIwakProductContext(input) {
     chatId: input.chatId,
     productIds,
     foundProductIds: foundIds,
+    productLinks,
     durationMs: Date.now() - startedAt,
+    orderDetails,
   };
 
   if (!summary) {
@@ -4234,6 +5075,7 @@ async function enrichIwakProductContext(input) {
 function appendCartContextToMemory(input, cartContext) {
   if (!cartContext?.summary) return;
   input.cartContext = cartContext;
+  appendIwakReaderImagesToInput(input, cartContext);
   input.memoryContext = input.memoryContext || { summary: '', history: [], facts: {}, state: null };
   input.memoryContext.summary = [input.memoryContext.summary, cartContext.summary]
     .filter((part) => String(part || '').trim())
@@ -4242,11 +5084,12 @@ function appendCartContextToMemory(input, cartContext) {
   const chatId = getMemoryChatId(input);
   const details = cartContext.orderDetails;
   if (!chatId || !details?.product) return;
+  const cleanProductTitle = getReaderProductTitle(details);
 
   upsertMemoryFact(chatId, 'currentCart', details.product, input.text || cartContext.summary);
   const cartLink = extractIwakCartLinks(input.text || '')[0];
   if (cartLink) upsertMemoryFact(chatId, 'currentCartLink', cartLink, input.text || cartContext.summary);
-  upsertMemoryFact(chatId, 'lastProduct', details.product, input.text || cartContext.summary);
+  if (cleanProductTitle) upsertMemoryFact(chatId, 'lastProduct', cleanProductTitle, input.text || cartContext.summary);
   if (details.size) upsertMemoryFact(chatId, 'size', details.size, input.text || cartContext.summary);
 
   safeCustomerStoreCall('customer.order.cart', (store) => store.upsertOrder(chatId, {
@@ -4260,6 +5103,7 @@ function appendCartContextToMemory(input, cartContext) {
 function appendProductContextToMemory(input, productContext) {
   if (!productContext?.summary) return;
   input.productContext = productContext;
+  appendIwakReaderImagesToInput(input, productContext);
   input.memoryContext = input.memoryContext || { summary: '', history: [], facts: {}, state: null };
   input.memoryContext.summary = [input.memoryContext.summary, productContext.summary]
     .filter((part) => String(part || '').trim())
@@ -4268,9 +5112,14 @@ function appendProductContextToMemory(input, productContext) {
   const chatId = getMemoryChatId(input);
   const details = productContext.orderDetails;
   if (!chatId || !details?.product) return;
+  const cleanProductTitle = getReaderProductTitle(details);
 
-  upsertMemoryFact(chatId, 'currentProduct', details.product, input.text || productContext.summary);
-  upsertMemoryFact(chatId, 'lastProduct', details.product, input.text || productContext.summary);
+  if (cleanProductTitle) {
+    upsertMemoryFact(chatId, 'currentProduct', cleanProductTitle, input.text || productContext.summary);
+    upsertMemoryFact(chatId, 'lastProduct', cleanProductTitle, input.text || productContext.summary);
+  }
+  if (details.color) upsertMemoryFact(chatId, 'productColor', details.color, input.text || productContext.summary);
+  if (details.category) upsertMemoryFact(chatId, 'productCategory', details.category, input.text || productContext.summary);
   const productLink = productContext.productLinks?.[0] || extractProductLink(input.text || '');
   if (productLink) upsertMemoryFact(chatId, 'currentProductLink', productLink, input.text || productContext.summary);
   safeCustomerStoreCall('customer.order.product_link', (store) => store.upsertOrder(chatId, {
@@ -4278,6 +5127,598 @@ function appendProductContextToMemory(input, productContext) {
     price: details.price || '',
     status: 'draft',
   }));
+}
+
+function getIwakReaderImages(context) {
+  const products = Array.isArray(context?.orderDetails?.products) ? context.orderDetails.products : [];
+  return Array.from(new Set(products.flatMap((product) => (
+    Array.isArray(product.images) && product.images.length
+      ? product.images
+      : [product.image]
+  ))))
+    .map((url) => String(url || '').trim())
+    .filter((url) => /^https?:\/\//i.test(url))
+    .slice(0, IWAK_READER_VISION_IMAGE_LIMIT);
+}
+
+function appendIwakReaderImagesToInput(input, context) {
+  const images = getIwakReaderImages(context);
+  if (!images.length) return;
+  input.iwakReaderImages = Array.from(new Set([
+    ...(Array.isArray(input.iwakReaderImages) ? input.iwakReaderImages : []),
+    ...images,
+  ])).slice(0, IWAK_READER_VISION_IMAGE_LIMIT);
+}
+
+function getIwakReaderEvents(limit = 5) {
+  const readerEventNames = new Set([
+    'PRODUCT_CONTEXT_OK',
+    'PRODUCT_CONTEXT_PARTIAL',
+    'PRODUCT_CONTEXT_FAILED',
+    'CART_CONTEXT_OK',
+    'CART_CONTEXT_PARTIAL',
+    'CART_CONTEXT_FAILED',
+  ]);
+
+  return getMergedLogs()
+    .filter((item) => readerEventNames.has(item.event) || (item.event === 'AI_REQUEST' && item.hasLinkInput))
+    .slice(0, Math.max(1, Math.min(20, Number(limit) || 5)))
+    .map((item) => ({
+      time: item.time,
+      event: item.event,
+      status: item.status || 'ok',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      userId: item.userId || '',
+      text: item.text || '',
+      productIds: item.productIds || [],
+      foundProductIds: item.foundProductIds || [],
+      foundCount: item.foundCount,
+      itemCount: item.itemCount,
+      durationMs: item.durationMs || item.duration || '',
+      error: item.error || '',
+      orderDetails: item.orderDetails || null,
+      productLinks: item.productLinks || [],
+    }));
+}
+
+function getOrderChatEvents(limit = 5) {
+  return getMergedLogs()
+    .filter((item) => item.event === 'ORDER_CHAT')
+    .slice(0, Math.max(1, Math.min(20, Number(limit) || 5)))
+    .map((item) => ({
+      time: item.time,
+      traceId: item.traceId || '',
+      userId: item.userId || '',
+      chatId: item.chatId || '',
+      orderChatId: item.orderChatId || '',
+      telegramMessageId: item.telegramMessageId || '',
+      status: item.status || '',
+      reason: item.reason || '',
+      fields: item.fields || null,
+      missing: item.missing || [],
+    }));
+}
+
+function getRecentOrderSnapshots(limit = 8) {
+  const inbox = buildInboxPayload(300, 80);
+  return (inbox.items || [])
+    .flatMap((profile) => (profile.orders || []).map((order) => ({
+      id: order.id,
+      chatId: profile.customer?.chatId || '',
+      username: profile.customer?.username || '',
+      name: [profile.customer?.firstName, profile.customer?.lastName].filter(Boolean).join(' '),
+      product: order.product || '',
+      size: order.size || '',
+      price: order.price || '',
+      fullName: order.fullName || order.full_name || '',
+      phone: order.phone || '',
+      deliveryAddress: order.deliveryAddress || order.delivery_address || '',
+      status: order.status || '',
+      paymentStatus: order.paymentStatus || order.payment_status || '',
+      paymentCheckStatus: order.paymentCheckStatus || order.payment_check_status || '',
+      proofReceivedAt: order.proofReceivedAt || order.proof_received_at || '',
+      createdAt: order.createdAt || order.created_at || '',
+      updatedAt: order.updatedAt || order.updated_at || '',
+      state: profile.state || null,
+    })))
+    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || '') - Date.parse(a.updatedAt || a.createdAt || ''))
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)));
+}
+
+function getMemoryFactIssues(profile = {}) {
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const issues = [];
+  const lastProduct = normalizeMemoryText(facts.lastProduct?.value || '');
+  const currentProduct = normalizeMemoryText(facts.currentProduct?.value || facts.currentCart?.value || '');
+  const size = normalizeMemoryText(facts.size?.value || '');
+  const shoeSize = normalizeMemoryText(facts.shoeSize?.value || '');
+  const city = normalizeMemoryText(facts.city?.value || '');
+  const delivery = normalizeMemoryText(facts.deliveryAddress?.value || facts.pickupPoint?.value || order.deliveryAddress || order.delivery_address || '');
+
+  if (lastProduct && /https?:\/\/|хочу\s+заказать|подскажите|товар\s*:/i.test(lastProduct)) {
+    issues.push({ level: 'warn', label: 'грязный lastProduct', detail: lastProduct.slice(0, 180) });
+  }
+  if (currentProduct && lastProduct && currentProduct !== lastProduct && !lastProduct.includes(currentProduct) && !currentProduct.includes(lastProduct)) {
+    issues.push({ level: 'warn', label: 'конфликт товара', detail: `current: ${currentProduct.slice(0, 80)} · last: ${lastProduct.slice(0, 80)}` });
+  }
+  if (size && shoeSize && size !== shoeSize) {
+    issues.push({ level: 'warn', label: 'конфликт размера', detail: `size ${size} / shoeSize ${shoeSize}` });
+  }
+  if (!city && delivery && /москва|санкт|спб/i.test(delivery)) {
+    issues.push({ level: 'info', label: 'город можно извлечь из доставки', detail: delivery.slice(0, 120) });
+  }
+  if (order.product && lastProduct && !order.product.includes(lastProduct) && !lastProduct.includes(order.product)) {
+    issues.push({ level: 'warn', label: 'заказ и память товара разные', detail: `order: ${order.product.slice(0, 80)} · memory: ${lastProduct.slice(0, 80)}` });
+  }
+  return issues;
+}
+
+function getMemoryLiveProfiles(limit = 8) {
+  const inbox = buildInboxPayload(300, 120);
+  return (inbox.items || [])
+    .map((profile) => {
+      const facts = profile.facts || {};
+      const factList = Object.entries(facts).map(([key, fact]) => ({
+        key,
+        value: fact?.value || '',
+        source: fact?.source || '',
+        confidence: fact?.confidence || '',
+        updatedAt: fact?.updatedAt || '',
+      })).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      const updatedAt = [
+        profile.customer?.updatedAt,
+        profile.state?.updatedAt,
+        profile.lastOrder?.updatedAt || profile.lastOrder?.updated_at,
+        ...factList.map((item) => item.updatedAt),
+      ].filter(Boolean).sort().pop() || '';
+      return {
+        chatId: profile.customer?.chatId || '',
+        username: profile.customer?.username || '',
+        name: [profile.customer?.firstName, profile.customer?.lastName].filter(Boolean).join(' '),
+        phone: profile.customer?.phone || facts.phone?.value || '',
+        stage: profile.state?.stage || '',
+        aiMode: profile.state?.aiMode || '',
+        updatedAt,
+        facts: factList.slice(0, 12),
+        factCount: factList.length,
+        lastOrder: profile.lastOrder || null,
+        lastMessages: (profile.recentMessages || []).slice(-5).map((message) => ({
+          role: message.role || '',
+          text: message.text || '',
+          type: message.type || '',
+          createdAt: message.createdAt || '',
+          traceId: message.traceId || '',
+        })),
+        issues: getMemoryFactIssues(profile),
+      };
+    })
+    .sort((a, b) => Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || ''))
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)));
+}
+
+function isDirtyProductMemoryFact(value = '') {
+  const text = normalizeMemoryText(value);
+  return Boolean(text && /(?:^|\s)(?:здравствуйте|добрый\s+день|доброе\s+утро|добрый\s+вечер|привет)\b|https?:\/\/|www\.|iwak\.ru\/|товар\s*:|ссылка\s*:|корзина\s*:|цена\s*:/i.test(text));
+}
+
+function buildMemoryProductRepairPlan(options = {}) {
+  const apply = options.apply === true;
+  const profiles = safeCustomerStoreCall('memory.repair.scan', (store) => store.getInboxCustomers({ limit: 500, messageLimit: 80 })) || [];
+  const keys = ['lastProduct', 'currentProduct'];
+  const changes = [];
+
+  profiles.forEach((profile) => {
+    const chatId = profile.customer?.chatId || '';
+    if (!chatId) return;
+    keys.forEach((key) => {
+      const fact = profile.facts?.[key];
+      const before = normalizeMemoryText(fact?.value || '');
+      if (!before || !isDirtyProductMemoryFact(before)) return;
+      const after = normalizeProductMemoryValue(before);
+      if (!after || after === before) return;
+      const change = {
+        chatId,
+        username: profile.customer?.username || '',
+        name: [profile.customer?.firstName, profile.customer?.lastName].filter(Boolean).join(' '),
+        key,
+        before,
+        after,
+        source: fact?.source || '',
+        updatedAt: fact?.updatedAt || '',
+        applied: false,
+      };
+      if (apply) {
+        const repaired = safeCustomerStoreCall('memory.repair.apply_fact', (store) => store.upsertFact(
+          { chatId, userId: profile.customer?.userId || chatId, updateIdentity: false },
+          key,
+          after,
+          `memory_repair: ${before.slice(0, 180)}`,
+          'repaired',
+        ));
+        change.applied = Boolean(repaired);
+      }
+      changes.push(change);
+    });
+  });
+
+  return {
+    ok: true,
+    mode: apply ? 'apply' : 'dry_run',
+    scanned: profiles.length,
+    changes,
+    changed: changes.length,
+  };
+}
+
+function maskPaymentCard(value = '') {
+  const digits = getDigitsOnly(value);
+  if (!digits) return '';
+  if (digits.length <= 4) return digits;
+  const last = digits.slice(-4);
+  const groups = [];
+  const maskedLength = Math.max(0, digits.length - 4);
+  for (let index = 0; index < maskedLength; index += 4) {
+    groups.push('••••');
+  }
+  groups.push(last);
+  return groups.join(' ');
+}
+
+function getPaymentConfigSnapshot(config = runtimeConfig) {
+  const enabled = parseConfigBoolean(config.payment_enabled, false);
+  return {
+    enabled,
+    method: config.payment_method || 'card',
+    cardMasked: maskPaymentCard(config.payment_card_number || ''),
+    hasCard: Boolean(getDigitsOnly(config.payment_card_number || '')),
+    recipient: normalizeMemoryText(config.payment_recipient_name || ''),
+    hasRecipient: Boolean(normalizeMemoryText(config.payment_recipient_name || '')),
+    bank: normalizeMemoryText(config.payment_bank || ''),
+    hasBank: Boolean(normalizeMemoryText(config.payment_bank || '')),
+    amountGuard: true,
+    receiptCheckEnabled: parseConfigBoolean(config.receipt_check_enabled, true),
+    noFinalConfirmGuard: parseConfigBoolean(config.receipt_check_no_final_confirm_enabled, true)
+      && parseConfigBoolean(config.response_guard_no_final_payment_enabled, true),
+  };
+}
+
+function getPaymentSummaryAmount(summary = '') {
+  const source = String(summary || '');
+  const explicit = source.match(/сумм[аы][^0-9]{0,30}([\d\s.,]{3,})/i);
+  const raw = explicit?.[1] || source;
+  const amounts = extractMoneyAmounts(raw);
+  return amounts[0] || '';
+}
+
+function getPaymentOrderIssues(profile = {}, order = {}, configSnapshot = getPaymentConfigSnapshot()) {
+  const issues = [];
+  const price = normalizeMemoryText(order.price || '');
+  const statusText = [
+    order.status,
+    order.paymentStatus,
+    order.paymentCheckStatus,
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+  const hasPaymentStage = /waiting_payment|payment_details_sent|proof_received|waiting_payment_check|receipt|check/.test(statusText)
+    || Boolean(order.proofReceivedAt);
+
+  if (configSnapshot.enabled && (!configSnapshot.hasCard || !configSnapshot.hasRecipient || !configSnapshot.hasBank)) {
+    issues.push({ level: 'warn', label: 'неполные реквизиты', detail: 'проверь карту, получателя и банк в узле Оплата' });
+  }
+  if (hasPaymentStage && !price) {
+    issues.push({ level: 'warn', label: 'нет суммы заказа', detail: 'перед реквизитами сумма может не подставиться' });
+  }
+  if (order.proofReceivedAt && !configSnapshot.receiptCheckEnabled) {
+    issues.push({ level: 'warn', label: 'проверка чека выключена', detail: 'чек есть, но guard проверки отключен' });
+  }
+  const proofAmount = getPaymentSummaryAmount(order.paymentCheckSummary || '');
+  if (proofAmount && price && parseMoneyAmount(proofAmount) && parseMoneyAmount(price)) {
+    const diff = Math.abs(parseMoneyAmount(proofAmount) - parseMoneyAmount(price));
+    if (diff >= 1) {
+      issues.push({
+        level: 'warn',
+        label: 'сумма чека отличается',
+        detail: `${formatMoneyAmount(proofAmount)} вместо ${formatMoneyAmount(price)}`,
+      });
+    }
+  }
+  if (order.proofReceivedAt && !order.lastOrderChatSentAt && !profile.state?.lastOrderChatSentAt) {
+    issues.push({ level: 'info', label: 'заказник не виден в state', detail: 'проверь ORDER_CHAT trace, если заказ не прилетел в группу' });
+  }
+  return issues;
+}
+
+function getPaymentLiveProfiles(limit = 8) {
+  const configSnapshot = getPaymentConfigSnapshot();
+  const inbox = buildInboxPayload(400, 120);
+  return (inbox.items || [])
+    .flatMap((profile) => {
+      const orders = Array.isArray(profile.orders) && profile.orders.length
+        ? profile.orders
+        : profile.lastOrder ? [profile.lastOrder] : [];
+      return orders.map((order) => ({
+        chatId: profile.customer?.chatId || '',
+        username: profile.customer?.username || '',
+        name: [profile.customer?.firstName, profile.customer?.lastName].filter(Boolean).join(' '),
+        product: order.product || '',
+        size: order.size || '',
+        price: order.price || '',
+        status: order.status || '',
+        paymentStatus: order.paymentStatus || order.payment_status || '',
+        paymentCheckStatus: order.paymentCheckStatus || order.payment_check_status || '',
+        paymentCheckSummary: order.paymentCheckSummary || order.payment_check_summary || '',
+        proofReceivedAt: order.proofReceivedAt || order.proof_received_at || '',
+        updatedAt: order.updatedAt || order.updated_at || order.createdAt || order.created_at || '',
+        lastOrderChatSentAt: order.lastOrderChatSentAt || profile.state?.lastOrderChatSentAt || '',
+        issues: getPaymentOrderIssues(profile, {
+          ...order,
+          paymentStatus: order.paymentStatus || order.payment_status || '',
+          paymentCheckStatus: order.paymentCheckStatus || order.payment_check_status || '',
+          paymentCheckSummary: order.paymentCheckSummary || order.payment_check_summary || '',
+          proofReceivedAt: order.proofReceivedAt || order.proof_received_at || '',
+        }, configSnapshot),
+      }));
+    })
+    .filter((item) => {
+      const source = [
+        item.status,
+        item.paymentStatus,
+        item.paymentCheckStatus,
+        item.paymentCheckSummary,
+      ].join(' ').toLowerCase();
+      return item.proofReceivedAt
+        || /payment|оплат|чек|receipt|proof|waiting_payment/.test(source)
+        || item.issues.length;
+    })
+    .sort((a, b) => Date.parse(b.updatedAt || b.proofReceivedAt || '') - Date.parse(a.updatedAt || a.proofReceivedAt || ''))
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)));
+}
+
+function getPaymentEvents(limit = 8) {
+  return getMergedLogs()
+    .filter((item) => {
+      const source = [
+        item.event,
+        item.scope,
+        item.text,
+        item.replyText,
+        item.paymentStatus,
+        item.paymentCheckStatus,
+        item.receiptSummary,
+      ].join(' ');
+      return /PAYMENT|RECEIPT|ORDER_CHAT|оплат|чек|квитанц|реквизит/i.test(source);
+    })
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)))
+    .map((item) => ({
+      time: item.time,
+      event: item.event || '',
+      status: item.status || '',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      text: item.text || item.replyText || item.reason || '',
+      amount: item.amount || item.price || '',
+    }));
+}
+
+function normalizeDeliveryServiceName(value = '') {
+  const service = extractDeliveryService(value) || normalizeMemoryText(value);
+  if (/^сд[эе]к$|^cdek$/i.test(service)) return 'CDEK';
+  if (/^озон$|^ozon$/i.test(service)) return 'Ozon';
+  if (/яндекс/i.test(service)) return 'Яндекс Доставка';
+  if (/wildberries|^wb$/i.test(service)) return 'WB';
+  if (/почта/i.test(service)) return 'Почта России';
+  if (/курьер/i.test(service)) return 'Курьер';
+  return service;
+}
+
+function getDeliveryServicesFromConfig(value = '', fallback = '') {
+  const source = normalizeMemoryText(value || fallback);
+  return source
+    .split(/[,;\n]+/)
+    .map((item) => normalizeMemoryText(item))
+    .filter(Boolean);
+}
+
+function getFreeDeliveryServices(config = runtimeConfig) {
+  return getDeliveryServicesFromConfig(config.delivery_free_services, DEFAULT_DELIVERY_FREE_SERVICES);
+}
+
+function getPaidDeliveryServices(config = runtimeConfig) {
+  return getDeliveryServicesFromConfig(config.delivery_paid_services, DEFAULT_DELIVERY_PAID_SERVICES);
+}
+
+function deliveryServiceMatchesConfigured(service = '', configured = '') {
+  const normalizedService = normalizeDeliveryServiceName(service).toLowerCase();
+  const normalizedConfigured = normalizeDeliveryServiceName(configured).toLowerCase();
+  if (!normalizedService || !normalizedConfigured) return false;
+  if (normalizedService === normalizedConfigured) return true;
+  if (normalizedConfigured.includes('/')) {
+    return normalizedConfigured.split('/').some((part) => normalizeDeliveryServiceName(part).toLowerCase() === normalizedService);
+  }
+  if (/wb|wildberries/i.test(`${normalizedService} ${normalizedConfigured}`)) {
+    return /wb|wildberries/i.test(normalizedService) && /wb|wildberries/i.test(normalizedConfigured);
+  }
+  if (/cdek|сд[эе]к/i.test(`${normalizedService} ${normalizedConfigured}`)) {
+    return /cdek|сд[эе]к/i.test(normalizedService) && /cdek|сд[эе]к/i.test(normalizedConfigured);
+  }
+  return false;
+}
+
+function isFreeDeliveryService(value = '', config = runtimeConfig) {
+  const service = normalizeDeliveryServiceName(value);
+  return getFreeDeliveryServices(config).some((item) => deliveryServiceMatchesConfigured(service, item));
+}
+
+function buildDeliveryCostRuleText(config = runtimeConfig) {
+  const free = getFreeDeliveryServices(config);
+  const paid = getPaidDeliveryServices(config);
+  return [
+    `Доставка: ${free.join(', ')} бесплатные.`,
+    `${paid.join(', ')} оплачиваются по тарифам выбранной службы.`,
+    'Не писать, что вся доставка бесплатная.',
+  ].join(' ');
+}
+
+function getDeliveryConfigSnapshot(config = runtimeConfig) {
+  return {
+    enabled: parseConfigBoolean(config.delivery_rules_enabled, true),
+    trackingEnabled: parseConfigBoolean(config.delivery_tracking_enabled, true),
+    costRule: buildDeliveryCostRuleText(config),
+    freeServices: getFreeDeliveryServices(config),
+    paidServices: getPaidDeliveryServices(config),
+    hasCustomRules: Boolean(normalizeMemoryText(config.delivery_rules_text || '')),
+    hasTrackingText: Boolean(normalizeMemoryText(config.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT)),
+    styleConfigured: Boolean(normalizeMemoryText(config.delivery_style_text || config.delivery_layout_text || config.delivery_example_text || '')),
+  };
+}
+
+function getDeliveryProfileIssues(profile = {}, configSnapshot = getDeliveryConfigSnapshot()) {
+  const facts = profile.facts || {};
+  const order = profile.lastOrder || {};
+  const service = normalizeDeliveryServiceName(
+    facts.deliveryService?.value
+    || order.deliveryService
+    || order.delivery_service
+    || '',
+  );
+  const destination = normalizeMemoryText(
+    facts.deliveryAddress?.value
+    || facts.pickupPoint?.value
+    || order.deliveryAddress
+    || order.delivery_address
+    || '',
+  );
+  const city = normalizeMemoryText(facts.city?.value || extractCity(destination));
+  const issues = [];
+
+  if (service && !isFreeDeliveryService(service) && /бесплат/i.test(`${facts.deliveryService?.source || ''} ${order.deliveryComment || ''}`)) {
+    issues.push({ level: 'warn', label: 'платная служба могла звучать бесплатно', detail: service });
+  }
+  if (service && !isFreeDeliveryService(service)) {
+    issues.push({ level: 'info', label: 'служба по тарифу ТК', detail: service });
+  }
+  if (!service && destination) {
+    issues.push({ level: 'warn', label: 'есть адрес, нет службы', detail: destination.slice(0, 120) });
+  }
+  if (service && !destination) {
+    issues.push({ level: 'warn', label: 'есть служба, нет ПВЗ/адреса', detail: service });
+  }
+  if (!city && destination && /москва|санкт|спб/i.test(destination)) {
+    issues.push({ level: 'info', label: 'город можно извлечь', detail: destination.slice(0, 120) });
+  }
+  return issues;
+}
+
+function getDeliveryConfigIssues(configSnapshot = getDeliveryConfigSnapshot()) {
+  const issues = [];
+  if (!configSnapshot.enabled) {
+    issues.push({ level: 'warn', label: 'доставка выключена', detail: 'AI Control не даёт явные правила доставки' });
+  }
+  if (!configSnapshot.trackingEnabled) {
+    issues.push({ level: 'warn', label: 'трекинг выключен', detail: 'ответы про отслеживание могут стать слабее' });
+  }
+  if (!configSnapshot.hasTrackingText) {
+    issues.push({ level: 'warn', label: 'нет текста трекинга', detail: 'вопросы про отслеживание будут слабее' });
+  }
+  return issues;
+}
+
+function getDeliveryLiveProfiles(limit = 8) {
+  const configSnapshot = getDeliveryConfigSnapshot();
+  const inbox = buildInboxPayload(400, 120);
+  return (inbox.items || [])
+    .map((profile) => {
+      const facts = profile.facts || {};
+      const order = profile.lastOrder || {};
+      const service = normalizeDeliveryServiceName(
+        facts.deliveryService?.value
+        || order.deliveryService
+        || order.delivery_service
+        || '',
+      );
+      const destination = normalizeMemoryText(
+        facts.deliveryAddress?.value
+        || facts.pickupPoint?.value
+        || order.deliveryAddress
+        || order.delivery_address
+        || '',
+      );
+      const city = normalizeMemoryText(facts.city?.value || extractCity(destination));
+      const updatedAt = [
+        facts.deliveryService?.updatedAt,
+        facts.deliveryAddress?.updatedAt,
+        facts.pickupPoint?.updatedAt,
+        order.updatedAt || order.updated_at,
+        profile.state?.updatedAt,
+        profile.customer?.updatedAt,
+      ].filter(Boolean).sort().pop() || '';
+      return {
+        chatId: profile.customer?.chatId || '',
+        username: profile.customer?.username || '',
+        name: [profile.customer?.firstName, profile.customer?.lastName].filter(Boolean).join(' '),
+        product: order.product || facts.currentProduct?.value || facts.lastProduct?.value || '',
+        service,
+        cost: service ? (isFreeDeliveryService(service) ? 'бесплатно' : 'по тарифу ТК') : '',
+        city,
+        destination,
+        status: order.status || profile.state?.stage || '',
+        updatedAt,
+        issues: getDeliveryProfileIssues(profile, configSnapshot),
+      };
+    })
+    .filter((item) => item.service || item.destination || item.city || item.issues.length)
+    .sort((a, b) => Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || ''))
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)));
+}
+
+function getDeliveryEvents(limit = 8) {
+  return getMergedLogs()
+    .filter((item) => {
+      const source = [
+        item.event,
+        item.scope,
+        item.text,
+        item.replyText,
+        item.deliveryService,
+        item.deliveryAddress,
+      ].join(' ');
+      return /достав|пвз|пункт\s+выдач|сд[эе]к|cdek|ozon|озон|яндекс|почта|wildberries|трек|накладн/i.test(source);
+    })
+    .slice(0, Math.max(1, Math.min(30, Number(limit) || 8)))
+    .map((item) => ({
+      time: item.time,
+      event: item.event || '',
+      status: item.status || '',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      text: item.text || item.replyText || '',
+    }));
+}
+
+async function inspectIwakReaderUrl(rawUrl) {
+  const text = String(rawUrl || '').trim();
+  if (!text) return null;
+  const input = {
+    text,
+    traceId: `reader-test-${Date.now()}`,
+    userId: 'ui',
+    chatId: 'ui',
+    updateType: 'ui',
+    businessConnectionId: '',
+  };
+  const productContext = await enrichIwakProductContext(input);
+  const cartContext = await enrichIwakCartContext(input);
+  const context = productContext || cartContext;
+  return {
+    ok: !!context?.summary,
+    kind: productContext ? 'product' : cartContext ? 'cart' : 'unknown',
+    summary: context?.summary || '',
+    productIds: context?.productIds || [],
+    foundProductIds: context?.foundProductIds || [],
+    missingProductIds: context?.missingProductIds || [],
+    orderDetails: context?.orderDetails || null,
+  };
 }
 
 async function processInputBatch(inputs) {
@@ -4329,16 +5770,42 @@ async function processInputBatch(inputs) {
     try {
       const reply = await requestAi(batchInput);
       if (typeof reply === 'string') {
-        const finalReply = finalizeAiReply(batchInput, reply);
+        let finalReply = finalizeAiReply(batchInput, reply);
+        const selfCheck = evaluateSelfCheck(batchInput, finalReply, reply);
+        logSelfCheckTrace(batchInput, selfCheck);
+        if (selfCheck?.enabled) {
+          finalReply = selfCheck.correctedReply || finalReply;
+        }
         batchInput.aiDecisionTrace = {
           ...batchInput.aiDecisionTrace,
           finalReply,
           finalizeChanged: String(reply || '').trim() !== finalReply,
+          selfCheck,
         };
         if (!finalReply) {
           logAiDecisionTrace(batchInput, {
             status: 'skipped',
             skippedReason: 'empty_final_reply',
+          });
+          return;
+        }
+        if (selfCheck?.blocked) {
+          logEvent('MESSAGE_STATUS', {
+            traceId: batchInput.traceId,
+            userId: batchInput.userId,
+            chatId: batchInput.chatId,
+            updateType: batchInput.updateType || '',
+            businessConnectionId: batchInput.businessConnectionId || '',
+            messageType: batchInput.messageType,
+            messageStatus: 'ai_reply_blocked_self_check',
+            status: 'ok',
+            selfCheckRisk: selfCheck.risk || '',
+          });
+          logAiDecisionTrace(batchInput, {
+            status: 'skipped',
+            skippedReason: 'self_check_blocked',
+            finalReply,
+            selfCheck,
           });
           return;
         }
@@ -4753,26 +6220,26 @@ function buildSttHealth({ providerReachable }) {
 }
 
 function buildSaiGptHealth({ providerReachable }) {
-  const missing = ['sai_gpt_key', 'sai_gpt_url', 'sai_gpt_model']
+  const missing = ['ai_key', 'ai_url', 'model']
     .filter((field) => !runtimeConfig[field] || !String(runtimeConfig[field]).trim());
 
   if (missing.length) {
     return {
       status: 'warning',
-      label: 'S.AI GPT не настроен',
+      label: 'Штурман ждёт AI Provider',
     };
   }
 
   if (!providerReachable) {
     return {
       status: 'error',
-      label: 'S.AI GPT API недоступен',
+      label: 'Штурман: AI недоступен',
     };
   }
 
   return {
     status: 'ok',
-    label: 'S.AI GPT API доступен',
+    label: 'Штурман на общей модели',
   };
 }
 
@@ -4806,20 +6273,36 @@ function getRuntimeSnapshot() {
     core_no_stock_check_enabled: parseConfigBoolean(runtimeConfig.core_no_stock_check_enabled, true),
     core_no_catalog_return_enabled: parseConfigBoolean(runtimeConfig.core_no_catalog_return_enabled, true),
     core_no_resell_enabled: parseConfigBoolean(runtimeConfig.core_no_resell_enabled, true),
-    core_rules_text: runtimeConfig.core_rules_text,
+    core_rules_text: runtimeConfig.core_rules_text || DEFAULT_CORE_RULES_TEXT,
+    problem_solver_enabled: parseConfigBoolean(runtimeConfig.problem_solver_enabled, true),
+    problem_solver_triggers_text: runtimeConfig.problem_solver_triggers_text || DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT,
+    problem_solver_rules_text: runtimeConfig.problem_solver_rules_text || DEFAULT_PROBLEM_SOLVER_RULES_TEXT,
+    problem_solver_forbidden_text: runtimeConfig.problem_solver_forbidden_text || DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT,
+    problem_solver_examples_text: runtimeConfig.problem_solver_examples_text || DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT,
     facts_no_invent_enabled: parseConfigBoolean(runtimeConfig.facts_no_invent_enabled, true),
     facts_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_payment_enabled, true),
     facts_no_fake_delivery_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_enabled, true),
     facts_no_fake_discounts_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_discounts_enabled, true),
     facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
     facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
-    facts_rules_text: runtimeConfig.facts_rules_text,
+    facts_rules_text: runtimeConfig.facts_rules_text || DEFAULT_FACTS_RULES_TEXT,
     smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
     smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
     smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),
     smalltalk_weather_enabled: parseConfigBoolean(runtimeConfig.smalltalk_weather_enabled, true),
     smalltalk_soft_product_link_enabled: parseConfigBoolean(runtimeConfig.smalltalk_soft_product_link_enabled, true),
-    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text,
+    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text || DEFAULT_SMALLTALK_RULES_TEXT,
+    sales_psychology_enabled: parseConfigBoolean(runtimeConfig.sales_psychology_enabled, true),
+    sales_psychology_triggers_text: runtimeConfig.sales_psychology_triggers_text || DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT,
+    sales_psychology_principles_text: runtimeConfig.sales_psychology_principles_text || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT,
+    sales_psychology_techniques_text: runtimeConfig.sales_psychology_techniques_text || DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT,
+    sales_psychology_forbidden_text: runtimeConfig.sales_psychology_forbidden_text || DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT,
+    sales_psychology_examples_text: runtimeConfig.sales_psychology_examples_text || DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT,
+    size_fit_enabled: parseConfigBoolean(runtimeConfig.size_fit_enabled, true),
+    size_fit_shoe_table_text: runtimeConfig.size_fit_shoe_table_text || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT,
+    size_fit_category_rules_text: runtimeConfig.size_fit_category_rules_text || DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT,
+    size_fit_validation_rules_text: runtimeConfig.size_fit_validation_rules_text || DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT,
+    size_fit_examples_text: runtimeConfig.size_fit_examples_text || DEFAULT_SIZE_FIT_EXAMPLES_TEXT,
     order_path_enabled: parseConfigBoolean(runtimeConfig.order_path_enabled, true),
     order_collect_size_enabled: parseConfigBoolean(runtimeConfig.order_collect_size_enabled, true),
     order_collect_insole_enabled: parseConfigBoolean(runtimeConfig.order_collect_insole_enabled, true),
@@ -4831,7 +6314,12 @@ function getRuntimeSnapshot() {
     order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
     order_step_mode: runtimeConfig.order_step_mode,
-    order_rules_text: runtimeConfig.order_rules_text,
+    order_rules_text: runtimeConfig.order_rules_text || DEFAULT_ORDER_RULES_TEXT,
+    soft_retention_enabled: parseConfigBoolean(runtimeConfig.soft_retention_enabled, true),
+    soft_retention_triggers_text: runtimeConfig.soft_retention_triggers_text || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT,
+    soft_retention_rules_text: runtimeConfig.soft_retention_rules_text || DEFAULT_SOFT_RETENTION_RULES_TEXT,
+    soft_retention_forbidden_text: runtimeConfig.soft_retention_forbidden_text || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT,
+    soft_retention_examples_text: runtimeConfig.soft_retention_examples_text || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT,
     order_chat_enabled: parseConfigBoolean(runtimeConfig.order_chat_enabled, false),
     order_chat_id: runtimeConfig.order_chat_id || '',
     response_guard_enabled: parseConfigBoolean(runtimeConfig.response_guard_enabled, true),
@@ -4840,7 +6328,12 @@ function getRuntimeSnapshot() {
     response_guard_human_tone_enabled: parseConfigBoolean(runtimeConfig.response_guard_human_tone_enabled, true),
     response_guard_next_step_enabled: parseConfigBoolean(runtimeConfig.response_guard_next_step_enabled, true),
     response_guard_no_final_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_final_payment_enabled, true),
-    response_guard_rules_text: runtimeConfig.response_guard_rules_text,
+    response_guard_rules_text: runtimeConfig.response_guard_rules_text || DEFAULT_RESPONSE_GUARD_RULES_TEXT,
+    self_check_enabled: parseConfigBoolean(runtimeConfig.self_check_enabled, true),
+    self_check_autocorrect_low_risk_enabled: parseConfigBoolean(runtimeConfig.self_check_autocorrect_low_risk_enabled, true),
+    self_check_block_high_risk_enabled: parseConfigBoolean(runtimeConfig.self_check_block_high_risk_enabled, false),
+    self_check_create_draft_lessons_enabled: parseConfigBoolean(runtimeConfig.self_check_create_draft_lessons_enabled, false),
+    self_check_rules_text: runtimeConfig.self_check_rules_text || DEFAULT_SELF_CHECK_RULES_TEXT,
     receipt_check_enabled: parseConfigBoolean(runtimeConfig.receipt_check_enabled, true),
     receipt_check_amount_enabled: parseConfigBoolean(runtimeConfig.receipt_check_amount_enabled, true),
     receipt_check_bank_enabled: parseConfigBoolean(runtimeConfig.receipt_check_bank_enabled, true),
@@ -4850,7 +6343,7 @@ function getRuntimeSnapshot() {
     receipt_check_no_final_confirm_enabled: parseConfigBoolean(runtimeConfig.receipt_check_no_final_confirm_enabled, true),
     receipt_check_success_text: runtimeConfig.receipt_check_success_text,
     receipt_check_mismatch_text: runtimeConfig.receipt_check_mismatch_text,
-    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text,
+    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
@@ -4859,7 +6352,7 @@ function getRuntimeSnapshot() {
     quality_return_no_dates_enabled: parseConfigBoolean(runtimeConfig.quality_return_no_dates_enabled, true),
     quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
     quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
-    quality_rules_text: runtimeConfig.quality_rules_text,
+    quality_rules_text: runtimeConfig.quality_rules_text || DEFAULT_QUALITY_RULES_TEXT,
     store_trust_enabled: parseConfigBoolean(runtimeConfig.store_trust_enabled, true),
     store_trust_online_only_enabled: parseConfigBoolean(runtimeConfig.store_trust_online_only_enabled, true),
     store_trust_sadovod_history_enabled: parseConfigBoolean(runtimeConfig.store_trust_sadovod_history_enabled, true),
@@ -4887,6 +6380,7 @@ function getRuntimeSnapshot() {
     persona_age: runtimeConfig.persona_age,
     conversation_mode: runtimeConfig.conversation_mode,
     media_behavior: runtimeConfig.media_behavior,
+    media_node_rules_text: runtimeConfig.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT,
     auto_reply_enabled: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
     memory_enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
     memory_recent_limit: getConfigMemoryLimit(runtimeConfig),
@@ -4894,6 +6388,7 @@ function getRuntimeSnapshot() {
     reply_mode: normalizeReplyMode(runtimeConfig.reply_mode),
     human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
     manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
+    manager_node_rules_text: runtimeConfig.manager_node_rules_text || DEFAULT_MANAGER_NODE_RULES_TEXT,
     manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
     listen_wait_enabled: parseConfigBoolean(runtimeConfig.listen_wait_enabled, true),
     listen_wait_debounce_ms: getConfigListenWaitDebounceMs(runtimeConfig),
@@ -4904,16 +6399,25 @@ function getRuntimeSnapshot() {
     payment_recipient_name: runtimeConfig.payment_recipient_name,
     payment_bank: runtimeConfig.payment_bank,
     payment_comment: runtimeConfig.payment_comment,
-    payment_style_text: runtimeConfig.payment_style_text,
-    payment_layout_text: runtimeConfig.payment_layout_text,
+    payment_style_text: runtimeConfig.payment_style_text || DEFAULT_PAYMENT_STYLE_TEXT,
+    payment_layout_text: runtimeConfig.payment_layout_text || DEFAULT_PAYMENT_LAYOUT_TEXT,
+    payment_guard_rules_text: runtimeConfig.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT,
     payment_bold_mode: runtimeConfig.payment_bold_mode,
-    payment_example_text: runtimeConfig.payment_example_text,
+    payment_example_text: runtimeConfig.payment_example_text || DEFAULT_PAYMENT_EXAMPLE_TEXT,
+    reader_node_rules_text: runtimeConfig.reader_node_rules_text || DEFAULT_READER_NODE_RULES_TEXT,
+    order_chat_template_text: runtimeConfig.order_chat_template_text || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT,
+    memory_node_rules_text: runtimeConfig.memory_node_rules_text || DEFAULT_MEMORY_NODE_RULES_TEXT,
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
-    delivery_rules_text: runtimeConfig.delivery_rules_text,
-    delivery_style_text: runtimeConfig.delivery_style_text,
-    delivery_layout_text: runtimeConfig.delivery_layout_text,
+    delivery_free_services: runtimeConfig.delivery_free_services || DEFAULT_DELIVERY_FREE_SERVICES,
+    delivery_paid_services: runtimeConfig.delivery_paid_services || DEFAULT_DELIVERY_PAID_SERVICES,
+    delivery_rules_text: runtimeConfig.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT,
+    delivery_style_text: runtimeConfig.delivery_style_text || DEFAULT_DELIVERY_STYLE_TEXT,
+    delivery_layout_text: runtimeConfig.delivery_layout_text || DEFAULT_DELIVERY_LAYOUT_TEXT,
+    delivery_consultant_enabled: parseConfigBoolean(runtimeConfig.delivery_consultant_enabled, true),
+    delivery_consultant_options_text: runtimeConfig.delivery_consultant_options_text || DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT,
+    delivery_consultant_rules_text: runtimeConfig.delivery_consultant_rules_text || DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT,
     delivery_bold_mode: runtimeConfig.delivery_bold_mode,
-    delivery_example_text: runtimeConfig.delivery_example_text,
+    delivery_example_text: runtimeConfig.delivery_example_text || DEFAULT_DELIVERY_EXAMPLE_TEXT,
     delivery_tracking_enabled: parseConfigBoolean(runtimeConfig.delivery_tracking_enabled, true),
     delivery_tracking_text: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
@@ -5095,6 +6599,7 @@ function applyConfigUpdate(body) {
     ['core_no_stock_check_enabled', 'CORE_NO_STOCK_CHECK_ENABLED'],
     ['core_no_catalog_return_enabled', 'CORE_NO_CATALOG_RETURN_ENABLED'],
     ['core_no_resell_enabled', 'CORE_NO_RESELL_ENABLED'],
+    ['problem_solver_enabled', 'PROBLEM_SOLVER_ENABLED'],
     ['facts_no_invent_enabled', 'FACTS_NO_INVENT_ENABLED'],
     ['facts_no_fake_payment_enabled', 'FACTS_NO_FAKE_PAYMENT_ENABLED'],
     ['facts_no_fake_delivery_enabled', 'FACTS_NO_FAKE_DELIVERY_ENABLED'],
@@ -5106,6 +6611,8 @@ function applyConfigUpdate(body) {
     ['smalltalk_outfit_advice_enabled', 'SMALLTALK_OUTFIT_ADVICE_ENABLED'],
     ['smalltalk_weather_enabled', 'SMALLTALK_WEATHER_ENABLED'],
     ['smalltalk_soft_product_link_enabled', 'SMALLTALK_SOFT_PRODUCT_LINK_ENABLED'],
+    ['sales_psychology_enabled', 'SALES_PSYCHOLOGY_ENABLED'],
+    ['size_fit_enabled', 'SIZE_FIT_ENABLED'],
     ['order_path_enabled', 'ORDER_PATH_ENABLED'],
     ['order_collect_size_enabled', 'ORDER_COLLECT_SIZE_ENABLED'],
     ['order_collect_insole_enabled', 'ORDER_COLLECT_INSOLE_ENABLED'],
@@ -5116,12 +6623,17 @@ function applyConfigUpdate(body) {
     ['order_collect_pickup_enabled', 'ORDER_COLLECT_PICKUP_ENABLED'],
     ['order_collect_payment_enabled', 'ORDER_COLLECT_PAYMENT_ENABLED'],
     ['order_collect_receipt_enabled', 'ORDER_COLLECT_RECEIPT_ENABLED'],
+    ['soft_retention_enabled', 'SOFT_RETENTION_ENABLED'],
     ['response_guard_enabled', 'RESPONSE_GUARD_ENABLED'],
     ['response_guard_no_fake_payment_enabled', 'RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED'],
     ['response_guard_no_repeat_known_enabled', 'RESPONSE_GUARD_NO_REPEAT_KNOWN_ENABLED'],
     ['response_guard_human_tone_enabled', 'RESPONSE_GUARD_HUMAN_TONE_ENABLED'],
     ['response_guard_next_step_enabled', 'RESPONSE_GUARD_NEXT_STEP_ENABLED'],
     ['response_guard_no_final_payment_enabled', 'RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED'],
+    ['self_check_enabled', 'SELF_CHECK_ENABLED'],
+    ['self_check_autocorrect_low_risk_enabled', 'SELF_CHECK_AUTOCORRECT_LOW_RISK_ENABLED'],
+    ['self_check_block_high_risk_enabled', 'SELF_CHECK_BLOCK_HIGH_RISK_ENABLED'],
+    ['self_check_create_draft_lessons_enabled', 'SELF_CHECK_CREATE_DRAFT_LESSONS_ENABLED'],
     ['receipt_check_enabled', 'RECEIPT_CHECK_ENABLED'],
     ['receipt_check_amount_enabled', 'RECEIPT_CHECK_AMOUNT_ENABLED'],
     ['receipt_check_bank_enabled', 'RECEIPT_CHECK_BANK_ENABLED'],
@@ -5145,23 +6657,42 @@ function applyConfigUpdate(body) {
     ['contacts_enabled', 'CONTACTS_ENABLED'],
     ['contacts_anti_scam_enabled', 'CONTACTS_ANTI_SCAM_ENABLED'],
     ['delivery_tracking_enabled', 'DELIVERY_TRACKING_ENABLED'],
+    ['delivery_consultant_enabled', 'DELIVERY_CONSULTANT_ENABLED'],
   ].forEach(([key, envKey]) => applyBooleanConfig(body, key, envKey, true));
 
   applyBooleanConfig(body, 'order_chat_enabled', 'ORDER_CHAT_ENABLED', false);
   applyBooleanConfig(body, 'contacts_instagram_enabled', 'CONTACTS_INSTAGRAM_ENABLED', false);
 
   [
-    ['core_rules_text', 'CORE_RULES_TEXT'],
-    ['facts_rules_text', 'FACTS_RULES_TEXT'],
-    ['smalltalk_rules_text', 'SMALLTALK_RULES_TEXT'],
-    ['order_rules_text', 'ORDER_RULES_TEXT'],
+    ['core_rules_text', 'CORE_RULES_TEXT', DEFAULT_CORE_RULES_TEXT],
+    ['problem_solver_triggers_text', 'PROBLEM_SOLVER_TRIGGERS_TEXT', DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT],
+    ['problem_solver_rules_text', 'PROBLEM_SOLVER_RULES_TEXT', DEFAULT_PROBLEM_SOLVER_RULES_TEXT],
+    ['problem_solver_forbidden_text', 'PROBLEM_SOLVER_FORBIDDEN_TEXT', DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT],
+    ['problem_solver_examples_text', 'PROBLEM_SOLVER_EXAMPLES_TEXT', DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT],
+    ['facts_rules_text', 'FACTS_RULES_TEXT', DEFAULT_FACTS_RULES_TEXT],
+    ['smalltalk_rules_text', 'SMALLTALK_RULES_TEXT', DEFAULT_SMALLTALK_RULES_TEXT],
+    ['sales_psychology_triggers_text', 'SALES_PSYCHOLOGY_TRIGGERS_TEXT', DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT],
+    ['sales_psychology_principles_text', 'SALES_PSYCHOLOGY_PRINCIPLES_TEXT', DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT],
+    ['sales_psychology_techniques_text', 'SALES_PSYCHOLOGY_TECHNIQUES_TEXT', DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT],
+    ['sales_psychology_forbidden_text', 'SALES_PSYCHOLOGY_FORBIDDEN_TEXT', DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT],
+    ['sales_psychology_examples_text', 'SALES_PSYCHOLOGY_EXAMPLES_TEXT', DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT],
+    ['size_fit_shoe_table_text', 'SIZE_FIT_SHOE_TABLE_TEXT', DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT],
+    ['size_fit_category_rules_text', 'SIZE_FIT_CATEGORY_RULES_TEXT', DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT],
+    ['size_fit_validation_rules_text', 'SIZE_FIT_VALIDATION_RULES_TEXT', DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT],
+    ['size_fit_examples_text', 'SIZE_FIT_EXAMPLES_TEXT', DEFAULT_SIZE_FIT_EXAMPLES_TEXT],
+    ['order_rules_text', 'ORDER_RULES_TEXT', DEFAULT_ORDER_RULES_TEXT],
+    ['soft_retention_triggers_text', 'SOFT_RETENTION_TRIGGERS_TEXT', DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT],
+    ['soft_retention_rules_text', 'SOFT_RETENTION_RULES_TEXT', DEFAULT_SOFT_RETENTION_RULES_TEXT],
+    ['soft_retention_forbidden_text', 'SOFT_RETENTION_FORBIDDEN_TEXT', DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT],
+    ['soft_retention_examples_text', 'SOFT_RETENTION_EXAMPLES_TEXT', DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT],
     ['order_chat_id', 'ORDER_CHAT_ID'],
-    ['response_guard_rules_text', 'RESPONSE_GUARD_RULES_TEXT'],
+    ['response_guard_rules_text', 'RESPONSE_GUARD_RULES_TEXT', DEFAULT_RESPONSE_GUARD_RULES_TEXT],
+    ['self_check_rules_text', 'SELF_CHECK_RULES_TEXT', DEFAULT_SELF_CHECK_RULES_TEXT],
     ['receipt_check_success_text', 'RECEIPT_CHECK_SUCCESS_TEXT'],
     ['receipt_check_mismatch_text', 'RECEIPT_CHECK_MISMATCH_TEXT'],
-    ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT'],
+    ['receipt_check_rules_text', 'RECEIPT_CHECK_RULES_TEXT', DEFAULT_RECEIPT_CHECK_RULES_TEXT],
     ['quality_return_text', 'QUALITY_RETURN_TEXT'],
-    ['quality_rules_text', 'QUALITY_RULES_TEXT'],
+    ['quality_rules_text', 'QUALITY_RULES_TEXT', DEFAULT_QUALITY_RULES_TEXT],
     ['store_trust_text', 'STORE_TRUST_TEXT'],
     ['contacts_website', 'CONTACTS_WEBSITE'],
     ['contacts_telegram', 'CONTACTS_TELEGRAM'],
@@ -5171,14 +6702,24 @@ function applyConfigUpdate(body) {
     ['contacts_instagram', 'CONTACTS_INSTAGRAM'],
     ['contacts_about_text', 'CONTACTS_ABOUT_TEXT'],
     ['contacts_rules_text', 'CONTACTS_RULES_TEXT'],
-    ['payment_style_text', 'PAYMENT_STYLE_TEXT'],
-    ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT'],
-    ['payment_example_text', 'PAYMENT_EXAMPLE_TEXT'],
-    ['delivery_style_text', 'DELIVERY_STYLE_TEXT'],
-    ['delivery_layout_text', 'DELIVERY_LAYOUT_TEXT'],
-    ['delivery_example_text', 'DELIVERY_EXAMPLE_TEXT'],
+    ['media_node_rules_text', 'MEDIA_NODE_RULES_TEXT', DEFAULT_MEDIA_NODE_RULES_TEXT],
+    ['manager_node_rules_text', 'MANAGER_NODE_RULES_TEXT', DEFAULT_MANAGER_NODE_RULES_TEXT],
+    ['payment_style_text', 'PAYMENT_STYLE_TEXT', DEFAULT_PAYMENT_STYLE_TEXT],
+    ['payment_layout_text', 'PAYMENT_LAYOUT_TEXT', DEFAULT_PAYMENT_LAYOUT_TEXT],
+    ['payment_guard_rules_text', 'PAYMENT_GUARD_RULES_TEXT', DEFAULT_PAYMENT_GUARD_RULES_TEXT],
+    ['payment_example_text', 'PAYMENT_EXAMPLE_TEXT', DEFAULT_PAYMENT_EXAMPLE_TEXT],
+    ['reader_node_rules_text', 'READER_NODE_RULES_TEXT', DEFAULT_READER_NODE_RULES_TEXT],
+    ['order_chat_template_text', 'ORDER_CHAT_TEMPLATE_TEXT', DEFAULT_ORDER_CHAT_TEMPLATE_TEXT],
+    ['memory_node_rules_text', 'MEMORY_NODE_RULES_TEXT', DEFAULT_MEMORY_NODE_RULES_TEXT],
+    ['delivery_free_services', 'DELIVERY_FREE_SERVICES', DEFAULT_DELIVERY_FREE_SERVICES],
+    ['delivery_paid_services', 'DELIVERY_PAID_SERVICES', DEFAULT_DELIVERY_PAID_SERVICES],
+    ['delivery_style_text', 'DELIVERY_STYLE_TEXT', DEFAULT_DELIVERY_STYLE_TEXT],
+    ['delivery_layout_text', 'DELIVERY_LAYOUT_TEXT', DEFAULT_DELIVERY_LAYOUT_TEXT],
+    ['delivery_consultant_options_text', 'DELIVERY_CONSULTANT_OPTIONS_TEXT', DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT],
+    ['delivery_consultant_rules_text', 'DELIVERY_CONSULTANT_RULES_TEXT', DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT],
+    ['delivery_example_text', 'DELIVERY_EXAMPLE_TEXT', DEFAULT_DELIVERY_EXAMPLE_TEXT],
     ['delivery_tracking_text', 'DELIVERY_TRACKING_TEXT'],
-  ].forEach(([key, envKey]) => applyStringConfig(body, key, envKey));
+  ].forEach(([key, envKey, fallback]) => applyStringConfig(body, key, envKey, fallback));
 
   applyBooleanConfig(body, 'dialog_examples_enabled', 'DIALOG_EXAMPLES_ENABLED', false);
   applyStringConfig(body, 'dialog_examples_text', 'DIALOG_EXAMPLES_TEXT');
@@ -5361,7 +6902,7 @@ function applyConfigUpdate(body) {
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'delivery_rules_text')) {
-    runtimeConfig.delivery_rules_text = String(body.delivery_rules_text || '');
+    runtimeConfig.delivery_rules_text = String(body.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT);
     process.env.DELIVERY_RULES_TEXT = runtimeConfig.delivery_rules_text;
   }
 
@@ -5628,18 +7169,18 @@ function getProviderErrorDetail(error) {
 function getSaiGptProviderErrorMessage(error) {
   const status = Number(error.response?.status || 0);
   const detail = String(getProviderErrorDetail(error) || '').trim();
-  if (status === 400) return `S.AI GPT API отклонил запрос. Проверь Base URL, формат API и модель.${detail ? ` Деталь: ${detail}` : ''}`;
-  if (status === 401) return 'S.AI GPT API не принял ключ. Проверь API Key или создай новый ключ у провайдера.';
-  if (status === 402) return 'S.AI GPT API просит оплату: закончился баланс, квота или тариф у провайдера. Пополни баланс либо выбери другую модель/API.';
-  if (status === 403) return 'S.AI GPT API запретил доступ. Обычно модель недоступна для этого ключа или аккаунта.';
-  if (status === 404) return 'S.AI GPT API не нашёл модель или endpoint. Проверь Base URL и выбранную модель.';
-  if (status === 429) return 'S.AI GPT API упёрся в лимит запросов. Подожди немного или выбери другой ключ/модель.';
-  if (status >= 500) return 'S.AI GPT API сейчас отвечает ошибкой на стороне провайдера. Попробуй позже или выбери другой provider.';
-  if (isTimeoutError(error)) return 'S.AI GPT API слишком долго не отвечает. Проверь Base URL или выбери более быстрый provider.';
+  if (status === 400) return `S.AI Штурман API отклонил запрос. Проверь Base URL, формат API и модель.${detail ? ` Деталь: ${detail}` : ''}`;
+  if (status === 401) return 'S.AI Штурман API не принял ключ. Проверь API Key или создай новый ключ у провайдера.';
+  if (status === 402) return 'S.AI Штурман API просит оплату: закончился баланс, квота или тариф у провайдера. Пополни баланс либо выбери другую модель/API.';
+  if (status === 403) return 'S.AI Штурман API запретил доступ. Обычно модель недоступна для этого ключа или аккаунта.';
+  if (status === 404) return 'S.AI Штурман API не нашёл модель или endpoint. Проверь Base URL и выбранную модель.';
+  if (status === 429) return 'S.AI Штурман API упёрся в лимит запросов. Подожди немного или выбери другой ключ/модель.';
+  if (status >= 500) return 'S.AI Штурман API сейчас отвечает ошибкой на стороне провайдера. Попробуй позже или выбери другой provider.';
+  if (isTimeoutError(error)) return 'S.AI Штурман API слишком долго не отвечает. Проверь Base URL или выбери более быстрый provider.';
   if (/ENOTFOUND|ECONNREFUSED|EAI_AGAIN|network/i.test(error.code || error.message || '')) {
-    return 'S.AI GPT API недоступен по сети. Проверь Base URL.';
+    return 'S.AI Штурман API недоступен по сети. Проверь Base URL.';
   }
-  return detail || 'S.AI GPT не ответил.';
+  return detail || 'S.AI Штурман не ответил.';
 }
 
 function wait(ms) {
@@ -6815,13 +8356,20 @@ function getPersonaGuidance(config) {
     .join(', ');
 }
 
-function getMediaBehaviorGuidance(mediaBehavior) {
+function getMediaBehaviorGuidance(config) {
+  const mediaBehavior = typeof config === 'string' ? config : config?.media_behavior;
   const map = {
     describe_media: 'медиа: если есть фото/скрин/PDF, сначала распознать содержимое: товар, кроссовки, корзина, ПВЗ/адрес, карта доставки, чек оплаты или другое. Не считать любое фото чеком.',
     answer_from_media: 'медиа: если есть фото/скрин/PDF, использовать его как главный контекст ответа: распознать, что на нём, и ответить по смыслу. Не считать любое фото чеком.',
     text_first: 'медиа: сначала опираться на текст клиента, фото/скрин/PDF использовать как дополнительный контекст. Не считать любое фото чеком.',
   };
-  return map[mediaBehavior] || map.answer_from_media;
+  const rules = typeof config === 'string' ? '' : String(config?.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT).trim();
+  return [map[mediaBehavior] || map.answer_from_media, rules && `Правила медиа-анализа:\n${rules}`].filter(Boolean).join('\n');
+}
+
+function getManagerModeGuidance(config) {
+  const rules = String(config.manager_node_rules_text || DEFAULT_MANAGER_NODE_RULES_TEXT).trim();
+  return rules ? `Менеджерский перехват:\n${rules}` : '';
 }
 
 function buildGuidanceSection(title, rows, freeText = '') {
@@ -6870,11 +8418,25 @@ function getIwakCoreGuidance(config) {
     parseConfigBoolean(config.core_published_available_enabled, true)
       && 'Опубликованный товар считается доступным к заказу.',
     parseConfigBoolean(config.core_no_stock_check_enabled, true)
-      && 'Не проверять склад, остатки или базу товаров и не писать, что нужно уточнить наличие.',
+      && 'Не делать вид, что AI сам проверил склад, остатки или базу товаров без отдельного источника.',
     parseConfigBoolean(config.core_no_catalog_return_enabled, true)
       && 'Не возвращать клиента в каталог, если он уже прислал товар или размер.',
     parseConfigBoolean(config.core_no_resell_enabled, true)
       && 'Работать как closing-менеджер: принять заказ, уточнить недостающее, довести до оплаты и чека.',
+    parseConfigBoolean(config.problem_solver_enabled, true)
+      && 'Скилл "Решатель наличия" включён: если товара/размера нет на сайте или AI его не видит, не отказывать с порога, а искать путь решения.',
+    parseConfigBoolean(config.problem_solver_enabled, true)
+      && String(config.problem_solver_triggers_text || DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT).trim()
+      && `Триггеры решателя:\n${String(config.problem_solver_triggers_text || DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT).trim()}`,
+    parseConfigBoolean(config.problem_solver_enabled, true)
+      && String(config.problem_solver_rules_text || DEFAULT_PROBLEM_SOLVER_RULES_TEXT).trim()
+      && `Правила решателя наличия:\n${String(config.problem_solver_rules_text || DEFAULT_PROBLEM_SOLVER_RULES_TEXT).trim()}`,
+    parseConfigBoolean(config.problem_solver_enabled, true)
+      && String(config.problem_solver_forbidden_text || DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT).trim()
+      && `Не отвечать так на вопросы наличия/поиска:\n${String(config.problem_solver_forbidden_text || DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT).trim()}`,
+    parseConfigBoolean(config.problem_solver_enabled, true)
+      && String(config.problem_solver_examples_text || DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT).trim()
+      && `Примеры решателя. Не копировать дословно, использовать как смысл:\n${String(config.problem_solver_examples_text || DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT).trim()}`,
   ], config.core_rules_text);
 }
 
@@ -6914,6 +8476,38 @@ function getSmalltalkGuidance(config) {
   ], config.smalltalk_rules_text);
 }
 
+function getSalesPsychologyGuidance(config) {
+  if (!parseConfigBoolean(config.sales_psychology_enabled, true)) return '';
+  return buildGuidanceSection('Психология продаж:', [
+    'Использовать как слой мышления продавца: не цитировать правила клиенту, а применять их в ответе.',
+    String(config.sales_psychology_triggers_text || DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT).trim()
+      && `Когда особенно применять:\n${String(config.sales_psychology_triggers_text || DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT).trim()}`,
+    String(config.sales_psychology_principles_text || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT).trim()
+      && `Принципы продаж РФ/IWAK:\n${String(config.sales_psychology_principles_text || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT).trim()}`,
+    String(config.sales_psychology_techniques_text || DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT).trim()
+      && `Приёмы продавца:\n${String(config.sales_psychology_techniques_text || DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT).trim()}`,
+    String(config.sales_psychology_forbidden_text || DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT).trim()
+      && `Запрещённые приёмы:\n${String(config.sales_psychology_forbidden_text || DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT).trim()}`,
+    String(config.sales_psychology_examples_text || DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT).trim()
+      && `Примеры применения. Не копировать дословно, использовать как смысл:\n${String(config.sales_psychology_examples_text || DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT).trim()}`,
+  ]);
+}
+
+function getSizeFitGuidance(config) {
+  if (!parseConfigBoolean(config.size_fit_enabled, true)) return '';
+  return buildGuidanceSection('Размеры и посадка:', [
+    'Использовать как справочник продавца. Клиенту не пересказывать всю таблицу, а отвечать по его категории товара и вопросу.',
+    String(config.size_fit_shoe_table_text || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT).trim()
+      && `Обувная таблица:\n${String(config.size_fit_shoe_table_text || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT).trim()}`,
+    String(config.size_fit_category_rules_text || DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT).trim()
+      && `Правила по категориям:\n${String(config.size_fit_category_rules_text || DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT).trim()}`,
+    String(config.size_fit_validation_rules_text || DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT).trim()
+      && `Проверка связки размер/см и запреты:\n${String(config.size_fit_validation_rules_text || DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT).trim()}`,
+    String(config.size_fit_examples_text || DEFAULT_SIZE_FIT_EXAMPLES_TEXT).trim()
+      && `Примеры. Не копировать дословно, использовать как смысл:\n${String(config.size_fit_examples_text || DEFAULT_SIZE_FIT_EXAMPLES_TEXT).trim()}`,
+  ]);
+}
+
 function getOrderPathGuidance(config) {
   if (!parseConfigBoolean(config.order_path_enabled, true)) return '';
   const stepMode = config.order_step_mode === 'single'
@@ -6926,8 +8520,8 @@ function getOrderPathGuidance(config) {
     parseConfigBoolean(config.order_collect_insole_enabled, true)
       && 'Для обуви уточнить длину стельки в сантиметрах, если её ещё нет.',
     parseConfigBoolean(config.order_collect_insole_enabled, true)
-      && 'Если клиент прислал фото бирки/размера или написал, что в магазине ему подошёл конкретный EU-размер, не гонять его повторно за стелькой. Подтвердить размер живо, как менеджер, и дать ориентир по стельке из таблицы: 36≈23 см, 37≈23.5 см, 38≈24 см, 39≈25 см, 40≈25.5 см, 41≈26 см, 42≈26.5 см, 43≈27.2 см, 44≈28 см, 45≈29 см, 46≈29.5 см. Хороший тон: "Да, вижу у вас 41 размер — это примерно 26 см по стельке." Не писать сухо: "На фото 41 размер".',
-    'Для обуви проверять связку размера и стельки: если размер и сантиметры выглядят несоответствием, не продолжать оформление, а мягко переспросить. Например, 44 размер и 29 см по стельке выглядят подозрительно: 29 см ближе к 45-46.',
+      && 'Если клиент прислал фото бирки/размера или написал, что в магазине ему подошёл конкретный EU-размер, не гонять его повторно за стелькой. Подтвердить размер живо, как менеджер, и дать ориентир из узла "Размеры и посадка".',
+    'Для обуви проверять связку размера и стельки по узлу "Размеры и посадка": если размер и сантиметры выглядят несоответствием, не продолжать оформление, а мягко переспросить.',
     'Если менеджер в диалоге написал остатки по модели, например "остались 42-26,5 43-27,5", считать это главным фактом по наличию. Если размер или стелька клиента не попадает в эти остатки, не оформлять заказ и не спрашивать доставку/ФИО/телефон; коротко сказать, какие размеры остались, и предложить другую модель или размер.',
     parseConfigBoolean(config.order_collect_full_name_enabled, true)
       && 'Для оформления собрать ФИО получателя.',
@@ -6943,6 +8537,20 @@ function getOrderPathGuidance(config) {
       && 'Когда основные данные собраны, аккуратно отправить реквизиты из раздела Оплата.',
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
+    parseConfigBoolean(config.soft_retention_enabled, true)
+      && `Скилл "Мягкое удержание" включён. Если клиент уходит на потом, не отпускать сухим "хорошо, жду"; мягко снять барьер и предложить понятный следующий шаг.`,
+    parseConfigBoolean(config.soft_retention_enabled, true)
+      && String(config.soft_retention_triggers_text || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT).trim()
+      && `Триггеры ухода на потом:\n${String(config.soft_retention_triggers_text || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT).trim()}`,
+    parseConfigBoolean(config.soft_retention_enabled, true)
+      && String(config.soft_retention_rules_text || DEFAULT_SOFT_RETENTION_RULES_TEXT).trim()
+      && `Правила мягкого удержания:\n${String(config.soft_retention_rules_text || DEFAULT_SOFT_RETENTION_RULES_TEXT).trim()}`,
+    parseConfigBoolean(config.soft_retention_enabled, true)
+      && String(config.soft_retention_forbidden_text || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT).trim()
+      && `Не отвечать так на уход клиента:\n${String(config.soft_retention_forbidden_text || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT).trim()}`,
+    parseConfigBoolean(config.soft_retention_enabled, true)
+      && String(config.soft_retention_examples_text || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT).trim()
+      && `Примеры мягкого удержания. Не копировать дословно, использовать как смысл:\n${String(config.soft_retention_examples_text || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT).trim()}`,
     'Не отправлять клиенту полную анкету оформления, если он просто уточняет наличие, размер или стельку. В таком случае ответить только по вопросу.',
     'Ссылка или фото товара не всегда означает новый заказ. Если до этого клиент обсуждал скидку, сравнение цены, внешний пример или написал "сейчас скину модель", считать новую ссылку/фото продолжением этого вопроса, а не начинать оформление и не спрашивать размер.',
     'В первом ответе на корзину или готовый заказ не начинать резко с ФИО и телефона. Сначала мягко подтвердить товар/размер/цену, сказать про доставку: Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам, и спросить коротко: "Оформим?" Контакты просить уже после согласия клиента.',
@@ -7106,6 +8714,7 @@ function getVisiblePaymentGuidance(config) {
     ...details,
     String(config.payment_style_text || '').trim() && `Стиль сообщения оплаты: ${String(config.payment_style_text).trim()}`,
     String(config.payment_layout_text || '').trim() && `Расположение оплаты: ${String(config.payment_layout_text).trim()}`,
+    String(config.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT).trim() && `Правила оплаты и чека:\n${String(config.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT).trim()}`,
     getBoldModeGuidance('Жирный текст в оплате', config.payment_bold_mode),
     String(config.payment_example_text || '').trim() && `Пример оформления оплаты. Не копировать дословно, использовать как формат:\n${String(config.payment_example_text).trim()}`,
   ].filter(Boolean).join('\n');
@@ -7126,13 +8735,19 @@ function getVisibleDeliveryGuidance(config) {
     return 'Доставка в AI Control выключена: не придумывайте условия, службы, сроки или стоимость доставки.';
   }
   const text = String(config.delivery_rules_text || '').trim();
+  const consultantEnabled = parseConfigBoolean(config.delivery_consultant_enabled, true);
+  const consultantOptions = String(config.delivery_consultant_options_text || DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT).trim();
+  const consultantRules = String(config.delivery_consultant_rules_text || DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT).trim();
   const trackingText = parseConfigBoolean(config.delivery_tracking_enabled, true)
     ? String(config.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT).trim()
     : '';
-  if (!text && !trackingText) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
+  if (!text && !trackingText && !consultantOptions && !consultantRules) return 'Доставка в AI Control включена, но правила пустые: не придумывайте условия доставки.';
   return [
     'Доставка из AI Control:',
-    DELIVERY_COST_RULE_TEXT,
+    buildDeliveryCostRuleText(config),
+    consultantEnabled && 'Скил доставки: Умный подбор доставки включён. AI должен быть консультантом-решателем, а не справочником.',
+    consultantEnabled && consultantOptions && `Таблица вариантов доставки:\n${consultantOptions}`,
+    consultantEnabled && consultantRules && `Правила подбора доставки:\n${consultantRules}`,
     text && text,
     trackingText && `Отслеживание доставки:\n${trackingText}`,
     String(config.delivery_style_text || '').trim() && `Стиль сообщения доставки: ${String(config.delivery_style_text).trim()}`,
@@ -7147,6 +8762,8 @@ function getVisibleControlState(config, memoryContext = null) {
     core: Boolean(getIwakCoreGuidance(config)),
     facts: Boolean(getFactBoundaryGuidance(config)),
     smalltalk: Boolean(getSmalltalkGuidance(config)),
+    salesPsychology: Boolean(getSalesPsychologyGuidance(config)),
+    sizeFit: Boolean(getSizeFitGuidance(config)),
     orderPath: Boolean(getOrderPathGuidance(config)),
     responseGuard: Boolean(getResponseGuardGuidance(config)),
     receiptCheck: Boolean(getReceiptCheckGuidance(config)),
@@ -7189,13 +8806,16 @@ function buildSystemPrompt(config, memoryContext = null, queryText = '') {
     getToneGuidance(config.tone),
     getResponseLengthGuidance(config.response_length),
     getPersonaGuidance(config),
-    getMediaBehaviorGuidance(config.media_behavior),
+    getMediaBehaviorGuidance(config),
+    getManagerModeGuidance(config),
   ].filter(Boolean);
 
   [
     getIwakCoreGuidance(config),
     getFactBoundaryGuidance(config),
     getSmalltalkGuidance(config),
+    getSalesPsychologyGuidance(config),
+    getSizeFitGuidance(config),
     getOrderPathGuidance(config),
     getResponseGuardGuidance(config),
     getReceiptCheckGuidance(config),
@@ -7229,6 +8849,110 @@ function buildAiControlPreview(config = runtimeConfig) {
   };
 }
 
+function buildCodeConstantsPassport() {
+  return {
+    server: {
+      host: HOST,
+      port: PORT,
+      httpBodyLimit: HTTP_BODY_LIMIT,
+      requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      aiRequestTimeoutMs: AI_REQUEST_TIMEOUT_MS,
+      maxInputTextLength: MAX_INPUT_TEXT_LENGTH,
+    },
+    concurrency: {
+      aiConcurrencyLimit: AI_CONCURRENCY_LIMIT,
+      getFileConcurrencyLimit: GETFILE_CONCURRENCY_LIMIT,
+      slotWaitTimeoutMs: SLOT_WAIT_TIMEOUT_MS,
+      slotWaitIntervalMs: SLOT_WAIT_INTERVAL_MS,
+    },
+    logs: {
+      logLevel: LOG_LEVEL,
+      logTextLimit: LOG_TEXT_LIMIT,
+      aiDecisionTraceTextLimit: AI_DECISION_TRACE_TEXT_LIMIT,
+      aiDecisionTraceShortLimit: AI_DECISION_TRACE_SHORT_LIMIT,
+      maxLogFileBytes: MAX_LOG_FILE_BYTES,
+      maxLogArchives: MAX_LOG_ARCHIVES,
+      logBufferLimit: LOG_BUFFER_LIMIT,
+    },
+    media: {
+      sttTimeoutMs: STT_TIMEOUT_MS,
+      maxSttFileBytes: MAX_STT_FILE_BYTES,
+      maxPdfReceiptBytes: MAX_PDF_RECEIPT_BYTES,
+      pdfReceiptTextLimit: PDF_RECEIPT_TEXT_LIMIT,
+      pdfRenderTimeoutMs: PDF_RENDER_TIMEOUT_MS,
+      pdfRenderDpi: PDF_RENDER_DPI,
+      iwakReaderVisionImageLimit: IWAK_READER_VISION_IMAGE_LIMIT,
+    },
+    iwakReader: {
+      iwakProductApiBaseUrl: IWAK_PRODUCT_API_BASE_URL,
+      iwakCartMaxItems: IWAK_CART_MAX_ITEMS,
+      iwakCartFetchTimeoutMs: IWAK_CART_FETCH_TIMEOUT_MS,
+      iwakCartProductCacheTtlMs: IWAK_CART_PRODUCT_CACHE_TTL_MS,
+    },
+    dialog: {
+      greetingDialogTimeoutMs: GREETING_DIALOG_TIMEOUT_MS,
+      typingRefreshMs: TYPING_REFRESH_MS,
+      readDelayMinMs: READ_DELAY_MIN_MS,
+      readDelayMaxMs: READ_DELAY_MAX_MS,
+      longReplyPartLimit: LONG_REPLY_PART_LIMIT,
+      humanTypingMinCps: HUMAN_TYPING_MIN_CPS,
+      humanTypingMaxCps: HUMAN_TYPING_MAX_CPS,
+      humanTypingMinDelayMs: HUMAN_TYPING_MIN_DELAY_MS,
+      humanTypingMaxDelayMs: HUMAN_TYPING_MAX_DELAY_MS,
+    },
+    memory: {
+      memoryRecentLimit: MEMORY_RECENT_LIMIT,
+      memoryMessagesTtlDays: MEMORY_MESSAGES_TTL_DAYS,
+      memoryFactsTtlDays: MEMORY_FACTS_TTL_DAYS,
+      memoryStateTtlDays: MEMORY_STATE_TTL_DAYS,
+      memoryMaxMessages: MEMORY_MAX_MESSAGES,
+      memoryHistoryCharLimit: MEMORY_HISTORY_CHAR_LIMIT,
+      minMemoryRecentLimit: MIN_MEMORY_RECENT_LIMIT,
+      maxMemoryRecentLimit: MAX_MEMORY_RECENT_LIMIT,
+    },
+    batching: {
+      batchDebounceMs: BATCH_DEBOUNCE_MS,
+      batchMaxWindowMs: BATCH_MAX_WINDOW_MS,
+      sizeOnlyFollowupDebounceMs: SIZE_ONLY_FOLLOWUP_DEBOUNCE_MS,
+      orderContextBatchMaxWindowMs: ORDER_CONTEXT_BATCH_MAX_WINDOW_MS,
+      orderPendingReplySettleMs: ORDER_PENDING_REPLY_SETTLE_MS,
+      semanticBatchDebounceMs: SEMANTIC_BATCH_DEBOUNCE_MS,
+      semanticBatchMaxWindowMs: SEMANTIC_BATCH_MAX_WINDOW_MS,
+      multipartResponseDebounceMs: MULTIPART_RESPONSE_DEBOUNCE_MS,
+      multipartResponseMaxWindowMs: MULTIPART_RESPONSE_MAX_WINDOW_MS,
+      orderContextMergeGraceMs: ORDER_CONTEXT_MERGE_GRACE_MS,
+      orderContextMergePollMs: ORDER_CONTEXT_MERGE_POLL_MS,
+      minBatchDebounceMs: MIN_BATCH_DEBOUNCE_MS,
+      maxBatchDebounceMs: MAX_BATCH_DEBOUNCE_MS,
+      minMultipartResponseDebounceMs: MIN_MULTIPART_RESPONSE_DEBOUNCE_MS,
+      maxMultipartResponseDebounceMs: MAX_MULTIPART_RESPONSE_DEBOUNCE_MS,
+      minMultipartResponseMaxWindowMs: MIN_MULTIPART_RESPONSE_MAX_WINDOW_MS,
+      maxMultipartResponseMaxWindowMs: MAX_MULTIPART_RESPONSE_MAX_WINDOW_MS,
+    },
+    manager: {
+      managerReturnDelayMs: MANAGER_RETURN_DELAY_MS,
+      minManagerReturnDelayMs: MIN_MANAGER_RETURN_DELAY_MS,
+      maxManagerReturnDelayMs: MAX_MANAGER_RETURN_DELAY_MS,
+    },
+    training: {
+      maxTrainingExamples: MAX_TRAINING_EXAMPLES,
+      trainingPromptExamples: TRAINING_PROMPT_EXAMPLES,
+      trainingRelevantPromptExamples: TRAINING_RELEVANT_PROMPT_EXAMPLES,
+      trainingRecentPromptExamples: TRAINING_RECENT_PROMPT_EXAMPLES,
+    },
+    saiGpt: {
+      saiGptMemoryMaxMessages: SAI_GPT_MEMORY_MAX_MESSAGES,
+      saiGptCodeFileLimit: SAI_GPT_CODE_FILE_LIMIT,
+      saiGptCodeSnippetLimit: SAI_GPT_CODE_SNIPPET_LIMIT,
+      saiGptContextCharLimit: SAI_GPT_CONTEXT_CHAR_LIMIT,
+    },
+    webhook: {
+      webhookErrorGraceMs: WEBHOOK_ERROR_GRACE_MS,
+      telegramAllowedUpdates: TELEGRAM_ALLOWED_UPDATES,
+    },
+  };
+}
+
 function sanitizeSaiGptText(value, limit = 4000) {
   return String(value || '').trim().slice(0, limit);
 }
@@ -7250,10 +8974,14 @@ function redactSensitiveText(value) {
 }
 
 function getSaiGptConfig(config = runtimeConfig) {
+  const sharedKey = String(config.ai_key || config.sai_gpt_key || '').trim();
+  const sharedUrl = String(config.ai_url || config.sai_gpt_url || 'https://api.openai.com/v1').trim().replace(/\/$/, '');
+  const sharedModel = String(config.model || config.sai_gpt_model || 'gpt-4o-mini').trim();
   return {
-    key: String(config.sai_gpt_key || '').trim(),
-    url: String(config.sai_gpt_url || 'https://api.openai.com/v1').trim().replace(/\/$/, ''),
-    model: String(config.sai_gpt_model || 'gpt-4o-mini').trim(),
+    key: sharedKey,
+    url: sharedUrl,
+    model: sharedModel,
+    source: 'customer_ai_provider',
   };
 }
 
@@ -7378,9 +9106,10 @@ function buildSaiGptProjectMap() {
 }
 
 function buildSaiGptRuntimeSnapshot(config = runtimeConfig) {
+  const navigatorConfig = getSaiGptConfig(config);
   return {
     now: new Date().toISOString(),
-    mode: 'read_only_internal_agent_with_confirmed_actions',
+    mode: 'sai_navigator_on_shared_customer_ai_provider',
     customerReplyPipeline: 'untouched',
     providers: {
       customerAi: {
@@ -7388,10 +9117,11 @@ function buildSaiGptRuntimeSnapshot(config = runtimeConfig) {
         baseUrl: config.ai_url || '',
         model: config.model || '',
       },
-      saiGpt: {
-        configured: Boolean(config.sai_gpt_key && config.sai_gpt_url && config.sai_gpt_model),
-        baseUrl: config.sai_gpt_url || '',
-        model: config.sai_gpt_model || '',
+      navigator: {
+        configured: Boolean(navigatorConfig.key && navigatorConfig.url && navigatorConfig.model),
+        baseUrl: navigatorConfig.url || '',
+        model: navigatorConfig.model || '',
+        source: navigatorConfig.source || 'customer_ai_provider',
       },
       stt: {
         configured: Boolean(config.stt_api_key && config.stt_base_url && config.stt_model),
@@ -7524,6 +9254,7 @@ function buildSaiGptOnDemandCapabilities() {
       'Confirmed actions can create a training lesson or toggle lesson active state.',
     ],
     toolActions: [
+      'update_config: propose and apply a visible AI Control config change only after owner confirmation.',
       'inspect_chat: load matching Inbox dialog by chatId/query, including orders, money and paymentSection.',
       'search_code: search project snippets by query.',
       'inspect_file: open a safe excerpt from a project file.',
@@ -7620,7 +9351,7 @@ function buildSaiGptPaymentSection(profile = {}) {
   };
 }
 
-function buildSaiGptSystemContext(query, selectedChatId = '') {
+function buildSaiGptSystemContext(query, selectedChatId = '', uiContext = {}) {
   const aiControlPreview = buildAiControlPreview(getRuntimeSnapshot());
   const logs = getMergedLogs().slice(0, 120);
   const recentErrors = logs
@@ -7682,7 +9413,28 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
     saiGptRuntime: {
       model: saiGptConfig.model || '',
       baseUrl: saiGptConfig.url || '',
-      note: 'Это модель текущего внутреннего S.AI GPT. Не путать с aiControl.model для клиентских автоответов.',
+      source: saiGptConfig.source || 'customer_ai_provider',
+      note: 'S.AI Штурман использует общую главную модель из AI Provider. Отдельной модели у Штурмана нет.',
+    },
+    uiContext: {
+      activeNode: sanitizeSaiGptText(uiContext.activeNode || '', 80),
+      activeNodeTitle: sanitizeSaiGptText(uiContext.activeNodeTitle || '', 160),
+      mapSelectedNode: sanitizeSaiGptText(uiContext.mapSelectedNode || '', 80),
+      inferredFromQuestion: Boolean(uiContext.inferredFromQuestion),
+      activePipelineStage: sanitizeSaiGptText(uiContext.activePipelineStage || '', 80),
+      latestTraceId: sanitizeSaiGptText(uiContext.latestTraceId || '', 120),
+      ownerIntent: sanitizeSaiGptText(uiContext.ownerIntent || '', 300),
+    },
+    modules: {
+      orders: {
+        enabled: isOrderChatEnabled(runtimeConfig),
+        orderChatId: getOrderChatId(runtimeConfig),
+        trigger: 'Отправляется в Telegram-группу заказов после настоящего чека/квитанции/PDF оплаты.',
+        templateText: runtimeConfig.order_chat_template_text || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT,
+        dedupe: 'receiptKey + pending digest 2 min + sent digest 10 min',
+        fields: ['customer', 'product', 'link', 'size', 'insole', 'full_name', 'phone', 'city', 'delivery'],
+        recentEvents: getOrderChatEvents(5),
+      },
     },
     aiControl: {
       model: runtimeConfig.model || '',
@@ -7733,7 +9485,7 @@ function buildSaiGptSystemContext(query, selectedChatId = '') {
   return redactSensitiveText(JSON.stringify(snapshot, null, 2)).slice(0, SAI_GPT_CONTEXT_CHAR_LIMIT);
 }
 
-async function requestSaiGptChat({ messages, selectedChatId }) {
+async function requestSaiGptChat({ messages, selectedChatId, uiContext = {} }) {
   const config = getSaiGptConfig();
   const cleanMessages = (Array.isArray(messages) ? messages : [])
     .map((message) => ({
@@ -7745,7 +9497,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     .slice(-16);
   const latestUser = [...cleanMessages].reverse().find((message) => message.role === 'user');
   if (!latestUser) {
-    throw new Error('Напиши вопрос для S.AI GPT.');
+    throw new Error('Напиши вопрос для S.AI Штурмана.');
   }
 
   const pendingAction = getSaiGptPendingAction();
@@ -7779,7 +9531,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
   }
 
   if (!config.key || !config.url || !config.model) {
-    throw new Error('S.AI GPT API не настроен: укажи Base URL, API Key и модель в разделе S.AI GPT.');
+    throw new Error('S.AI Штурман не настроен: сначала подключи основной AI Provider в Integrations.');
   }
 
   const memoryMessages = (saiGptMemoryStore.messages || []).slice(-24).map((message) => ({
@@ -7790,13 +9542,18 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
   const promptMessages = (cleanMessages.length <= 2 ? [...memoryMessages, ...cleanMessages] : cleanMessages).slice(-24);
 
   const systemContent = [
-    'Ты S.AI GPT — внутренний агент владельца S.AI/IWAK.',
-    'Режим строго read-only: ты не отправляешь сообщения клиентам, не меняешь настройки, не перезапускаешь сервисы и не обещаешь, что уже внёс правку.',
-    'Твоя задача: анализировать диалоги, AI Control, обучение, логи и кодовые фрагменты; объяснять риски; предлагать точные улучшения.',
+    'Ты S.AI Штурман — внутренний помощник владельца S.AI/IWAK и голос визуальной карты AI Control.',
+    'Ты используешь общую главную модель S.AI из AI Provider. Отдельной модели у Штурмана нет.',
+    'Базовый режим: анализ и помощь. Ты не отправляешь сообщения клиентам, не перезапускаешь сервисы и не обещаешь, что уже внёс правку.',
+    'Твоя задача: анализировать диалоги, AI Control, обучение, trace, логи и кодовые фрагменты; объяснять простым языком где рычаг и что поменять.',
     'Если владелец просто здоровается, отвечает коротко и спокойно, без аудита, без списка рисков и без разбора логов. Например: "Привет, на связи. Что смотрим?".',
     'Не запускай полный аудит сам. Давай аудит, оценки, риски и списки проблем только когда владелец прямо просит проверить состояние, диалог, ошибку, качество или код.',
-    'Строго разделяй внутренний S.AI GPT и клиентскую магистраль. Ошибки scope=sai_gpt.chat относятся к этому внутреннему агенту и сами по себе НЕ означают, что клиентский AI отправляет техошибки клиентам.',
+    'Строго разделяй S.AI Штурман и клиентскую магистраль. Ошибки scope=sai_gpt.chat относятся к Штурману и сами по себе НЕ означают, что клиентский AI отправляет техошибки клиентам.',
     'Ты можешь готовить контролируемые действия, но только после подтверждения владельцем. Самовольно ничего не меняй.',
+    'Если просит поменять правило, доставку, возврат, оплату, тон, guard или prompt, сначала покажи текущее поле AI Control, предложи новое значение и спроси подтверждение.',
+    'Для безопасной правки видимого AI Control можно использовать скрытый action: [SAI_ACTION]{"type":"update_config","payload":{"title":"...","reason":"...","fieldValues":{"delivery_free_services":"Яндекс Доставка, Ozon, WB/Wildberries"}}}[/SAI_ACTION].',
+    'update_config нельзя использовать для секретов, токенов, ключей, реквизитов карты/банка/получателя, webhook_url, order_chat_id и инфраструктуры.',
+    'После update_config владелец должен написать "да"/"подтверждаю"; без этого ничего не меняется.',
     'Если владелец просит добавить/запомнить урок или исправить обучение, сначала объясни ошибку, покажи точный урок и спроси: "Добавить этот урок?". В самый конец ответа добавь скрытый блок действия строго в формате [SAI_ACTION]{"type":"create_training","payload":{"type":"bad","category":"other","contextText":"...","clientText":"...","aiText":"...","correctedText":"...","note":"..."}}[/SAI_ACTION].',
     'Для хорошего ответа можно использовать payload.type="good"; для плохого обязательно нужен correctedText. category выбирай из доступных категорий training.',
     'Если владелец просит включить или выключить существующий урок, покажи какой урок и спроси подтверждение, затем добавь [SAI_ACTION]{"type":"set_training_active","payload":{"id":"training-id","active":false,"reason":"..."}}[/SAI_ACTION].',
@@ -7804,7 +9561,9 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Форматы tool-actions: [SAI_ACTION]{"type":"inspect_chat","payload":{"chatId":"...","query":"имя/фраза","limit":800}}[/SAI_ACTION]; [SAI_ACTION]{"type":"search_code","payload":{"query":"..."} }[/SAI_ACTION]; [SAI_ACTION]{"type":"inspect_file","payload":{"file":"index.js","pattern":"functionName","line":1,"contextLines":80}}[/SAI_ACTION]; [SAI_ACTION]{"type":"show_prompt","payload":{"query":"фраза клиента","chatId":"..."}}[/SAI_ACTION]; [SAI_ACTION]{"type":"search_logs","payload":{"query":"402","scope":"sai_gpt.chat","limit":80}}[/SAI_ACTION].',
     'Patch/deploy tool-actions только готовят план и данные для владельца. Они не редактируют код, не запускают shell, не пушат и не деплоят.',
     'Не показывай пользователю служебный блок SAI_ACTION словами и не объясняй его. Сервер сам уберёт этот блок из видимого ответа и выполнит действие только после "да/подтверждаю/добавь/сохрани".',
-    'Если владелец спрашивает "ты на какой модели" или "какая модель у тебя", отвечай по snapshot.saiGptRuntime.model. Не называй aiControl.model, потому что это модель клиентского автоответчика.',
+    'Если владелец спрашивает "ты на какой модели" или "какая модель у тебя", отвечай по snapshot.saiGptRuntime.model и скажи, что это общая главная модель S.AI.',
+    'Если владелец спрашивает про заказник, заказ в Telegram, "как отправляется заказ" или "НОВЫЙ ЗАКАЗ", отвечай по snapshot.modules.orders и runtimeSnapshot/aiControl, а не по случайно выбранному на карте узлу.',
+    'Если uiContext.inferredFromQuestion=true, значит интерфейс уже перекинул контекст по смыслу вопроса; в ответе можно упомянуть, что смотреть нужно этот узел, а не предыдущий выбранный блок.',
     'Не пиши, что "бот может отправлять клиенту сырую ошибку", если в логах нет ошибок клиентского AI/Telegram-send или прямого факта отправки такой ошибки клиенту. Формулируй как "вижу внутреннюю ошибку S.AI GPT", если scope=sai_gpt.chat.',
     'Если делаешь вывод из косвенных признаков, помечай его как предположение, а не факт.',
     'В снимке системы есть карта файлов projectMap, релевантные фрагменты codeSnippets, список последних диалогов и deepMatches — глубокие совпадения Inbox по текущему вопросу. Используй их как рабочую память.',
@@ -7818,7 +9577,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
     'Если пользователь приложил скриншот, анализируй его как часть сообщения. Если модель/провайдер не поддерживает картинки, честно скажи, что нужен текстовый пересказ или другой vision-провайдер.',
     '',
     'Снимок системы:',
-    buildSaiGptSystemContext(latestUser.content, selectedChatId),
+    buildSaiGptSystemContext(latestUser.content, selectedChatId, uiContext),
   ].join('\n');
 
   const startedAt = Date.now();
@@ -7866,7 +9625,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
   const parsedReply = extractSaiGptPendingAction(rawReply);
   const reply = parsedReply.reply;
   if (!reply || !String(reply).trim()) {
-    throw new Error('S.AI GPT вернул пустой ответ.');
+    throw new Error('S.AI Штурман вернул пустой ответ.');
   }
   const storedAction = parsedReply.action ? setSaiGptPendingAction(parsedReply.action) : null;
   const visibleReply = storedAction
@@ -7903,7 +9662,7 @@ async function requestSaiGptChat({ messages, selectedChatId }) {
 async function requestSaiGptLessonDraft({ messages, selectedChatId }) {
   const config = getSaiGptConfig();
   if (!config.key || !config.url || !config.model) {
-    throw new Error('S.AI GPT API не настроен: сначала подключи API и модель.');
+    throw new Error('S.AI Штурман API не настроен: сначала подключи API и модель.');
   }
   const cleanMessages = (Array.isArray(messages) ? messages : [])
     .map((message) => ({
@@ -7960,7 +9719,7 @@ async function requestSaiGptLessonDraft({ messages, selectedChatId }) {
   );
   const parsed = parseAiJsonObject(extractAiReply(response.data?.choices?.[0]?.message?.content));
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error('S.AI GPT не смог собрать черновик урока.');
+    throw new Error('S.AI Штурман не смог собрать черновик урока.');
   }
   return {
     category: getTrainingCategory(parsed.category || 'other'),
@@ -8417,11 +10176,26 @@ function buildMediaInspectionText(input = {}) {
   ].join('\n');
 }
 
+function buildIwakReaderVisionText(input = {}) {
+  const images = Array.isArray(input.iwakReaderImages) ? input.iwakReaderImages : [];
+  if (!images.length) return '';
+  return [
+    `iwak.ru Reader приложил ${images.length} фото из карточки товара.`,
+    'Считай, что продавец видит эти фото товара вместе с названием, цветом, ценой и размерами из карточки.',
+    'Используй фото только для уточнения внешнего вида/цвета/модели. Не спорь с официальными полями карточки и не выдумывай детали, если фото не дает уверенности.',
+  ].join('\n');
+}
+
 function buildAiMessages(input) {
-  const text = [buildMediaInspectionText(input), input.text].filter(Boolean).join('\n\n');
+  const text = [buildMediaInspectionText(input), buildIwakReaderVisionText(input), input.text].filter(Boolean).join('\n\n');
   const content = [{ type: 'text', text }];
 
-  input.images.forEach((url) => {
+  const imagesForModel = Array.from(new Set([
+    ...(Array.isArray(input.images) ? input.images : []),
+    ...(Array.isArray(input.iwakReaderImages) ? input.iwakReaderImages : []),
+  ])).slice(0, 4);
+
+  imagesForModel.forEach((url) => {
     content.push({
       type: 'image_url',
       image_url: { url },
@@ -8482,6 +10256,7 @@ function buildAiDecisionTrace(input, payload, messages) {
     model: payload.model,
     temperature: payload.temperature,
     images: Array.isArray(input.images) ? input.images.length : 0,
+    iwakReaderImages: Array.isArray(input.iwakReaderImages) ? input.iwakReaderImages.length : 0,
     hasMedia: !!input.hasMedia,
     hasLinkInput: !!input.hasLinkInput,
     inputText: truncateTraceText(input.text, AI_DECISION_TRACE_SHORT_LIMIT),
@@ -8574,6 +10349,7 @@ async function requestAi(input) {
       messageType: input.messageType,
       model: input.config.model,
       images: input.images.length,
+      iwakReaderImages: Array.isArray(input.iwakReaderImages) ? input.iwakReaderImages.length : 0,
       hasMedia: !!input.hasMedia,
       hasLinkInput: !!input.hasLinkInput,
       text: input.text,
@@ -8948,17 +10724,97 @@ app.get('/logout', (req, res) => {
 app.use(requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
+function readWorklogMarkdown() {
+  if (!fs.existsSync(WORKLOG_PATH)) return '';
+  return fs.readFileSync(WORKLOG_PATH, 'utf8');
+}
+
+function parseWorklogEntries(markdown = '') {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const entries = [];
+  let current = null;
+  lines.forEach((line) => {
+    const match = line.match(/^##\s+(.+)$/);
+    if (match) {
+      if (current) entries.push(current);
+      current = { title: match[1].trim(), body: [] };
+      return;
+    }
+    if (current) current.body.push(line);
+  });
+  if (current) entries.push(current);
+  return entries.map((entry) => ({
+    title: entry.title,
+    body: entry.body.join('\n').trim(),
+  }));
+}
+
+function appendWorklogEntry({ title = '', body = '', status = 'локально' } = {}) {
+  fs.mkdirSync(path.dirname(WORKLOG_PATH), { recursive: true });
+  const now = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date()).replace(',', '');
+  const safeTitle = sanitizeSaiGptText(title || 'Запись работ', 160);
+  const safeStatus = sanitizeSaiGptText(status || 'локально', 80);
+  const safeBody = sanitizeSaiGptText(body || 'Описание не заполнено.', 5000);
+  const entry = [
+    '',
+    `## ${now} МСК - ${safeTitle}`,
+    '',
+    `Статус: ${safeStatus}.`,
+    '',
+    safeBody,
+    '',
+  ].join('\n');
+  fs.appendFileSync(WORKLOG_PATH, entry);
+  return readWorklogMarkdown();
+}
+
+app.get('/system/worklog', (req, res) => {
+  const markdown = readWorklogMarkdown();
+  res.json({
+    status: 'ok',
+    path: 'docs/SAI_WORKLOG.md',
+    entries: parseWorklogEntries(markdown),
+    markdown,
+  });
+});
+
+app.post('/system/worklog', (req, res) => {
+  const markdown = appendWorklogEntry(req.body || {});
+  res.json({
+    status: 'ok',
+    path: 'docs/SAI_WORKLOG.md',
+    entries: parseWorklogEntries(markdown),
+    markdown,
+  });
+});
+
 app.get('/config/status', async (req, res) => {
   const aiControlPreview = buildAiControlPreview(runtimeConfig);
   const status = {
     telegram: runtimeConfig.telegram_token ? 'подключен' : 'нет',
+    telegram_token_configured: !!runtimeConfig.telegram_token,
+    telegram_token_edit_location: 'Integrations -> Telegram Bot Token',
     ai: runtimeConfig.ai_key ? 'подключен' : 'нет',
+    ai_key_configured: !!runtimeConfig.ai_key,
+    ai_key_edit_location: 'Integrations -> AI Provider',
     stt: runtimeConfig.stt_api_key ? 'подключен' : 'нет',
+    stt_api_key_configured: !!runtimeConfig.stt_api_key,
+    stt_api_key_edit_location: 'Integrations -> STT',
     model: runtimeConfig.model || '',
     base_url: runtimeConfig.ai_url || '',
-    sai_gpt: runtimeConfig.sai_gpt_key ? 'подключен' : 'нет',
-    sai_gpt_url: runtimeConfig.sai_gpt_url || 'https://api.openai.com/v1',
-    sai_gpt_model: runtimeConfig.sai_gpt_model || 'gpt-4o-mini',
+    sai_gpt: runtimeConfig.ai_key ? 'общая модель' : 'нет',
+    sai_gpt_key_configured: !!runtimeConfig.ai_key,
+    sai_gpt_key_edit_location: 'Integrations -> AI Provider',
+    sai_gpt_url: runtimeConfig.ai_url || 'https://api.openai.com/v1',
+    sai_gpt_model: runtimeConfig.model || 'gpt-4o-mini',
     stt_api_key: runtimeConfig.stt_api_key || '',
     stt_base_url: runtimeConfig.stt_base_url || '',
     stt_model: runtimeConfig.stt_model || 'gpt-4o-mini-transcribe',
@@ -8968,20 +10824,36 @@ app.get('/config/status', async (req, res) => {
     core_no_stock_check_enabled: parseConfigBoolean(runtimeConfig.core_no_stock_check_enabled, true),
     core_no_catalog_return_enabled: parseConfigBoolean(runtimeConfig.core_no_catalog_return_enabled, true),
     core_no_resell_enabled: parseConfigBoolean(runtimeConfig.core_no_resell_enabled, true),
-    core_rules_text: runtimeConfig.core_rules_text || '',
+    core_rules_text: runtimeConfig.core_rules_text || DEFAULT_CORE_RULES_TEXT,
+    problem_solver_enabled: parseConfigBoolean(runtimeConfig.problem_solver_enabled, true),
+    problem_solver_triggers_text: runtimeConfig.problem_solver_triggers_text || DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT,
+    problem_solver_rules_text: runtimeConfig.problem_solver_rules_text || DEFAULT_PROBLEM_SOLVER_RULES_TEXT,
+    problem_solver_forbidden_text: runtimeConfig.problem_solver_forbidden_text || DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT,
+    problem_solver_examples_text: runtimeConfig.problem_solver_examples_text || DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT,
     facts_no_invent_enabled: parseConfigBoolean(runtimeConfig.facts_no_invent_enabled, true),
     facts_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_payment_enabled, true),
     facts_no_fake_delivery_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_enabled, true),
     facts_no_fake_discounts_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_discounts_enabled, true),
     facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
     facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
-    facts_rules_text: runtimeConfig.facts_rules_text || '',
+    facts_rules_text: runtimeConfig.facts_rules_text || DEFAULT_FACTS_RULES_TEXT,
     smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
     smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
     smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),
     smalltalk_weather_enabled: parseConfigBoolean(runtimeConfig.smalltalk_weather_enabled, true),
     smalltalk_soft_product_link_enabled: parseConfigBoolean(runtimeConfig.smalltalk_soft_product_link_enabled, true),
-    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text || '',
+    smalltalk_rules_text: runtimeConfig.smalltalk_rules_text || DEFAULT_SMALLTALK_RULES_TEXT,
+    sales_psychology_enabled: parseConfigBoolean(runtimeConfig.sales_psychology_enabled, true),
+    sales_psychology_triggers_text: runtimeConfig.sales_psychology_triggers_text || DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT,
+    sales_psychology_principles_text: runtimeConfig.sales_psychology_principles_text || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT,
+    sales_psychology_techniques_text: runtimeConfig.sales_psychology_techniques_text || DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT,
+    sales_psychology_forbidden_text: runtimeConfig.sales_psychology_forbidden_text || DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT,
+    sales_psychology_examples_text: runtimeConfig.sales_psychology_examples_text || DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT,
+    size_fit_enabled: parseConfigBoolean(runtimeConfig.size_fit_enabled, true),
+    size_fit_shoe_table_text: runtimeConfig.size_fit_shoe_table_text || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT,
+    size_fit_category_rules_text: runtimeConfig.size_fit_category_rules_text || DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT,
+    size_fit_validation_rules_text: runtimeConfig.size_fit_validation_rules_text || DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT,
+    size_fit_examples_text: runtimeConfig.size_fit_examples_text || DEFAULT_SIZE_FIT_EXAMPLES_TEXT,
     order_path_enabled: parseConfigBoolean(runtimeConfig.order_path_enabled, true),
     order_collect_size_enabled: parseConfigBoolean(runtimeConfig.order_collect_size_enabled, true),
     order_collect_insole_enabled: parseConfigBoolean(runtimeConfig.order_collect_insole_enabled, true),
@@ -8993,14 +10865,24 @@ app.get('/config/status', async (req, res) => {
     order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
     order_step_mode: runtimeConfig.order_step_mode || 'natural',
-    order_rules_text: runtimeConfig.order_rules_text || '',
+    order_rules_text: runtimeConfig.order_rules_text || DEFAULT_ORDER_RULES_TEXT,
+    soft_retention_enabled: parseConfigBoolean(runtimeConfig.soft_retention_enabled, true),
+    soft_retention_triggers_text: runtimeConfig.soft_retention_triggers_text || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT,
+    soft_retention_rules_text: runtimeConfig.soft_retention_rules_text || DEFAULT_SOFT_RETENTION_RULES_TEXT,
+    soft_retention_forbidden_text: runtimeConfig.soft_retention_forbidden_text || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT,
+    soft_retention_examples_text: runtimeConfig.soft_retention_examples_text || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT,
     response_guard_enabled: parseConfigBoolean(runtimeConfig.response_guard_enabled, true),
     response_guard_no_fake_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_fake_payment_enabled, true),
     response_guard_no_repeat_known_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_repeat_known_enabled, true),
     response_guard_human_tone_enabled: parseConfigBoolean(runtimeConfig.response_guard_human_tone_enabled, true),
     response_guard_next_step_enabled: parseConfigBoolean(runtimeConfig.response_guard_next_step_enabled, true),
     response_guard_no_final_payment_enabled: parseConfigBoolean(runtimeConfig.response_guard_no_final_payment_enabled, true),
-    response_guard_rules_text: runtimeConfig.response_guard_rules_text || '',
+    response_guard_rules_text: runtimeConfig.response_guard_rules_text || DEFAULT_RESPONSE_GUARD_RULES_TEXT,
+    self_check_enabled: parseConfigBoolean(runtimeConfig.self_check_enabled, true),
+    self_check_autocorrect_low_risk_enabled: parseConfigBoolean(runtimeConfig.self_check_autocorrect_low_risk_enabled, true),
+    self_check_block_high_risk_enabled: parseConfigBoolean(runtimeConfig.self_check_block_high_risk_enabled, false),
+    self_check_create_draft_lessons_enabled: parseConfigBoolean(runtimeConfig.self_check_create_draft_lessons_enabled, false),
+    self_check_rules_text: runtimeConfig.self_check_rules_text || DEFAULT_SELF_CHECK_RULES_TEXT,
     receipt_check_enabled: parseConfigBoolean(runtimeConfig.receipt_check_enabled, true),
     receipt_check_amount_enabled: parseConfigBoolean(runtimeConfig.receipt_check_amount_enabled, true),
     receipt_check_bank_enabled: parseConfigBoolean(runtimeConfig.receipt_check_bank_enabled, true),
@@ -9010,7 +10892,7 @@ app.get('/config/status', async (req, res) => {
     receipt_check_no_final_confirm_enabled: parseConfigBoolean(runtimeConfig.receipt_check_no_final_confirm_enabled, true),
     receipt_check_success_text: runtimeConfig.receipt_check_success_text || '',
     receipt_check_mismatch_text: runtimeConfig.receipt_check_mismatch_text || '',
-    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text || '',
+    receipt_check_rules_text: runtimeConfig.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
     quality_replica_honesty_enabled: parseConfigBoolean(runtimeConfig.quality_replica_honesty_enabled, true),
     quality_no_original_claims_enabled: parseConfigBoolean(runtimeConfig.quality_no_original_claims_enabled, true),
     quality_calm_explanation_enabled: parseConfigBoolean(runtimeConfig.quality_calm_explanation_enabled, true),
@@ -9019,7 +10901,7 @@ app.get('/config/status', async (req, res) => {
     quality_return_no_dates_enabled: parseConfigBoolean(runtimeConfig.quality_return_no_dates_enabled, true),
     quality_return_inspect_enabled: parseConfigBoolean(runtimeConfig.quality_return_inspect_enabled, true),
     quality_return_text: runtimeConfig.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
-    quality_rules_text: runtimeConfig.quality_rules_text || '',
+    quality_rules_text: runtimeConfig.quality_rules_text || DEFAULT_QUALITY_RULES_TEXT,
     store_trust_enabled: parseConfigBoolean(runtimeConfig.store_trust_enabled, true),
     store_trust_online_only_enabled: parseConfigBoolean(runtimeConfig.store_trust_online_only_enabled, true),
     store_trust_sadovod_history_enabled: parseConfigBoolean(runtimeConfig.store_trust_sadovod_history_enabled, true),
@@ -9047,6 +10929,7 @@ app.get('/config/status', async (req, res) => {
     persona_age: runtimeConfig.persona_age || '27',
     conversation_mode: runtimeConfig.conversation_mode || 'retail',
     media_behavior: runtimeConfig.media_behavior || 'answer_from_media',
+    media_node_rules_text: runtimeConfig.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT,
     auto_reply_enabled: parseConfigBoolean(runtimeConfig.auto_reply_enabled, true),
     memory_enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
     memory_recent_limit: getConfigMemoryLimit(runtimeConfig),
@@ -9054,6 +10937,7 @@ app.get('/config/status', async (req, res) => {
     reply_mode: normalizeReplyMode(runtimeConfig.reply_mode),
     human_typing_mode: normalizeHumanTypingMode(runtimeConfig.human_typing_mode),
     manager_takeover_enabled: parseConfigBoolean(runtimeConfig.manager_takeover_enabled, true),
+    manager_node_rules_text: runtimeConfig.manager_node_rules_text || DEFAULT_MANAGER_NODE_RULES_TEXT,
     manager_return_delay_ms: getConfigManagerReturnDelayMs(runtimeConfig),
     payment_enabled: parseConfigBoolean(runtimeConfig.payment_enabled, false),
     payment_method: runtimeConfig.payment_method || 'card',
@@ -9061,19 +10945,35 @@ app.get('/config/status', async (req, res) => {
     payment_recipient_name: runtimeConfig.payment_recipient_name || '',
     payment_bank: runtimeConfig.payment_bank || '',
     payment_comment: runtimeConfig.payment_comment || '',
-    payment_style_text: runtimeConfig.payment_style_text || '',
-    payment_layout_text: runtimeConfig.payment_layout_text || '',
+    payment_style_text: runtimeConfig.payment_style_text || DEFAULT_PAYMENT_STYLE_TEXT,
+    payment_layout_text: runtimeConfig.payment_layout_text || DEFAULT_PAYMENT_LAYOUT_TEXT,
+    payment_guard_rules_text: runtimeConfig.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT,
     payment_bold_mode: runtimeConfig.payment_bold_mode || 'off',
-    payment_example_text: runtimeConfig.payment_example_text || '',
+    payment_example_text: runtimeConfig.payment_example_text || DEFAULT_PAYMENT_EXAMPLE_TEXT,
+    reader_node_rules_text: runtimeConfig.reader_node_rules_text || DEFAULT_READER_NODE_RULES_TEXT,
+    order_chat_enabled: isOrderChatEnabled(runtimeConfig),
+    order_chat_id: getOrderChatId(runtimeConfig),
+    order_chat_template_text: runtimeConfig.order_chat_template_text || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT,
+    memory_node_rules_text: runtimeConfig.memory_node_rules_text || DEFAULT_MEMORY_NODE_RULES_TEXT,
+    listen_wait_enabled: parseConfigBoolean(runtimeConfig.listen_wait_enabled, true),
+    listen_wait_debounce_ms: getConfigListenWaitDebounceMs(runtimeConfig),
+    listen_wait_max_window_ms: getConfigListenWaitMaxWindowMs(runtimeConfig),
     ai_control_context: aiControlPreview.systemPrompt,
     applied_controls: aiControlPreview.appliedControls,
     capabilities: getCapabilitySnapshot(runtimeConfig),
+    code_constants: buildCodeConstantsPassport(),
+    code_constants_edit_location: 'read-only: index.js constants / ENV before boot; runtime-safe values are exposed as editable fields above',
     delivery_rules_enabled: parseConfigBoolean(runtimeConfig.delivery_rules_enabled, true),
-    delivery_rules_text: runtimeConfig.delivery_rules_text || '',
-    delivery_style_text: runtimeConfig.delivery_style_text || '',
-    delivery_layout_text: runtimeConfig.delivery_layout_text || '',
+    delivery_free_services: runtimeConfig.delivery_free_services || DEFAULT_DELIVERY_FREE_SERVICES,
+    delivery_paid_services: runtimeConfig.delivery_paid_services || DEFAULT_DELIVERY_PAID_SERVICES,
+    delivery_rules_text: runtimeConfig.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT,
+    delivery_style_text: runtimeConfig.delivery_style_text || DEFAULT_DELIVERY_STYLE_TEXT,
+    delivery_layout_text: runtimeConfig.delivery_layout_text || DEFAULT_DELIVERY_LAYOUT_TEXT,
+    delivery_consultant_enabled: parseConfigBoolean(runtimeConfig.delivery_consultant_enabled, true),
+    delivery_consultant_options_text: runtimeConfig.delivery_consultant_options_text || DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT,
+    delivery_consultant_rules_text: runtimeConfig.delivery_consultant_rules_text || DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT,
     delivery_bold_mode: runtimeConfig.delivery_bold_mode || 'off',
-    delivery_example_text: runtimeConfig.delivery_example_text || '',
+    delivery_example_text: runtimeConfig.delivery_example_text || DEFAULT_DELIVERY_EXAMPLE_TEXT,
     delivery_tracking_enabled: parseConfigBoolean(runtimeConfig.delivery_tracking_enabled, true),
     delivery_tracking_text: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
     followup_master_enabled: parseConfigBoolean(runtimeConfig.followup_master_enabled, false),
@@ -9177,19 +11077,7 @@ app.get('/config/status', async (req, res) => {
     }
   }
 
-  if (runtimeConfig.sai_gpt_key && runtimeConfig.sai_gpt_url) {
-    try {
-      await httpClient.get(`${runtimeConfig.sai_gpt_url.replace(/\/$/, '')}/models`, {
-        headers: {
-          Authorization: `Bearer ${runtimeConfig.sai_gpt_key}`,
-        },
-        timeout: REQUEST_TIMEOUT_MS,
-      });
-      saiGptProviderReachable = true;
-    } catch (e) {
-      status.sai_gpt = e.response?.data?.error?.message || e.message;
-    }
-  }
+  saiGptProviderReachable = aiProviderReachable;
 
   const telegramHealth = buildTelegramHealth({
     tokenValid: telegramTokenValid,
@@ -9222,6 +11110,925 @@ app.get('/config/ai-control-preview', (req, res) => {
   res.json(buildAiControlPreview(getRuntimeSnapshot()));
 });
 
+function buildPromptPassport(config = runtimeConfig) {
+  const preview = buildAiControlPreview(config);
+  const block = (key, title, enabled, purpose, source, editableKeys = [], text = '') => ({
+    key,
+    title,
+    enabled: Boolean(enabled),
+    purpose,
+    source,
+    editableKeys,
+    textPreview: String(text || '').trim().slice(0, 800),
+  });
+  const trainingSummary = {
+    total: (trainingStore.items || []).length,
+    active: (trainingStore.items || []).filter((item) => item.enabled !== false).length,
+    good: (trainingStore.items || []).filter((item) => item.type === 'good').length,
+    bad: (trainingStore.items || []).filter((item) => item.type === 'bad').length,
+    promptLimit: TRAINING_PROMPT_EXAMPLES,
+    relevantLimit: TRAINING_RELEVANT_PROMPT_EXAMPLES,
+    recentLimit: TRAINING_RECENT_PROMPT_EXAMPLES,
+  };
+  const blocks = [
+    block('time', 'Приветствие по времени', true, 'Даёт модели текущее время МСК и правило Доброе утро/день/вечер.', 'getTimeGuidance / greeting guard', [], getTimeGuidance()),
+    block('tone', 'Тон и длина', true, 'Управляет стилем, краткостью и живостью ответа.', 'getToneGuidance / getResponseLengthGuidance / getPersonaGuidance', ['tone', 'response_length', 'creativity', 'persona_style', 'persona_age', 'conversation_mode'], [
+      getToneGuidance(config.tone),
+      getResponseLengthGuidance(config.response_length),
+      getPersonaGuidance(config),
+    ].join('\n')),
+    block('instruction', 'Главная инструкция', !!String(config.instruction || '').trim(), 'Свободная главная инструкция магазина поверх базовой логики.', 'runtimeConfig.instruction -> buildSystemPrompt', ['instruction'], config.instruction),
+    block('core', 'Ядро продаж', Boolean(getIwakCoreGuidance(config)), 'Горячий клиент, опубликованный товар, путь к следующему шагу.', 'getIwakCoreGuidance', [
+      'core_hot_lead_enabled',
+      'core_published_available_enabled',
+      'core_no_stock_check_enabled',
+      'core_no_catalog_return_enabled',
+      'core_no_resell_enabled',
+      'core_rules_text',
+      'problem_solver_enabled',
+      'problem_solver_triggers_text',
+      'problem_solver_rules_text',
+      'problem_solver_forbidden_text',
+      'problem_solver_examples_text',
+    ], config.core_rules_text || DEFAULT_CORE_RULES_TEXT),
+    block('facts', 'Границы фактов', Boolean(getFactBoundaryGuidance(config)), 'Не выдумывать товар, цену, доставку, скидку, реквизиты и наличие.', 'getFactBoundaryGuidance', [
+      'facts_no_invent_enabled',
+      'facts_no_fake_payment_enabled',
+      'facts_no_fake_delivery_enabled',
+      'facts_no_fake_discounts_enabled',
+      'facts_no_final_payment_confirm_enabled',
+      'facts_no_fake_delivery_time_enabled',
+      'facts_rules_text',
+    ], config.facts_rules_text || DEFAULT_FACTS_RULES_TEXT),
+    block('smalltalk', 'Живость общения', Boolean(getSmalltalkGuidance(config)), 'Юмор, мягкость, советы и человеческий тон без ухода от продажи.', 'getSmalltalkGuidance', [
+      'smalltalk_enabled',
+      'smalltalk_style_enabled',
+      'smalltalk_outfit_advice_enabled',
+      'smalltalk_weather_enabled',
+      'smalltalk_soft_product_link_enabled',
+      'smalltalk_rules_text',
+    ], config.smalltalk_rules_text || DEFAULT_SMALLTALK_RULES_TEXT),
+    block('salesPsychology', 'Психология продаж', Boolean(getSalesPsychologyGuidance(config)), 'Психология продаж РФ: доверие, выгода, снятие риска, мягкое закрытие и анти-манипуляции.', 'getSalesPsychologyGuidance', [
+      'sales_psychology_enabled',
+      'sales_psychology_triggers_text',
+      'sales_psychology_principles_text',
+      'sales_psychology_techniques_text',
+      'sales_psychology_forbidden_text',
+      'sales_psychology_examples_text',
+    ], config.sales_psychology_principles_text || DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT),
+    block('sizeFit', 'Размеры и посадка', Boolean(getSizeFitGuidance(config)), 'Справочник размеров по категориям: обувь/стелька, одежда, бельё, носки, сумки и аксессуары.', 'getSizeFitGuidance', [
+      'size_fit_enabled',
+      'size_fit_shoe_table_text',
+      'size_fit_category_rules_text',
+      'size_fit_validation_rules_text',
+      'size_fit_examples_text',
+    ], config.size_fit_shoe_table_text || DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT),
+    block('orderPath', 'Путь заказа', Boolean(getOrderPathGuidance(config)), 'Какие данные собирать и в каком темпе: размер, ФИО, телефон, доставка, чек.', 'getOrderPathGuidance', [
+      'order_path_enabled',
+      'order_collect_size_enabled',
+      'order_collect_insole_enabled',
+      'order_collect_full_name_enabled',
+      'order_collect_phone_enabled',
+      'order_collect_city_enabled',
+      'order_collect_delivery_service_enabled',
+      'order_collect_pickup_enabled',
+      'order_collect_payment_enabled',
+      'order_collect_receipt_enabled',
+      'order_step_mode',
+      'order_rules_text',
+      'soft_retention_enabled',
+      'soft_retention_triggers_text',
+      'soft_retention_rules_text',
+      'soft_retention_forbidden_text',
+      'soft_retention_examples_text',
+    ], config.order_rules_text || DEFAULT_ORDER_RULES_TEXT),
+    block('responseGuard', 'Response guard', Boolean(getResponseGuardGuidance(config)), 'Финальные запреты перед отправкой: не повторять, не палиться, не приветствоваться повторно.', 'getResponseGuardGuidance / finalizeAiReply', [
+      'response_guard_enabled',
+      'response_guard_no_fake_payment_enabled',
+      'response_guard_no_repeat_known_enabled',
+      'response_guard_human_tone_enabled',
+      'response_guard_next_step_enabled',
+      'response_guard_no_final_payment_enabled',
+      'response_guard_rules_text',
+    ], config.response_guard_rules_text || DEFAULT_RESPONSE_GUARD_RULES_TEXT),
+    block('selfCheck', 'Самопроверка ответа', parseConfigBoolean(config.self_check_enabled, true), 'Смысловой ревизор после guards: находит риск, пишет trace, низкий риск может поправить до отправки.', 'evaluateSelfCheck / logSelfCheckTrace', [
+      'self_check_enabled',
+      'self_check_autocorrect_low_risk_enabled',
+      'self_check_block_high_risk_enabled',
+      'self_check_create_draft_lessons_enabled',
+      'self_check_rules_text',
+    ], config.self_check_rules_text || DEFAULT_SELF_CHECK_RULES_TEXT),
+    block('receiptCheck', 'Чек и квитанция', Boolean(getReceiptCheckGuidance(config)), 'Как отличать чек от обычного фото и что отвечать после чека.', 'getReceiptCheckGuidance', [
+      'receipt_check_enabled',
+      'receipt_check_amount_enabled',
+      'receipt_check_bank_enabled',
+      'receipt_check_recipient_enabled',
+      'receipt_check_datetime_enabled',
+      'receipt_check_mismatch_enabled',
+      'receipt_check_no_final_confirm_enabled',
+      'receipt_check_success_text',
+      'receipt_check_mismatch_text',
+      'receipt_check_rules_text',
+    ], config.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT),
+    block('quality', 'Качество и возвраты', Boolean(getQualityGuidance(config)), 'Реплика, примерка, возврат, товарный вид, упаковка и комплектность.', 'getQualityGuidance', [
+      'quality_replica_honesty_enabled',
+      'quality_no_original_claims_enabled',
+      'quality_calm_explanation_enabled',
+      'quality_no_extra_photos_enabled',
+      'quality_return_soft_enabled',
+      'quality_return_no_dates_enabled',
+      'quality_return_inspect_enabled',
+      'quality_return_text',
+      'quality_rules_text',
+    ], config.quality_rules_text || DEFAULT_QUALITY_RULES_TEXT),
+    block('storeTrust', 'Доверие к магазину', Boolean(getStoreTrustGuidance(config)), 'Онлайн-формат, Садовод, безопасная покупка, без лишних оправданий.', 'getStoreTrustGuidance', [
+      'store_trust_enabled',
+      'store_trust_online_only_enabled',
+      'store_trust_sadovod_history_enabled',
+      'store_trust_cost_reason_enabled',
+      'store_trust_no_address_enabled',
+      'store_trust_safe_purchase_enabled',
+      'store_trust_text',
+    ], config.store_trust_text || DEFAULT_STORE_TRUST_TEXT),
+    block('contacts', 'Контакты', Boolean(getContactsGuidance(config)), 'Сайт, Telegram, менеджер, телефон, антискам.', 'getContactsGuidance', [
+      'contacts_enabled',
+      'contacts_website',
+      'contacts_telegram',
+      'contacts_manager',
+      'contacts_phone',
+      'contacts_whatsapp',
+      'contacts_instagram_enabled',
+      'contacts_instagram',
+      'contacts_anti_scam_enabled',
+      'contacts_about_text',
+      'contacts_rules_text',
+    ], config.contacts_rules_text || ''),
+    block('media', 'Медиа-анализ', true, 'Фото, PDF, скрины ПВЗ, бирки, товарные изображения и чеки.', 'getMediaBehaviorGuidance', ['media_behavior', 'media_node_rules_text'], config.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT),
+    block('manager', 'Менеджерский перехват', parseConfigBoolean(config.manager_takeover_enabled, true), 'AI молчит при ручном менеджере и после возврата читает контекст.', 'getManagerModeGuidance / manager takeover', ['manager_takeover_enabled', 'manager_return_delay_ms', 'manager_node_rules_text'], config.manager_node_rules_text || DEFAULT_MANAGER_NODE_RULES_TEXT),
+    block('payment', 'Оплата', Boolean(getVisiblePaymentGuidance(config)), 'Реквизиты, сумма к оплате, чек, запрет выдумывать оплату.', 'getVisiblePaymentGuidance', [
+      'payment_enabled',
+      'payment_method',
+      'payment_card_number',
+      'payment_recipient_name',
+      'payment_bank',
+      'payment_comment',
+      'payment_style_text',
+      'payment_layout_text',
+      'payment_guard_rules_text',
+      'payment_bold_mode',
+      'payment_example_text',
+    ], config.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT),
+    block('delivery', 'Доставка', Boolean(getVisibleDeliveryGuidance(config)), 'Бесплатные/платные службы, ПВЗ, адрес, трекинг и сроки без выдумок.', 'getVisibleDeliveryGuidance', [
+      'delivery_rules_enabled',
+      'delivery_free_services',
+      'delivery_paid_services',
+      'delivery_rules_text',
+      'delivery_style_text',
+      'delivery_layout_text',
+      'delivery_consultant_enabled',
+      'delivery_consultant_options_text',
+      'delivery_consultant_rules_text',
+      'delivery_bold_mode',
+      'delivery_example_text',
+      'delivery_tracking_enabled',
+      'delivery_tracking_text',
+    ], config.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT),
+    block('examples', 'Примеры диалогов', Boolean(getDialogExamplesGuidance(config)), 'Ручные эталоны в AI Control, которые добавляются в prompt.', 'getDialogExamplesGuidance', ['dialog_examples_enabled', 'dialog_examples_text'], config.dialog_examples_text || ''),
+    block('training', 'Уроки обучения', trainingSummary.active > 0, 'Good/bad уроки из Training, максимум 5 в prompt.', 'getTrainingExamplesGuidance', [], JSON.stringify(trainingSummary, null, 2)),
+    block('memory', 'Память клиента', parseConfigBoolean(config.memory_enabled, true), 'Профиль, заказ, последние сообщения и факты клиента в prompt конкретного диалога.', 'buildMemoryContext / selectRecentDialogTurns', ['memory_enabled', 'memory_recent_limit', 'memory_node_rules_text'], config.memory_node_rules_text || DEFAULT_MEMORY_NODE_RULES_TEXT),
+  ];
+  const diagnostic = (level, title, detail, action, source) => ({
+    level,
+    title,
+    detail,
+    action,
+    source,
+  });
+  const warnings = [];
+  if (!String(config.instruction || '').trim()) {
+    warnings.push(diagnostic(
+      'info',
+      'Главная инструкция пустая',
+      'Это нормально: продавец сейчас держится на структурных правилах AI Control, а не на одной большой простыне prompt.',
+      'Заполнять только если нужен общий стиль/роль поверх всех узлов.',
+      'instruction'
+    ));
+  }
+  if (!parseConfigBoolean(config.payment_enabled, false)) {
+    warnings.push(diagnostic(
+      'important',
+      'Оплата выключена',
+      'AI не должен сам отправлять реквизиты и не должен придумывать оплату.',
+      'Если хотите, чтобы AI отправлял реквизиты, включите оплату и заполните сумму/карту/получателя/банк.',
+      'payment_enabled'
+    ));
+  }
+  if (!parseConfigBoolean(config.dialog_examples_enabled, false)) {
+    warnings.push(diagnostic(
+      'info',
+      'Ручные примеры диалогов выключены',
+      'Это отдельный слой примеров в AI Control. Он может быть выключен, если вы учите продавца через Training.',
+      'Включать только если хотите вручную держать эталонные диалоги прямо в Prompt-узле.',
+      'dialog_examples_enabled'
+    ));
+  }
+  if (!trainingSummary.active) {
+    warnings.push(diagnostic(
+      'local',
+      'Активных уроков нет',
+      'В этой базе Training пустой, поэтому prompt не получает good/bad уроки. На сервере уроки могут быть заполнены отдельно.',
+      'Проверить серверный Training перед выводом о качестве обучения.',
+      'training-examples.json'
+    ));
+  }
+  if (!parseConfigBoolean(config.response_guard_enabled, true)) {
+    warnings.push(diagnostic(
+      'critical',
+      'Response guard выключен',
+      'Финальная защита ответа не активна: выше риск повторных вопросов, лишних приветствий и выдумок.',
+      'Включить response guard, если нет специальной причины держать его выключенным.',
+      'response_guard_enabled'
+    ));
+  }
+  if (/доставк[а-яё\s]*бесплатн/i.test(String(config.store_trust_text || '')) && !/остальн|тариф|платн/i.test(String(config.store_trust_text || ''))) {
+    warnings.push(diagnostic(
+      'important',
+      'В тексте доверия общая “доставка бесплатная”',
+      'Такая формулировка может конфликтовать с правилом: Яндекс/Ozon бесплатно, остальные службы по тарифам.',
+      'Уточнить в тексте доверия, что бесплатно только Яндекс Доставка и Ozon.',
+      'store_trust_text'
+    ));
+  }
+  return {
+    status: 'ok',
+    module: 'Prompt и тон',
+    source: 'index.js: buildSystemPrompt',
+    summary: {
+      blocks: blocks.length,
+      enabled: blocks.filter((item) => item.enabled).length,
+      editableFields: Array.from(new Set(blocks.flatMap((item) => item.editableKeys || []))).length,
+      promptChars: preview.systemPrompt.length,
+      appliedControls: Object.values(preview.appliedControls || {}).filter(Boolean).length,
+    },
+    tone: {
+      tone: config.tone || 'neutral',
+      responseLength: config.response_length || 'medium',
+      creativity: config.creativity || 'balanced',
+      personaStyle: config.persona_style || 'calm',
+      personaAge: config.persona_age || '27',
+      conversationMode: config.conversation_mode || 'retail',
+    },
+    blocks,
+    appliedControls: preview.appliedControls || {},
+    warnings,
+    systemPromptPreview: preview.systemPrompt,
+  };
+}
+
+app.get('/system/prompt-passport', (req, res) => {
+  res.json(buildPromptPassport(runtimeConfig));
+});
+
+function getRecentMediaEvents(limit = 12) {
+  const max = Math.max(1, Math.min(50, Number(limit) || 12));
+  return getMergedLogs()
+    .filter((item) => {
+      const event = String(item.event || '').toUpperCase();
+      const hasMediaPayload = item.hasMedia || Number(item.images || 0) > 0 || Number(item.iwakReaderImages || 0) > 0;
+      return (
+        hasMediaPayload ||
+        /MEDIA|STT|PDF_RECEIPT|GETFILE/.test(event) ||
+        (/AI_REQUEST|RECEIPT/.test(event) && hasMediaPayload)
+      );
+    })
+    .slice(-max)
+    .reverse()
+    .map((item) => ({
+      time: item.time || '',
+      event: item.event || '',
+      status: item.status || '',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      messageType: item.messageType || '',
+      images: item.images || 0,
+      iwakReaderImages: item.iwakReaderImages || 0,
+      hasMedia: Boolean(item.hasMedia),
+      text: truncateLogText(item.text || item.error || item.reason || item.message || ''),
+    }));
+}
+
+function buildMediaPassport(config = runtimeConfig) {
+  const capability = getCapabilitySnapshot(config);
+  const mediaTypes = [
+    {
+      type: 'photo',
+      title: 'Фото клиента',
+      input: 'Telegram photo',
+      handling: 'Берётся самое крупное фото, прикладывается в vision-модель и классифицируется по смыслу.',
+      clientRule: 'Отвечать по содержанию: товар, бирка, ПВЗ, карта, чек или другое.',
+      risk: 'Не считать обычное фото чеком.',
+      source: 'normalizeTelegramMessage -> buildAiMessages -> buildMediaInspectionText',
+    },
+    {
+      type: 'image_document',
+      title: 'Картинка как файл',
+      input: 'Telegram document image/* или .png/.jpg/.webp',
+      handling: 'Файл превращается в изображение для vision-модели.',
+      clientRule: 'Использовать как обычное фото, включая скрины ПВЗ и бирки.',
+      risk: 'Не отвечать “файл не прочитал”, если картинка приложена модели.',
+      source: 'normalizeTelegramMessage:image_document',
+    },
+    {
+      type: 'pdf',
+      title: 'PDF чек/квитанция',
+      input: 'Telegram document PDF',
+      handling: 'Пробует извлечь текст, затем рендерит первую страницу в картинку.',
+      clientRule: 'Если это чек, отвечать по receipt guard; если PDF не прочитан, не подтверждать оплату финально.',
+      risk: 'PDF без текста не должен автоматически стать “чек корректный”.',
+      source: 'readTelegramPdfReceipt / extractTextFromPdfBuffer / renderPdfFirstPageToDataUrl',
+    },
+    {
+      type: 'voice',
+      title: 'Голосовое',
+      input: 'Telegram voice',
+      handling: 'Если STT настроен, скачивает и транскрибирует через OpenAI audio/transcriptions.',
+      clientRule: 'Отвечать на расшифрованный текст как на обычное сообщение.',
+      risk: 'Если STT не настроен, не выдумывать содержание голосового.',
+      source: 'transcribeTelegramMedia',
+    },
+    {
+      type: 'video_note',
+      title: 'Видео-сообщение',
+      input: 'Telegram video_note',
+      handling: 'Пробует STT по аудиодорожке, если провайдер поддержан.',
+      clientRule: 'Использовать только расшифрованный текст или честно считать медиа без текста.',
+      risk: 'Не считать видео чеком без явных признаков оплаты.',
+      source: 'normalizeTelegramMessage:video_note / transcribeTelegramMedia',
+    },
+    {
+      type: 'iwak_reader_images',
+      title: 'Фото из карточки iwak.ru',
+      input: 'iwak.ru Reader product/cart images',
+      handling: 'Reader прикладывает фото товара вместе с названием, ценой, цветом и размерами.',
+      clientRule: 'Использовать фото для внешнего вида, но официальные поля карточки важнее визуальной догадки.',
+      risk: 'Не путать фото карточки с фото клиента или чеком.',
+      source: 'buildIwakReaderVisionText / enrichIwakProductContext',
+    },
+  ];
+  const guards = [
+    {
+      key: 'media_node_rules_text',
+      title: 'Главные правила медиа',
+      enabled: true,
+      editable: true,
+      text: config.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT,
+    },
+    {
+      key: 'receipt_check_enabled',
+      title: 'Чековый guard',
+      enabled: parseConfigBoolean(config.receipt_check_enabled, true),
+      editable: true,
+      text: config.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
+    },
+    {
+      key: 'quality_no_extra_photos_enabled',
+      title: 'Не обещать дополнительные фото',
+      enabled: parseConfigBoolean(config.quality_no_extra_photos_enabled, true),
+      editable: true,
+      text: 'Если клиент просит дополнительные фото, не обещать “сейчас скину”, если фото не переданы в диалоге.',
+    },
+    {
+      key: 'response_guard_human_tone_enabled',
+      title: 'Живой ответ по фото',
+      enabled: parseConfigBoolean(config.response_guard_human_tone_enabled, true),
+      editable: true,
+      text: 'Убирать сухое “на изображении видно”, отвечать живо: “вижу у вас...”, “по фото понял...”.',
+    },
+  ];
+  const risks = [];
+  if (capability.vision === 'missing') {
+    risks.push({
+      level: 'critical',
+      title: 'Vision недоступен',
+      detail: 'AI не сможет реально смотреть фото, скрины и PDF-картинки.',
+      action: 'Настроить AI provider/model с vision-поддержкой.',
+    });
+  } else if (capability.vision === 'unknown') {
+    risks.push({
+      level: 'important',
+      title: 'Vision у модели не подтверждён',
+      detail: 'Модель может быть текстовой или провайдер может не поддерживать image_url.',
+      action: 'Проверить реальным фото: бирка размера, ПВЗ, чек.',
+    });
+  }
+  if (capability.stt === 'missing') {
+    risks.push({
+      level: 'info',
+      title: 'STT не настроен',
+      detail: 'Голосовые и video note не будут полноценно расшифровываться.',
+      action: 'Заполнить STT Base URL, key и model, если голосовые важны.',
+    });
+  }
+  if (!parseConfigBoolean(config.receipt_check_enabled, true)) {
+    risks.push({
+      level: 'critical',
+      title: 'Проверка чеков выключена',
+      detail: 'Фото/скрины оплаты не будут проходить чековый guard.',
+      action: 'Включить receipt_check_enabled.',
+    });
+  }
+  return {
+    status: 'ok',
+    module: 'Медиа-анализ',
+    source: 'index.js: normalizeTelegramMessage / buildMediaInspectionText / buildAiMessages',
+    config: {
+      mediaBehavior: config.media_behavior || 'answer_from_media',
+      vision: capability.vision,
+      stt: capability.stt,
+      sttModel: config.stt_model || '',
+      receiptCheckEnabled: parseConfigBoolean(config.receipt_check_enabled, true),
+      pdfReceiptTextLimit: PDF_RECEIPT_TEXT_LIMIT,
+      pdfRenderDpi: PDF_RENDER_DPI,
+      maxPdfReceiptBytes: MAX_PDF_RECEIPT_BYTES,
+      maxSttFileBytes: MAX_STT_FILE_BYTES,
+      iwakReaderVisionImageLimit: IWAK_READER_VISION_IMAGE_LIMIT,
+      maxImagesToModel: 4,
+    },
+    summary: {
+      mediaTypes: mediaTypes.length,
+      guards: guards.length,
+      enabledGuards: guards.filter((item) => item.enabled).length,
+      risks: risks.length,
+    },
+    pipeline: [
+      'Telegram message приходит в normalizeTelegramMessage',
+      'Текст, caption, фото, документ, PDF, voice, video_note нормализуются в text/images/media',
+      'PDF пробует текстовый слой и рендер первой страницы',
+      'STT пробует расшифровать voice/video_note, если настроен',
+      'buildMediaInspectionText добавляет в prompt обязательную классификацию вложения',
+      'buildAiMessages прикладывает фото клиента и фото iwak.ru Reader в vision-модель',
+      'receipt/response/quality guards не дают перепутать фото товара с чеком и убирают сухой тон',
+    ],
+    mediaTypes,
+    guards,
+    risks,
+    rulesText: config.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT,
+    inspectionText: buildMediaInspectionText({
+      hasMedia: true,
+      images: ['example'],
+      media: [{ type: 'photo' }],
+    }),
+    recentEvents: getRecentMediaEvents(12),
+  };
+}
+
+app.get('/system/media', (req, res) => {
+  res.json(buildMediaPassport(runtimeConfig));
+});
+
+function getRecentManagerEvents(limit = 12) {
+  const max = Math.max(1, Math.min(50, Number(limit) || 12));
+  return getMergedLogs()
+    .filter((item) => {
+      const event = String(item.event || '').toUpperCase();
+      const status = String(item.messageStatus || item.status || '').toLowerCase();
+      const source = String(item.source || '').toLowerCase();
+      return (
+        source.includes('manager') ||
+        status.includes('manager') ||
+        /MANAGER|TAKEOVER|PASSIVE/.test(event)
+      );
+    })
+    .slice(-max)
+    .reverse()
+    .map((item) => ({
+      time: item.time || '',
+      event: item.event || '',
+      status: item.status || '',
+      messageStatus: item.messageStatus || '',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      messageType: item.messageType || '',
+      autoTakeoverMs: item.autoTakeoverMs || 0,
+      batchSize: item.batchSize || 0,
+      skippedReason: item.skippedReason || '',
+      text: truncateLogText(item.text || item.replyText || item.error || item.message || ''),
+    }));
+}
+
+function getManagerLiveProfiles(limit = 8) {
+  const max = Math.max(1, Math.min(30, Number(limit) || 8));
+  return getMemoryLiveProfiles(30)
+    .filter((profile) => {
+      const messages = Array.isArray(profile.lastMessages) ? profile.lastMessages : [];
+      return (
+        profile.aiMode === 'passive_manager' ||
+        messages.some((message) => message.role === 'manager')
+      );
+    })
+    .slice(0, max)
+    .map((profile) => {
+      const state = getDialogState(profile.chatId) || {};
+      const recentManagerMessages = (profile.lastMessages || [])
+        .filter((message) => message.role === 'manager')
+        .slice(-3);
+      const pendingSinceMs = Date.parse(state.pendingSince || '');
+      const autoTakeoverMs = Date.parse(state.autoTakeoverAt || '');
+      return {
+        chatId: profile.chatId,
+        username: profile.username,
+        name: profile.name,
+        aiMode: state.aiMode || profile.aiMode || '',
+        modeSource: state.modeSource || '',
+        managerActiveAt: state.managerActiveAt || '',
+        managerLastMessageAt: state.managerLastMessageAt || '',
+        pendingSince: state.pendingSince || '',
+        autoTakeoverAt: state.autoTakeoverAt || '',
+        secondsToAutoTakeover: Number.isFinite(autoTakeoverMs)
+          ? Math.max(0, Math.round((autoTakeoverMs - Date.now()) / 1000))
+          : null,
+        pendingSeconds: Number.isFinite(pendingSinceMs)
+          ? Math.max(0, Math.round((Date.now() - pendingSinceMs) / 1000))
+          : null,
+        lastClientTraceId: state.lastClientTraceId || '',
+        lastManagerTraceId: state.lastManagerTraceId || '',
+        recentManagerMessages,
+        lastMessages: (profile.lastMessages || []).slice(-5),
+        updatedAt: profile.updatedAt || state.updatedAt || '',
+      };
+    });
+}
+
+function buildManagerPassport(config = runtimeConfig) {
+  const enabled = parseConfigBoolean(config.manager_takeover_enabled, true);
+  const delayMs = getConfigManagerReturnDelayMs(config);
+  const liveProfiles = getManagerLiveProfiles(8);
+  const risks = [];
+  if (!enabled) {
+    risks.push({
+      level: 'critical',
+      title: 'Менеджерский перехват выключен',
+      detail: 'Если менеджер напишет клиенту вручную, AI может продолжить отвечать поверх него.',
+      action: 'Включить manager_takeover_enabled.',
+    });
+  }
+  if (delayMs < 60000) {
+    risks.push({
+      level: 'important',
+      title: 'AI возвращается слишком быстро',
+      detail: 'Меньше минуты может быть мало, если менеджер ещё ведёт клиента.',
+      action: 'Поставить задержку 3-5 минут, если менеджер часто отвечает серией сообщений.',
+    });
+  }
+  if (!parseConfigBoolean(config.memory_enabled, true)) {
+    risks.push({
+      level: 'important',
+      title: 'Память выключена',
+      detail: 'После ручного перехвата AI хуже понимает, что менеджер уже сказал клиенту.',
+      action: 'Включить memory_enabled для нормального возврата в контекст.',
+    });
+  }
+  if (!String(config.manager_node_rules_text || '').trim()) {
+    risks.push({
+      level: 'important',
+      title: 'Правила менеджерского узла пустые',
+      detail: 'AI не получает отдельный паспорт поведения после ручного менеджера.',
+      action: 'Заполнить manager_node_rules_text.',
+    });
+  }
+  return {
+    status: 'ok',
+    module: 'Менеджерский перехват',
+    source: 'index.js: setManagerActive / scheduleManagerReturn / buildManagerHandoffSummary',
+    config: {
+      enabled,
+      managerReturnDelayMs: delayMs,
+      managerReturnDelaySec: Math.round(delayMs / 1000),
+      memoryEnabled: parseConfigBoolean(config.memory_enabled, true),
+      autoReplyEnabled: parseConfigBoolean(config.auto_reply_enabled, true),
+      humanTypingMode: normalizeHumanTypingMode(config.human_typing_mode),
+      pendingTimers: managerReturnTimers.size,
+      pendingChats: managerPendingInputs.size,
+    },
+    summary: {
+      modes: 3,
+      liveProfiles: liveProfiles.length,
+      risks: risks.length,
+      recentEvents: getRecentManagerEvents(12).length,
+    },
+    modes: [
+      {
+        key: 'active',
+        title: 'AI ведёт',
+        meaning: 'Обычный режим: клиент пишет, AI собирает batch и отвечает.',
+        source: 'enqueueInputForBatch / processInputBatch',
+      },
+      {
+        key: 'passive_manager',
+        title: 'Менеджер ведёт',
+        meaning: 'Менеджер написал вручную, AI сохраняет контекст и не отвечает клиенту.',
+        source: 'setManagerActive',
+      },
+      {
+        key: 'manager_wait',
+        title: 'Ожидание возврата',
+        meaning: 'Клиент написал после менеджера: AI ждёт таймер, чтобы не перебить живого человека.',
+        source: 'scheduleManagerReturn',
+      },
+    ],
+    pipeline: [
+      'Входящее Telegram Business сообщение классифицируется по источнику: client / manager / manager_auto',
+      'Если источник manager и перехват включён: batch клиента отменяется, таймер возврата сбрасывается',
+      'Сообщение менеджера пишется в память как role=manager',
+      'applyManagerStageHints вытаскивает из текста менеджера товар, размер, цену, доставку и другие факты',
+      'dialog_state получает aiMode=passive_manager, managerActiveAt, managerLastMessageAt, lastManagerTraceId',
+      'Если клиент пишет в passive_manager, AI не отвечает сразу, а запускает scheduleManagerReturn',
+      'После manager_return_delay_ms AI переводится в active, читает handoff summary и отвечает на накопленные сообщения',
+    ],
+    rulesText: config.manager_node_rules_text || DEFAULT_MANAGER_NODE_RULES_TEXT,
+    handoffRules: [
+      'Последние сообщения менеджера важнее старой памяти.',
+      'После возврата не начинать сценарий заново.',
+      'Не противоречить менеджеру по цене, остаткам, доставке, реквизитам и ручным решениям.',
+      'Если менеджер уже отправил реквизиты или принял решение, AI не должен просить то же самое повторно.',
+    ],
+    risks,
+    liveProfiles,
+    recentEvents: getRecentManagerEvents(12),
+  };
+}
+
+app.get('/system/manager', (req, res) => {
+  res.json(buildManagerPassport(runtimeConfig));
+});
+
+function getRecentReturnEvents(limit = 12) {
+  const max = Math.max(1, Math.min(50, Number(limit) || 12));
+  return getMergedLogs()
+    .filter((item) => {
+      const text = [
+        item.text,
+        item.replyText,
+        item.finalReply,
+        item.sentReply,
+        item.rawAiReply,
+        item.message,
+        item.error,
+      ].filter(Boolean).join(' ');
+      return /(возврат|обмен|примерк|померить|примерить|коробк|упаковк|товарн.{0,12}вид|след.{0,8}нос|подошв|комплект|аксессуар)/i.test(text);
+    })
+    .slice(-max)
+    .reverse()
+    .map((item) => ({
+      time: item.time || '',
+      event: item.event || '',
+      status: item.status || '',
+      traceId: item.traceId || '',
+      chatId: item.chatId || '',
+      messageType: item.messageType || '',
+      text: truncateLogText(item.text || item.replyText || item.finalReply || item.sentReply || item.rawAiReply || item.message || ''),
+    }));
+}
+
+function buildReturnsPassport(config = runtimeConfig) {
+  const enabled = parseConfigBoolean(config.quality_return_soft_enabled, true);
+  const conditions = [
+    {
+      type: 'Общее правило',
+      requirement: 'Сохранить товарный вид, упаковку и весь комплект.',
+      clientPhrase: 'Главное — сохранить товарный вид, упаковку и комплект.',
+      doNotSay: 'Не обещать возврат в любом состоянии.',
+    },
+    {
+      type: 'Обувь',
+      requirement: 'Коробка целая, без сильных повреждений; кроссовки без заметных следов носки; подошва чистая; вложения, шнурки и аксессуары на месте.',
+      clientPhrase: 'По обуви важно сохранить коробку, чистую подошву и весь комплект.',
+      doNotSay: 'Не принимать как норму убитую коробку, грязную подошву или неполный комплект.',
+    },
+    {
+      type: 'Одежда',
+      requirement: 'Без следов носки, пятен, запахов и повреждений; бирки, упаковка и комплект сохранены, если были.',
+      clientPhrase: 'По одежде важно без следов носки, пятен и повреждений, с бирками/упаковкой, если они были.',
+      doNotSay: 'Не обещать возврат вещи после носки или с повреждениями.',
+    },
+    {
+      type: 'Сумки и аксессуары',
+      requirement: 'Без следов использования, царапин и повреждений; упаковка и комплект на месте.',
+      clientPhrase: 'По аксессуарам важно сохранить внешний вид, упаковку и комплект.',
+      doNotSay: 'Не обещать возврат с царапинами, повреждениями или без комплектующих.',
+    },
+  ];
+  const rules = [
+    {
+      key: 'quality_return_inspect_enabled',
+      title: 'Примерка при получении',
+      enabled: parseConfigBoolean(config.quality_return_inspect_enabled, true),
+      meaning: 'Клиент может спокойно забрать товар, примерить, осмотреть и проверить.',
+      source: 'getQualityGuidance',
+    },
+    {
+      key: 'quality_return_soft_enabled',
+      title: 'Мягкий возврат/обмен',
+      enabled,
+      meaning: 'Если что-то не подойдёт, клиент пишет нам, решаем через возврат или обмен по правилам магазина.',
+      source: 'getQualityGuidance',
+    },
+    {
+      key: 'quality_return_no_dates_enabled',
+      title: 'Не выдумывать сроки',
+      enabled: parseConfigBoolean(config.quality_return_no_dates_enabled, true),
+      meaning: 'Не писать 14 дней, всегда можно или юридические обещания, если срок не задан вручную.',
+      source: 'getQualityGuidance',
+    },
+    {
+      key: 'quality_no_extra_photos_enabled',
+      title: 'Не обещать дополнительные фото',
+      enabled: parseConfigBoolean(config.quality_no_extra_photos_enabled, true),
+      meaning: 'Не писать “сейчас скину фото”, если новых фото нет в диалоге.',
+      source: 'getQualityGuidance / media guard',
+    },
+    {
+      key: 'quality_replica_honesty_enabled',
+      title: 'Честность про реплику',
+      enabled: parseConfigBoolean(config.quality_replica_honesty_enabled, true),
+      meaning: 'На вопрос про оригинальность отвечать честно: хорошая фабричная реплика.',
+      source: 'getQualityGuidance',
+    },
+  ];
+  const risks = [];
+  if (!enabled) {
+    risks.push({
+      level: 'critical',
+      title: 'Мягкий возврат/обмен выключен',
+      detail: 'AI может не дать клиенту спокойный мост к возврату/обмену при сомнении.',
+      action: 'Включить quality_return_soft_enabled.',
+    });
+  }
+  if (!parseConfigBoolean(config.quality_return_inspect_enabled, true)) {
+    risks.push({
+      level: 'important',
+      title: 'Примерка при получении выключена',
+      detail: 'AI может снова написать “примерки нет”, хотя клиент имеет в виду забрать, примерить и проверить.',
+      action: 'Включить quality_return_inspect_enabled.',
+    });
+  }
+  if (!parseConfigBoolean(config.quality_return_no_dates_enabled, true)) {
+    risks.push({
+      level: 'important',
+      title: 'Сроки возврата можно выдумать',
+      detail: 'Если сроков нет в AI Control, лучше не писать “14 дней” и похожие обещания.',
+      action: 'Включить quality_return_no_dates_enabled или явно заполнить сроки в правилах.',
+    });
+  }
+  if (!String(config.quality_rules_text || '').trim()) {
+    risks.push({
+      level: 'important',
+      title: 'Правила качества пустые',
+      detail: 'AI не увидит отдельные условия про коробку, подошву, комплект и товарный вид.',
+      action: 'Заполнить quality_rules_text.',
+    });
+  }
+  return {
+    status: 'ok',
+    module: 'Возвраты и примерка',
+    source: 'index.js: getQualityGuidance / RETURN_CONDITION_RULE_TEXT',
+    config: {
+      enabled,
+      inspectEnabled: parseConfigBoolean(config.quality_return_inspect_enabled, true),
+      noDatesEnabled: parseConfigBoolean(config.quality_return_no_dates_enabled, true),
+      replicaHonestyEnabled: parseConfigBoolean(config.quality_replica_honesty_enabled, true),
+      noOriginalClaimsEnabled: parseConfigBoolean(config.quality_no_original_claims_enabled, true),
+      noExtraPhotosEnabled: parseConfigBoolean(config.quality_no_extra_photos_enabled, true),
+    },
+    summary: {
+      rules: rules.length,
+      enabledRules: rules.filter((item) => item.enabled).length,
+      conditionGroups: conditions.length,
+      risks: risks.length,
+      recentEvents: getRecentReturnEvents(12).length,
+    },
+    pipeline: [
+      'Вопрос клиента про примерку/возврат/обмен попадает в getQualityGuidance',
+      'AI получает правило: примерка при получении есть, но шоурума/самовывоза может не быть',
+      'Если клиент спрашивает кратко, отвечать кратко, без юридической простыни',
+      'Если клиент спрашивает условия возврата, назвать минимум: товарный вид, упаковка, комплектность',
+      'Если товар обувь/одежда/сумка, условия уточняются по типу товара',
+      'Response guard не даёт обещать возврат в любом состоянии или выдумывать сроки',
+    ],
+    rules,
+    conditions,
+    clientAnswerPatterns: [
+      {
+        situation: 'Спрашивает про примерку при доставке/ПВЗ',
+        answer: 'Да, при получении можно спокойно забрать товар, примерить, осмотреть и проверить. Если что-то не подойдёт, напишите нам — решим через возврат или обмен по правилам магазина.',
+      },
+      {
+        situation: 'Спрашивает условия возврата',
+        answer: 'Возврат/обмен возможен, если товар сохранил товарный вид, упаковку и комплект. По обуви важно, чтобы коробка была целая, подошва чистая, без заметных следов носки.',
+      },
+      {
+        situation: 'Спрашивает про оригинальность',
+        answer: 'Это хорошая фабричная реплика. По качеству всё спокойно, перед отправкой пару дополнительно проверяем.',
+      },
+    ],
+    doNotSay: [
+      'Примерки в доставке нет.',
+      'Возврат возможен в любом состоянии.',
+      'Всегда можете вернуть без условий.',
+      '14 дней, если срок не задан в AI Control.',
+      'Оригинал, если товар не оригинальный.',
+    ],
+    rulesText: config.quality_rules_text || DEFAULT_QUALITY_RULES_TEXT,
+    returnText: config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT,
+    conditionRulesText: RETURN_CONDITION_RULE_TEXT,
+    risks,
+    recentEvents: getRecentReturnEvents(12),
+  };
+}
+
+app.get('/system/returns', (req, res) => {
+  res.json(buildReturnsPassport(runtimeConfig));
+});
+
+function buildGuardPassport(config = runtimeConfig) {
+  const item = (group, key, title, purpose, source, editable = true) => ({
+    group,
+    key,
+    title,
+    purpose,
+    enabled: parseConfigBoolean(config[key], true),
+    source,
+    editable,
+  });
+
+  const items = [
+    item('Ответ клиенту', 'response_guard_enabled', 'Главный response guard', 'Включает финальную проверку ответа перед отправкой клиенту.', 'finalizeAiReply / getResponseGuardGuidance'),
+    item('Ответ клиенту', 'response_guard_no_fake_payment_enabled', 'Не выдумывать оплату', 'Не даёт придумывать реквизиты, оплату и факт поступления денег.', 'getResponseGuardGuidance / getFactBoundaryGuidance'),
+    item('Ответ клиенту', 'response_guard_no_repeat_known_enabled', 'Не повторять известное', 'Срезает лишние повторные вопросы, если данные уже есть в памяти или сообщении.', 'finalizeAiReply / order path guards'),
+    item('Ответ клиенту', 'response_guard_human_tone_enabled', 'Живой тон', 'Убирает канцелярит и протокольные формулировки вроде сухого описания фото.', 'getResponseGuardGuidance / smalltalk guidance'),
+    item('Ответ клиенту', 'response_guard_next_step_enabled', 'Следующий шаг', 'Следит, чтобы ответ не зависал и мягко вёл клиента к понятному следующему действию.', 'getResponseGuardGuidance'),
+    item('Ответ клиенту', 'response_guard_no_final_payment_enabled', 'Не подтверждать оплату финально', 'После чека разрешает только “чек получил”, без “оплата подтверждена”.', 'receipt guard / finalizeAiReply'),
+    item('Самопроверка', 'self_check_enabled', 'Самопроверка ответа', 'Смысловой ревизор после guards: находит риск, пишет trace и показывает, какой узел открыть.', 'evaluateSelfCheck / logSelfCheckTrace'),
+    item('Самопроверка', 'self_check_autocorrect_low_risk_enabled', 'Автоисправление низкого риска', 'Разрешает автоматически править только безопасные мелочи: повторное приветствие, роботную фразу про фото, лишнее обещание ручного трека.', 'evaluateSelfCheck'),
+    item('Самопроверка', 'self_check_block_high_risk_enabled', 'Блокировка высокого риска', 'Если включено, высокий риск не уйдёт клиенту до проверки. По умолчанию выключено, чтобы не ломать живые продажи.', 'evaluateSelfCheck'),
+    item('Самопроверка', 'self_check_create_draft_lessons_enabled', 'Черновики уроков', 'Предлагает черновик урока по найденному риску, но не обучает систему без подтверждения владельца.', 'evaluateSelfCheck'),
+    item('Чек', 'receipt_check_enabled', 'Проверка чека', 'Отличает чек/квитанцию от обычного фото и запускает правильный сценарий.', 'getReceiptCheckGuidance / maybeSendOrderChatNotification'),
+    item('Чек', 'receipt_check_amount_enabled', 'Сумма чека', 'Сверяет видимую сумму с заказом настолько, насколько это возможно.', 'receipt check guidance'),
+    item('Чек', 'receipt_check_bank_enabled', 'Банк', 'Смотрит банк на чеке внутренне, клиенту лишнее не пишет.', 'receipt check guidance'),
+    item('Чек', 'receipt_check_recipient_enabled', 'Получатель', 'Смотрит получателя на чеке внутренне, без финального подтверждения оплаты.', 'receipt check guidance'),
+    item('Чек', 'receipt_check_datetime_enabled', 'Дата и время', 'Смотрит дату/время перевода внутренне, если они видны.', 'receipt check guidance'),
+    item('Чек', 'receipt_check_mismatch_enabled', 'Расхождение чека', 'Если чек не сходится, фиксирует это для менеджера, а клиенту отвечает спокойно.', 'receipt check guidance'),
+    item('Чек', 'receipt_check_no_final_confirm_enabled', 'Без финального “оплачено”', 'Даже при нормальном чеке не пишет клиенту, что деньги точно поступили.', 'receipt check guidance'),
+    item('Доставка', 'delivery_rules_enabled', 'Правила доставки', 'Не даёт назвать все службы бесплатными и держит условия из AI Control.', 'getVisibleDeliveryGuidance / finalizeDeliveryCostReply'),
+    item('Доставка', 'delivery_tracking_enabled', 'Отслеживание доставки', 'Объясняет, что статусы видны в сервисе доставки по телефону/накладной, без обещания ручного трека.', 'getVisibleDeliveryGuidance / finalizeDeliveryTrackingReply'),
+    item('Возвраты', 'quality_return_soft_enabled', 'Мягкий возврат/обмен', 'Отвечает про возврат без юридического тона и без давления.', 'getQualityGuidance'),
+    item('Возвраты', 'quality_return_inspect_enabled', 'Примерка при получении', 'Не пишет “примерки нет”: объясняет, что можно забрать, примерить, осмотреть и вернуть/обменять по правилам.', 'getQualityGuidance'),
+    item('Возвраты', 'quality_return_no_dates_enabled', 'Не выдумывать сроки возврата', 'Не пишет “14 дней” или другие сроки, если их нет в AI Control.', 'getQualityGuidance'),
+    item('Менеджер', 'manager_takeover_enabled', 'Менеджерский перехват', 'Если менеджер пишет сам, AI не влезает в диалог и ждёт возврата.', 'manager takeover / dialog_state'),
+    item('Медиа', 'media_node_rules_text', 'Правила медиа', 'Фото, PDF, скрины, чеки и бирки должны читаться как контекст, а не автоматически как чек.', 'getMediaBehaviorGuidance', false),
+    item('Оплата', 'payment_guard_rules_text', 'Правила оплаты', 'Сумма, реквизиты и чек должны отвечать по шаблону оплаты, без выдумок.', 'getVisiblePaymentGuidance', false),
+  ];
+
+  const enabled = items.filter((guard) => guard.enabled).length;
+  const disabled = items.length - enabled;
+  return {
+    status: 'ok',
+    module: 'Guard-проверки',
+    source: 'index.js: buildSystemPrompt / finalizeAiReply / receipt, delivery, payment, quality guards',
+    summary: {
+      total: items.length,
+      enabled,
+      disabled,
+      editable: items.filter((guard) => guard.editable).length,
+      readOnly: items.filter((guard) => !guard.editable).length,
+    },
+    groups: items.reduce((acc, guard) => {
+      if (!acc[guard.group]) acc[guard.group] = [];
+      acc[guard.group].push(guard);
+      return acc;
+    }, {}),
+    items,
+    textRules: {
+      response: config.response_guard_rules_text || DEFAULT_RESPONSE_GUARD_RULES_TEXT,
+      receipt: config.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
+      payment: config.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT,
+      media: config.media_node_rules_text || DEFAULT_MEDIA_NODE_RULES_TEXT,
+      returns: config.quality_rules_text || DEFAULT_QUALITY_RULES_TEXT,
+      delivery: config.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT,
+      selfCheck: config.self_check_rules_text || DEFAULT_SELF_CHECK_RULES_TEXT,
+    },
+    next: [
+      'Сделать тест-кнопку guard: входной текст + сырой ответ модели -> финальный ответ после guards.',
+      'Добавить trace конкретного ответа: какие guards сработали и что поменяли.',
+      'Вынести таблицу размеров/стельки отдельным управляемым guard-узлом.',
+    ],
+  };
+}
+
+app.get('/system/guards', (req, res) => {
+  res.json(buildGuardPassport(runtimeConfig));
+});
+
 app.get('/logs', (req, res) => {
   const items = filterLogs(getMergedLogs(), req.query || {});
   res.json({ items });
@@ -9239,18 +12046,549 @@ app.get('/logs/:traceId', (req, res) => {
   });
 });
 
+function buildTracePassport(traceId = '') {
+  const cleanTraceId = String(traceId || '').trim();
+  const items = getMergedLogs()
+    .filter((item) => item.traceId === cleanTraceId)
+    .sort((a, b) => new Date(a.time) - new Date(b.time));
+  const decision = items.find((item) => item.event === 'AI_DECISION_TRACE') || {};
+  const request = items.find((item) => item.event === 'AI_REQUEST') || {};
+  const reply = items.find((item) => item.event === 'AI_REPLY') || {};
+  const selfCheckEvent = [...items].reverse().find((item) => item.event === 'SELF_CHECK') || {};
+  const selfCheck = decision.selfCheck || selfCheckEvent || {};
+  const order = items.find((item) => item.event === 'ORDER_CHAT') || {};
+  const errors = items.filter((item) => item.status === 'error' || item.event === 'ERROR');
+  const changedByGuard = Boolean(decision.finalizeChanged || (
+    decision.rawAiReply
+    && decision.finalReply
+    && String(decision.rawAiReply).trim() !== String(decision.finalReply).trim()
+  ));
+  const selectedTraining = Array.isArray(decision.selectedTraining) ? decision.selectedTraining : [];
+  const steps = [
+    {
+      key: 'input',
+      title: 'Вход клиента',
+      status: request.text || decision.inputText ? 'ok' : 'missing',
+      value: request.text || decision.inputText || '',
+      source: 'IN / AI_REQUEST',
+    },
+    {
+      key: 'reader',
+      title: 'iwak.ru Reader',
+      status: decision.hasLinkInput ? 'used' : 'skip',
+      value: decision.hasLinkInput ? 'В сообщении была ссылка/корзина. Смотри reader/product/cart события в этом trace.' : 'Ссылки iwak.ru в этом ответе не было.',
+      source: 'enrichIwakProductContext / enrichIwakCartContext',
+    },
+    {
+      key: 'memory',
+      title: 'Память клиента',
+      status: decision.memoryHistoryCount ? 'used' : 'empty',
+      value: `История: ${decision.memoryHistoryCount || 0}; этап: ${decision.memoryStage || '—'}; следующий слот: ${decision.nextBlockingSlot || '—'}`,
+      source: 'buildMemoryContext',
+    },
+    {
+      key: 'training',
+      title: 'Уроки обучения',
+      status: selectedTraining.length ? 'used' : 'empty',
+      value: `${selectedTraining.length} уроков попало в prompt`,
+      source: 'selectTrainingExamples',
+    },
+    {
+      key: 'model',
+      title: 'Модель',
+      status: decision.model || request.model ? 'ok' : 'missing',
+      value: `${decision.model || request.model || '—'}${typeof decision.temperature === 'number' ? ` · temp ${decision.temperature}` : ''}`,
+      source: 'requestAi',
+    },
+    {
+      key: 'guards',
+      title: 'Guards',
+      status: changedByGuard ? 'changed' : 'pass',
+      value: changedByGuard ? 'Финальный ответ отличается от сырого ответа модели.' : 'Явного изменения ответа guard-слоем не видно.',
+      source: 'finalizeAiReply',
+    },
+    {
+      key: 'selfcheck',
+      title: 'Самопроверка',
+      status: selfCheck.status || (selfCheck.enabled === false ? 'off' : 'skip'),
+      value: selfCheck.issues?.length
+        ? selfCheck.issues.map((issue) => `${issue.level || 'risk'}: ${issue.title || issue.node || 'проверка'}`).join(' | ')
+        : selfCheck.enabled === false
+          ? 'Самопроверка выключена в AI Control.'
+          : 'Самопроверка не нашла отдельного риска или ещё не запускалась.',
+      source: 'evaluateSelfCheck',
+    },
+    {
+      key: 'send',
+      title: 'Отправка клиенту',
+      status: reply.status || decision.status || 'unknown',
+      value: decision.sentReply || reply.replyText || decision.finalReply || '',
+      source: 'sendHumanizedTelegramReply',
+    },
+    {
+      key: 'orders',
+      title: 'Заказник',
+      status: order.event ? (order.status || 'ok') : 'skip',
+      value: order.event ? (order.reason || order.orderChatId || 'ORDER_CHAT') : 'Заказник в этом trace не запускался.',
+      source: 'maybeSendOrderChatNotification',
+    },
+  ];
+  const risks = [];
+  if (!items.length) risks.push({ level: 'important', title: 'Trace не найден', detail: 'По этому traceId в логах нет событий.', action: 'Проверить traceId или фильтр логов.' });
+  if (errors.length) risks.push({ level: 'critical', title: 'В trace есть ошибка', detail: errors.map((item) => item.error || item.message || item.event).join(' | '), action: 'Открыть события ERROR/ошибка в trace.' });
+  if (!decision.event && items.length) risks.push({ level: 'important', title: 'Нет AI_DECISION_TRACE', detail: 'Ответ нельзя разобрать до prompt/guards уровня.', action: 'Проверить, что логирование решения включено для этого сценария.' });
+  if (selfCheck.status === 'blocked') risks.push({ level: 'critical', title: 'Самопроверка заблокировала ответ', detail: 'Высокий риск включил стоп перед отправкой.', action: 'Открыть Самопроверку и SELF_CHECK событие.' });
+  if (selfCheck.issues?.length) risks.push({ level: selfCheck.risk === 'high' ? 'critical' : 'important', title: 'Самопроверка нашла риск', detail: selfCheck.issues.map((issue) => `${issue.node}: ${issue.title}`).join(' | '), action: 'Открыть узел, который указан в selfCheck.node.' });
+  if (decision.hasLinkInput && !items.some((item) => /IWAK|READER|PRODUCT|CART/i.test(item.event || item.scope || ''))) {
+    risks.push({ level: 'important', title: 'Ссылка была, reader-события не видны', detail: 'Возможно, ссылка не была прочитана или событие не попало в лог.', action: 'Проверить iwak.ru Reader и trace входного сообщения.' });
+  }
+  return {
+    status: items.length ? 'ok' : 'empty',
+    module: 'Prompt Trace',
+    source: 'index.js: /logs/:traceId + AI_DECISION_TRACE',
+    traceId: cleanTraceId,
+    summary: {
+      events: items.length,
+      hasDecisionTrace: Boolean(decision.event),
+      selectedTraining: selectedTraining.length,
+      guardChanged: changedByGuard,
+      selfCheckStatus: selfCheck.status || '',
+      selfCheckRisk: selfCheck.risk || '',
+      errors: errors.length,
+      orderChatTouched: Boolean(order.event),
+    },
+    steps,
+    risks,
+    decision,
+    events: items,
+  };
+}
+
+app.get('/system/trace/latest', (req, res) => {
+  const latestDecision = getMergedLogs()
+    .filter((item) => item.event === 'AI_DECISION_TRACE' && item.traceId)
+    .sort((a, b) => new Date(b.time) - new Date(a.time))[0];
+  const latestTraceId = latestDecision?.traceId || '';
+  res.json(latestTraceId ? buildTracePassport(latestTraceId) : buildTracePassport(''));
+});
+
+app.get('/system/trace/:traceId', (req, res) => {
+  res.json(buildTracePassport(req.params.traceId));
+});
+
+app.get('/system/iwak-reader', async (req, res) => {
+  const url = String(req.query.url || '').trim();
+  const payload = {
+    status: 'ok',
+    module: 'iwak.ru Reader',
+    source: 'index.js: enrichIwakProductContext / enrichIwakCartContext',
+    reads: ['iwak.ru/product', 'iwak.ru/cart?items=...'],
+    apiBaseUrl: IWAK_PRODUCT_API_BASE_URL,
+    cacheTtlMs: IWAK_CART_PRODUCT_CACHE_TTL_MS,
+    timeoutMs: IWAK_CART_FETCH_TIMEOUT_MS,
+    rulesText: runtimeConfig.reader_node_rules_text || DEFAULT_READER_NODE_RULES_TEXT,
+    lastEvents: getIwakReaderEvents(Number(req.query.limit) || 5),
+    test: null,
+  };
+
+  if (url) {
+    try {
+      payload.test = await inspectIwakReaderUrl(url);
+    } catch (error) {
+      payload.test = {
+        ok: false,
+        kind: 'error',
+        error: error.message,
+      };
+    }
+  }
+
+  res.json(payload);
+});
+
+app.get('/system/orders', (req, res) => {
+  const chatId = String(req.query.chatId || '').trim();
+  let snapshot = null;
+  if (chatId) {
+    snapshot = buildOrderChatSnapshot({
+      chatId,
+      userId: chatId,
+      text: String(req.query.text || ''),
+    });
+  }
+  res.json({
+    status: 'ok',
+    module: 'Заказник',
+    source: 'index.js: buildOrderChatSnapshot / maybeSendOrderChatNotification',
+    enabled: isOrderChatEnabled(runtimeConfig),
+    orderChatId: getOrderChatId(runtimeConfig),
+    trigger: 'payment proof input: чек/квитанция/оплата',
+    dedupe: 'receiptKey + pending digest 2 min + sent digest 10 min',
+    editableFields: [
+      'order_chat_enabled',
+      'order_chat_id',
+      'order_chat_template_text',
+      'order_rules_text',
+      'soft_retention_enabled',
+      'soft_retention_triggers_text',
+      'soft_retention_rules_text',
+      'soft_retention_forbidden_text',
+      'soft_retention_examples_text',
+      'receipt_check_rules_text',
+    ],
+    pipeline: [
+      'Клиент присылает настоящий чек/квитанцию/PDF оплаты',
+      'receipt guard отличает чек от обычного фото, ПВЗ, товара или скрина доставки',
+      'buildOrderChatSnapshot собирает поля из памяти, заказа, текущего текста и reader-контекста',
+      'шаблон order_chat_template_text форматирует сообщение в группу заказов',
+      'maybeSendOrderChatNotification проверяет дедубли: receiptKey, pending digest 2 минуты, sent digest 10 минут',
+      'после успешной отправки state получает lastOrderChatSentAt и lastOrderChatDigest',
+    ],
+    retention: {
+      enabled: parseConfigBoolean(runtimeConfig.soft_retention_enabled, true),
+      triggersText: runtimeConfig.soft_retention_triggers_text || DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT,
+      rulesText: runtimeConfig.soft_retention_rules_text || DEFAULT_SOFT_RETENTION_RULES_TEXT,
+      forbiddenText: runtimeConfig.soft_retention_forbidden_text || DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT,
+      examplesText: runtimeConfig.soft_retention_examples_text || DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT,
+      source: 'getOrderPathGuidance -> buildSystemPrompt',
+    },
+    fieldsMap: [
+      { key: 'customer', title: 'Клиент', source: 'Telegram customer username/name' },
+      { key: 'product', title: 'Товар', source: 'iwak.ru Reader -> order/currentProduct/lastOrder' },
+      { key: 'link', title: 'Ссылка', source: 'iwak.ru product/cart context или текст клиента' },
+      { key: 'size', title: 'Размер', source: 'customer_facts.size/shoeSize или lastOrder.size' },
+      { key: 'insole', title: 'Стелька', source: 'customer_facts.insoleCm или размерная логика' },
+      { key: 'fullName', title: 'ФИО', source: 'customer_facts.fullName / текст клиента' },
+      { key: 'phone', title: 'Телефон', source: 'customer_facts.phone / текст клиента' },
+      { key: 'city', title: 'Город', source: 'customer_facts.city / extractCity(deliveryAddress)' },
+      { key: 'delivery', title: 'Доставка', source: 'deliveryService + pickupPoint/deliveryAddress' },
+    ],
+    doNotSendWhen: [
+      'Обычное фото товара, бирки, ПВЗ, карты или доставки.',
+      'Чек уже отправлял заказник по тому же receiptKey.',
+      'Недавно отправлялся тот же digest заказа.',
+      'order_chat_enabled выключен или order_chat_id пустой.',
+    ],
+    templateText: runtimeConfig.order_chat_template_text || DEFAULT_ORDER_CHAT_TEMPLATE_TEXT,
+    recentEvents: getOrderChatEvents(Number(req.query.limit) || 5),
+    recentOrders: getRecentOrderSnapshots(Number(req.query.ordersLimit) || 8),
+    snapshot,
+  });
+});
+
+app.get('/system/memory', (req, res) => {
+  const chatId = String(req.query.chatId || '').trim();
+  const profile = chatId
+    ? safeCustomerStoreCall('system.memory.profile', (store) => store.getCustomerProfile(chatId))
+    : null;
+  res.json({
+    status: 'ok',
+    module: 'Память клиента',
+    source: 'SQLite: customers / customer_facts / dialog_states / orders',
+    enabled: parseConfigBoolean(runtimeConfig.memory_enabled, true),
+    recentLimit: getConfigMemoryLimit(runtimeConfig),
+    rulesText: runtimeConfig.memory_node_rules_text || DEFAULT_MEMORY_NODE_RULES_TEXT,
+    editableFields: [
+      'memory_enabled',
+      'memory_recent_limit',
+      'memory_node_rules_text',
+    ],
+    pipeline: [
+      'Входящее сообщение нормализуется и сохраняется в recentMessages',
+      'updateCustomerMemoryFromInput извлекает факты: ФИО, телефон, размер, стелька, город, доставка, товар',
+      'buildMemoryContext собирает summary, history, facts, state и slotSnapshot для prompt',
+      'свежие факты из текущего сообщения и менеджера важнее старой памяти',
+      'repair памяти чинит только явно грязные товарные факты, не трогая весь профиль',
+    ],
+    factSchema: [
+      { key: 'fullName', title: 'ФИО', writeSource: 'текст клиента / менеджера', garbage: 'адрес, реквизиты, фраза без имени' },
+      { key: 'phone', title: 'Телефон', writeSource: 'номер из сообщения', garbage: 'номер карты, трек, сумма заказа' },
+      { key: 'shoeSize/size', title: 'Размер', writeSource: 'выбранный клиентом размер', garbage: 'случайная цифра из цены или адреса' },
+      { key: 'insoleCm', title: 'Стелька', writeSource: 'см/mm в контексте размера', garbage: 'цена, номер телефона, адрес' },
+      { key: 'city', title: 'Город', writeSource: 'город из сообщения или адреса', garbage: 'улица без города' },
+      { key: 'deliveryAddress/pickupPoint', title: 'ПВЗ/адрес', writeSource: 'адрес, скрин ПВЗ, текст доставки', garbage: 'реквизиты оплаты, чек' },
+      { key: 'currentProduct/lastProduct', title: 'Товар', writeSource: 'iwak.ru Reader, корзина, нормальный товарный текст', garbage: 'Здравствуйте, хочу заказать, обычная ссылка без товара' },
+    ],
+    repair: {
+      endpointDryRun: '/system/memory/repair',
+      endpointApply: '/system/memory/repair POST { apply: true }',
+      scope: 'Только грязные currentProduct/lastProduct, без полного сброса клиента.',
+    },
+    profiles: getMemoryLiveProfiles(Number(req.query.limit) || 8),
+    selected: profile ? {
+      chatId,
+      customer: profile.customer || null,
+      facts: Object.entries(profile.facts || {}).map(([key, fact]) => ({
+        key,
+        value: fact?.value || '',
+        source: fact?.source || '',
+        confidence: fact?.confidence || '',
+        updatedAt: fact?.updatedAt || '',
+      })),
+      state: profile.state || null,
+      lastOrder: profile.lastOrder || null,
+      recentMessages: profile.recentMessages || [],
+      issues: getMemoryFactIssues(profile),
+    } : null,
+  });
+});
+
+app.get('/system/payment', (req, res) => {
+  const config = getPaymentConfigSnapshot(runtimeConfig);
+  const profiles = getPaymentLiveProfiles(Number(req.query.limit) || 8);
+  const issues = profiles.flatMap((profile) => profile.issues || []);
+  const configRisks = [];
+  if (config.enabled && (!config.hasCard || !config.hasRecipient || !config.hasBank)) {
+    configRisks.push({
+      level: 'critical',
+      title: 'Оплата включена, но реквизиты неполные',
+      detail: 'AI может перейти к оплате, но не сможет корректно назвать карту, получателя или банк.',
+      action: 'Заполнить карту, получателя и банк в узле Оплата или держать оплату выключенной.',
+    });
+  }
+  if (!config.receiptCheckEnabled) {
+    configRisks.push({
+      level: 'important',
+      title: 'Проверка чеков выключена',
+      detail: 'Фото/файл оплаты может пройти без сверки суммы, банка, получателя и даты.',
+      action: 'Включить receipt_check_enabled и связанные проверки.',
+    });
+  }
+  if (!config.noFinalConfirmGuard) {
+    configRisks.push({
+      level: 'important',
+      title: 'Финальное подтверждение оплаты не защищено',
+      detail: 'AI может написать, что оплата подтверждена, хотя финально проверяет менеджер.',
+      action: 'Включить receipt_check_no_final_confirm_enabled и response_guard_no_final_payment_enabled.',
+    });
+  }
+  if (normalizeMemoryText(runtimeConfig.receipt_check_success_text || '') !== RECEIPT_ACK_REPLY) {
+    configRisks.push({
+      level: 'important',
+      title: 'Ответ после чека отличается от короткого эталона',
+      detail: 'После реального чека безопаснее отвечать только "Чек получил, спасибо.", без доставки, оплаты и лишних обещаний.',
+      action: 'Поставить receipt_check_success_text = "Чек получил, спасибо."',
+    });
+  }
+  res.json({
+    status: 'ok',
+    module: 'Оплата',
+    source: 'index.js: payment config / finalizePaymentAmountReply / receipt guard / orders',
+    config,
+    rulesText: runtimeConfig.payment_guard_rules_text || DEFAULT_PAYMENT_GUARD_RULES_TEXT,
+    styleText: runtimeConfig.payment_style_text || DEFAULT_PAYMENT_STYLE_TEXT,
+    layoutText: runtimeConfig.payment_layout_text || DEFAULT_PAYMENT_LAYOUT_TEXT,
+    exampleText: runtimeConfig.payment_example_text || DEFAULT_PAYMENT_EXAMPLE_TEXT,
+    receiptRulesText: runtimeConfig.receipt_check_rules_text || DEFAULT_RECEIPT_CHECK_RULES_TEXT,
+    editableFields: [
+      'payment_enabled',
+      'payment_method',
+      'payment_card_number',
+      'payment_recipient_name',
+      'payment_bank',
+      'payment_comment',
+      'payment_style_text',
+      'payment_layout_text',
+      'payment_guard_rules_text',
+      'payment_example_text',
+      'receipt_check_success_text',
+      'receipt_check_mismatch_text',
+      'receipt_check_rules_text',
+    ],
+    pipeline: [
+      'AI собирает заказ и цену',
+      'если клиент готов платить, проверяется payment_enabled',
+      'перед реквизитами обязательно показывается сумма к оплате, если цена известна',
+      'реквизиты берутся только из AI Control',
+      'перед реквизитами guard добавляет сумму к оплате',
+      'клиент присылает чек или квитанцию',
+      'чек/квитанция проходят receipt guard',
+      'AI отвечает клиенту коротко: "Чек получил, спасибо."',
+      'заказник отправляет заказ в группу после реального чека',
+      'финальную проверку оплаты делает менеджер вручную',
+    ],
+    rules: [
+      { key: 'payment_enabled', title: 'AI может отправлять реквизиты', enabled: config.enabled, source: 'runtimeConfig.payment_enabled' },
+      { key: 'payment_guard_rules_text', title: 'Правила оплаты и суммы', enabled: true, source: 'getVisiblePaymentGuidance' },
+      { key: 'receipt_check_enabled', title: 'Проверка чеков', enabled: config.receiptCheckEnabled, source: 'receipt guard' },
+      { key: 'receipt_check_no_final_confirm_enabled', title: 'Не подтверждать оплату финально', enabled: config.noFinalConfirmGuard, source: 'receipt + response guard' },
+    ],
+    clientAnswerPatterns: [
+      {
+        situation: 'Клиент спрашивает, сколько переводить',
+        answer: 'Сумма к оплате: {amount}.',
+      },
+      {
+        situation: 'Клиент готов оплатить, реквизиты включены',
+        answer: 'Сумма к оплате: {amount}. Способ оплаты: перевод на карту. Реквизиты: {card}. Получатель: {recipient}. Банк: {bank}. После оплаты пришлите, пожалуйста, чек.',
+      },
+      {
+        situation: 'Клиент прислал чек',
+        answer: runtimeConfig.receipt_check_success_text || RECEIPT_ACK_REPLY,
+      },
+    ],
+    doNotSay: [
+      'Оплата подтверждена финально.',
+      'Реквизиты, которых нет в AI Control.',
+      'Сумму к оплате без проверки цены заказа.',
+      'Ждём оплату в заказнике.',
+      'Чек получил на обычное фото товара, ПВЗ или скрин доставки.',
+    ],
+    configRisks,
+    recentProfiles: profiles,
+    recentEvents: getPaymentEvents(Number(req.query.eventsLimit) || 8),
+    issueCount: issues.length + configRisks.length,
+  });
+});
+
+app.get('/system/delivery', (req, res) => {
+  const config = getDeliveryConfigSnapshot(runtimeConfig);
+  const profiles = getDeliveryLiveProfiles(Number(req.query.limit) || 8);
+  const configIssues = getDeliveryConfigIssues(config);
+  const issues = [
+    ...configIssues,
+    ...profiles.flatMap((profile) => profile.issues || []),
+  ];
+  const freeServices = config.freeServices || [];
+  const paidServices = config.paidServices || [];
+  res.json({
+    status: 'ok',
+    module: 'Доставка',
+    source: 'index.js: delivery config / finalizeDeliveryCostReply / finalizeDeliveryTrackingReply / customer facts',
+    config,
+    configIssues,
+    rulesText: runtimeConfig.delivery_rules_text || DEFAULT_DELIVERY_RULES_TEXT,
+    styleText: runtimeConfig.delivery_style_text || DEFAULT_DELIVERY_STYLE_TEXT,
+    layoutText: runtimeConfig.delivery_layout_text || DEFAULT_DELIVERY_LAYOUT_TEXT,
+    consultantOptionsText: runtimeConfig.delivery_consultant_options_text || DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT,
+    consultantRulesText: runtimeConfig.delivery_consultant_rules_text || DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT,
+    trackingText: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
+    exampleText: runtimeConfig.delivery_example_text || DEFAULT_DELIVERY_EXAMPLE_TEXT,
+    editableFields: [
+      'delivery_rules_enabled',
+      'delivery_free_services',
+      'delivery_paid_services',
+      'delivery_rules_text',
+      'delivery_style_text',
+      'delivery_layout_text',
+      'delivery_consultant_enabled',
+      'delivery_consultant_options_text',
+      'delivery_consultant_rules_text',
+      'delivery_tracking_enabled',
+      'delivery_tracking_text',
+      'delivery_example_text',
+    ],
+    pipeline: [
+      'AI собирает город, службу доставки и ПВЗ/адрес',
+      'если скил умного подбора включён, AI предлагает 1-2 лучших варианта, а не весь список служб',
+      'guard не даёт назвать все доставки бесплатными',
+      `${freeServices.join(', ') || 'Бесплатные службы не заданы'}: бесплатная доставка`,
+      `${paidServices.join(', ') || 'Платные службы не заданы'}: по тарифам выбранной службы`,
+      'если клиент прислал скрин ПВЗ/адреса, AI должен использовать его, а не просить повторно',
+      'по трекингу AI не обещает ручной трек, если его нет',
+      'если телефон клиента зарегистрирован в выбранной службе, статусы обычно видны в приложении/личном кабинете службы',
+    ],
+    rules: [
+      { key: 'delivery_rules_enabled', title: 'Правила доставки включены', enabled: config.enabled, source: 'runtimeConfig.delivery_rules_enabled' },
+      { key: 'delivery_free_services', title: 'Бесплатные службы', enabled: Boolean(freeServices.length), value: freeServices.join(', '), source: 'runtimeConfig.delivery_free_services' },
+      { key: 'delivery_paid_services', title: 'Платные службы', enabled: Boolean(paidServices.length), value: paidServices.join(', '), source: 'runtimeConfig.delivery_paid_services' },
+      { key: 'delivery_consultant_enabled', title: 'Умный подбор доставки', enabled: parseConfigBoolean(runtimeConfig.delivery_consultant_enabled, true), value: 'Консультант-решатель: подобрать лучший вариант за клиента', source: 'runtimeConfig.delivery_consultant_enabled' },
+      { key: 'delivery_tracking_enabled', title: 'Трекинг доставки', enabled: config.trackingEnabled, source: 'runtimeConfig.delivery_tracking_enabled' },
+    ],
+    clientAnswerPatterns: [
+      {
+        situation: 'Клиент спрашивает, как лучше доставить',
+        answer: 'Смотрите, я бы предложил Яндекс Доставку или Ozon: они бесплатные, так вы не переплачиваете за доставку. СДЭК тоже можно, но он уже платный по тарифу службы. Давайте поставлю бесплатный вариант?',
+      },
+    {
+      situation: 'Клиенту важнее скорость',
+      answer: 'Если вы в Москве и нужно срочно сегодня, можно предложить курьера за отдельную плату в удобное время. Если город другой, курьера от себя не предлагаем: лучше подобрать ПВЗ/постамат или нужную транспортную компанию. Самый выгодный вариант обычно Яндекс или Ozon, потому что доставка бесплатная.',
+    },
+      {
+        situation: 'Клиент спрашивает, бесплатная ли доставка',
+        answer: `${freeServices.join(' и ') || 'Яндекс Доставка и Ozon'} бесплатные. Остальные транспортные компании — по тарифам выбранной службы.`,
+      },
+      {
+        situation: 'Клиент выбрал CDEK/Почту/WB/другую ТК',
+        answer: 'Эта служба доставки оплачивается по тарифу транспортной компании.',
+      },
+      {
+        situation: 'Клиент спрашивает про сроки/отслеживание',
+        answer: runtimeConfig.delivery_tracking_text || DEFAULT_DELIVERY_TRACKING_TEXT,
+      },
+    ],
+    doNotSay: [
+      'Доставка бесплатная для всех служб.',
+      'Менеджер обязательно пришлёт трек-номер вручную.',
+      'Точные сроки доставки без данных службы.',
+      'Снова просить адрес, если клиент уже прислал адрес или скрин ПВЗ.',
+    ],
+    recentProfiles: profiles,
+    recentEvents: getDeliveryEvents(Number(req.query.eventsLimit) || 8),
+    issueCount: issues.length,
+  });
+});
+
+app.get('/system/memory/repair', (req, res) => {
+  res.json(buildMemoryProductRepairPlan({ apply: false }));
+});
+
+app.post('/system/memory/repair', (req, res) => {
+  const apply = req.body?.apply === true;
+  if (!apply) {
+    res.json(buildMemoryProductRepairPlan({ apply: false }));
+    return;
+  }
+  res.json(buildMemoryProductRepairPlan({ apply: true }));
+});
+
 app.get('/training', (req, res) => {
   const items = (trainingStore.items || []).slice(0, MAX_TRAINING_EXAMPLES);
+  const activeItems = items.filter((item) => item.active !== false);
+  const goodItems = items.filter((item) => item.type === 'good');
+  const badItems = items.filter((item) => item.type !== 'good');
+  const risks = [];
+  if (!activeItems.length) {
+    risks.push({ level: 'important', title: 'Активных уроков нет', detail: 'Prompt не получает good/bad примеры из Training.', action: 'Добавить хорошие уроки или включить нужные существующие.' });
+  }
+  if (badItems.length > goodItems.length * 2) {
+    risks.push({ level: 'important', title: 'Плохих уроков сильно больше хороших', detail: 'Продавец может учиться в основном от ошибок, без эталонов.', action: 'Добавить хорошие уроки через кнопку “Хороший урок”.' });
+  }
   res.json({
     items,
     promptLimit: TRAINING_PROMPT_EXAMPLES,
-    promptItems: Math.min(items.filter((item) => item.active !== false).length, TRAINING_PROMPT_EXAMPLES),
+    promptItems: Math.min(activeItems.length, TRAINING_PROMPT_EXAMPLES),
+    passport: {
+      source: 'training-examples.json / selectTrainingExamples / getTrainingExamplesGuidance',
+      editableFields: ['type', 'active', 'category', 'note', 'ruleText', 'contextText', 'clientText', 'aiText', 'correctedText'],
+      pipeline: [
+        'Владелец выделяет фрагмент диалога или добавляет урок вручную',
+        'урок сохраняется как good или bad с категорией',
+        'selectTrainingExamples выбирает максимум 5 уроков в prompt',
+        'подбор: 3 наиболее релевантных + 2 свежих',
+        'AI видит ruleText и примеры, но критичные правила держатся guard-логикой',
+      ],
+      limits: {
+        maxTrainingExamples: MAX_TRAINING_EXAMPLES,
+        promptLimit: TRAINING_PROMPT_EXAMPLES,
+        relevant: TRAINING_RELEVANT_PROMPT_EXAMPLES,
+        recent: TRAINING_RECENT_PROMPT_EXAMPLES,
+      },
+      risks,
+      doNotUseFor: [
+        'жёсткая проверка чеков',
+        'финальное подтверждение оплаты',
+        'дедубли заказника',
+        'чтение iwak.ru ссылок',
+        'менеджерский перехват',
+      ],
+    },
     summary: {
       total: items.length,
-      active: items.filter((item) => item.active !== false).length,
+      active: activeItems.length,
       disabled: items.filter((item) => item.active === false).length,
-      good: items.filter((item) => item.type === 'good').length,
-      bad: items.filter((item) => item.type !== 'good').length,
+      good: goodItems.length,
+      bad: badItems.length,
     },
     categories: Object.entries(TRAINING_CATEGORIES).map(([key, meta]) => ({
       key,
@@ -9319,6 +12657,7 @@ app.post('/sai-gpt/chat', async (req, res) => {
     const result = await requestSaiGptChat({
       messages: req.body?.messages || [],
       selectedChatId: sanitizeSaiGptText(req.body?.selectedChatId || '', 120),
+      uiContext: req.body?.uiContext && typeof req.body.uiContext === 'object' ? req.body.uiContext : {},
     });
     res.json({ success: true, ...result });
   } catch (error) {
@@ -10258,14 +13597,14 @@ app.post('/config/models', async (req, res) => {
 });
 
 app.post('/sai-gpt/models', async (req, res) => {
-  const aiKey = req.body.sai_gpt_key || req.body.ai_key || runtimeConfig.sai_gpt_key || '';
-  const aiUrl = req.body.sai_gpt_url || req.body.ai_url || runtimeConfig.sai_gpt_url || '';
+  const aiKey = req.body.ai_key || req.body.sai_gpt_key || runtimeConfig.ai_key || runtimeConfig.sai_gpt_key || '';
+  const aiUrl = req.body.ai_url || req.body.sai_gpt_url || runtimeConfig.ai_url || runtimeConfig.sai_gpt_url || '';
 
   if (!aiKey || !aiUrl) {
     res.json({
       success: false,
       status: 'warning',
-      label: 'Нужен API key и Base URL',
+      label: 'Нужен основной AI Provider',
       models: [],
     });
     return;
@@ -10284,7 +13623,7 @@ app.post('/sai-gpt/models', async (req, res) => {
     res.json({
       success: true,
       status: 'ok',
-      label: models.length ? 'API доступен, модели загружены' : 'API доступен, но список моделей пустой',
+      label: models.length ? 'Общий AI Provider доступен' : 'AI Provider доступен, но список моделей пустой',
       models,
     });
   } catch (e) {
@@ -10349,7 +13688,10 @@ app.post('/config/test-ai', async (req, res) => {
     return;
   }
 
-  const finalReply = finalizeAiReply(input, reply);
+  let finalReply = finalizeAiReply(input, reply);
+  const selfCheck = evaluateSelfCheck(input, finalReply, reply);
+  logSelfCheckTrace(input, selfCheck);
+  if (selfCheck?.enabled) finalReply = selfCheck.correctedReply || finalReply;
   if (!finalReply) {
     logAiDecisionTrace(input, {
       status: 'skipped',
@@ -10365,8 +13707,9 @@ app.post('/config/test-ai', async (req, res) => {
     finalReply,
     sentReply: '',
     skippedReason: 'test_only_not_sent',
+    selfCheck,
   });
-  res.json({ ok: true, reply: finalReply });
+  res.json({ ok: true, reply: finalReply, selfCheck });
 });
 
 app.post('/config/scenario-test', async (req, res) => {
@@ -10419,7 +13762,10 @@ app.post('/config/scenario-test', async (req, res) => {
     return;
   }
 
-  const finalReply = finalizeAiReply(input, reply);
+  let finalReply = finalizeAiReply(input, reply);
+  const selfCheck = evaluateSelfCheck(input, finalReply, reply);
+  logSelfCheckTrace(input, selfCheck);
+  if (selfCheck?.enabled) finalReply = selfCheck.correctedReply || finalReply;
   if (!finalReply) {
     logAiDecisionTrace(input, {
       status: 'skipped',
@@ -10443,6 +13789,7 @@ app.post('/config/scenario-test', async (req, res) => {
     finalReply,
     sentReply: '',
     skippedReason: 'scenario_test_not_sent',
+    selfCheck,
   });
   res.json({
     ok: true,
@@ -10453,6 +13800,7 @@ app.post('/config/scenario-test', async (req, res) => {
     },
     checks: diagnostic.checks,
     score: diagnostic.score,
+    selfCheck,
     context_preview: buildScenarioContextPreview(scenario),
     applied_controls: getVisibleControlState(config, scenario.memoryContext),
   });
@@ -10475,20 +13823,36 @@ app.delete('/config', (req, res) => {
   runtimeConfig.core_no_stock_check_enabled = true;
   runtimeConfig.core_no_catalog_return_enabled = true;
   runtimeConfig.core_no_resell_enabled = true;
-  runtimeConfig.core_rules_text = '';
+  runtimeConfig.core_rules_text = DEFAULT_CORE_RULES_TEXT;
+  runtimeConfig.problem_solver_enabled = true;
+  runtimeConfig.problem_solver_triggers_text = DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT;
+  runtimeConfig.problem_solver_rules_text = DEFAULT_PROBLEM_SOLVER_RULES_TEXT;
+  runtimeConfig.problem_solver_forbidden_text = DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT;
+  runtimeConfig.problem_solver_examples_text = DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT;
   runtimeConfig.facts_no_invent_enabled = true;
   runtimeConfig.facts_no_fake_payment_enabled = true;
   runtimeConfig.facts_no_fake_delivery_enabled = true;
   runtimeConfig.facts_no_fake_discounts_enabled = true;
   runtimeConfig.facts_no_final_payment_confirm_enabled = true;
   runtimeConfig.facts_no_fake_delivery_time_enabled = true;
-  runtimeConfig.facts_rules_text = '';
+  runtimeConfig.facts_rules_text = DEFAULT_FACTS_RULES_TEXT;
   runtimeConfig.smalltalk_enabled = true;
   runtimeConfig.smalltalk_style_enabled = true;
   runtimeConfig.smalltalk_outfit_advice_enabled = true;
   runtimeConfig.smalltalk_weather_enabled = true;
   runtimeConfig.smalltalk_soft_product_link_enabled = true;
-  runtimeConfig.smalltalk_rules_text = '';
+  runtimeConfig.smalltalk_rules_text = DEFAULT_SMALLTALK_RULES_TEXT;
+  runtimeConfig.sales_psychology_enabled = true;
+  runtimeConfig.sales_psychology_triggers_text = DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT;
+  runtimeConfig.sales_psychology_principles_text = DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT;
+  runtimeConfig.sales_psychology_techniques_text = DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT;
+  runtimeConfig.sales_psychology_forbidden_text = DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT;
+  runtimeConfig.sales_psychology_examples_text = DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT;
+  runtimeConfig.size_fit_enabled = true;
+  runtimeConfig.size_fit_shoe_table_text = DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT;
+  runtimeConfig.size_fit_category_rules_text = DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT;
+  runtimeConfig.size_fit_validation_rules_text = DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT;
+  runtimeConfig.size_fit_examples_text = DEFAULT_SIZE_FIT_EXAMPLES_TEXT;
   runtimeConfig.order_path_enabled = true;
   runtimeConfig.order_collect_size_enabled = true;
   runtimeConfig.order_collect_insole_enabled = true;
@@ -10500,7 +13864,12 @@ app.delete('/config', (req, res) => {
   runtimeConfig.order_collect_payment_enabled = true;
   runtimeConfig.order_collect_receipt_enabled = true;
   runtimeConfig.order_step_mode = 'natural';
-  runtimeConfig.order_rules_text = '';
+  runtimeConfig.order_rules_text = DEFAULT_ORDER_RULES_TEXT;
+  runtimeConfig.soft_retention_enabled = true;
+  runtimeConfig.soft_retention_triggers_text = DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT;
+  runtimeConfig.soft_retention_rules_text = DEFAULT_SOFT_RETENTION_RULES_TEXT;
+  runtimeConfig.soft_retention_forbidden_text = DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT;
+  runtimeConfig.soft_retention_examples_text = DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT;
   runtimeConfig.order_chat_enabled = false;
   runtimeConfig.order_chat_id = '';
   runtimeConfig.response_guard_enabled = true;
@@ -10509,7 +13878,12 @@ app.delete('/config', (req, res) => {
   runtimeConfig.response_guard_human_tone_enabled = true;
   runtimeConfig.response_guard_next_step_enabled = true;
   runtimeConfig.response_guard_no_final_payment_enabled = true;
-  runtimeConfig.response_guard_rules_text = '';
+  runtimeConfig.response_guard_rules_text = DEFAULT_RESPONSE_GUARD_RULES_TEXT;
+  runtimeConfig.self_check_enabled = true;
+  runtimeConfig.self_check_autocorrect_low_risk_enabled = true;
+  runtimeConfig.self_check_block_high_risk_enabled = false;
+  runtimeConfig.self_check_create_draft_lessons_enabled = false;
+  runtimeConfig.self_check_rules_text = DEFAULT_SELF_CHECK_RULES_TEXT;
   runtimeConfig.receipt_check_enabled = true;
   runtimeConfig.receipt_check_amount_enabled = true;
   runtimeConfig.receipt_check_bank_enabled = true;
@@ -10519,7 +13893,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.receipt_check_no_final_confirm_enabled = true;
   runtimeConfig.receipt_check_success_text = RECEIPT_ACK_REPLY;
   runtimeConfig.receipt_check_mismatch_text = 'Чек получил, но вижу расхождение с заказом. Проверьте, пожалуйста, сумму или реквизиты и пришлите корректный чек.';
-  runtimeConfig.receipt_check_rules_text = '';
+  runtimeConfig.receipt_check_rules_text = DEFAULT_RECEIPT_CHECK_RULES_TEXT;
   runtimeConfig.quality_replica_honesty_enabled = true;
   runtimeConfig.quality_no_original_claims_enabled = true;
   runtimeConfig.quality_calm_explanation_enabled = true;
@@ -10528,7 +13902,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.quality_return_no_dates_enabled = true;
   runtimeConfig.quality_return_inspect_enabled = true;
   runtimeConfig.quality_return_text = DEFAULT_QUALITY_RETURN_TEXT;
-  runtimeConfig.quality_rules_text = '';
+  runtimeConfig.quality_rules_text = DEFAULT_QUALITY_RULES_TEXT;
   runtimeConfig.store_trust_enabled = true;
   runtimeConfig.store_trust_online_only_enabled = true;
   runtimeConfig.store_trust_sadovod_history_enabled = true;
@@ -10556,6 +13930,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.persona_age = '27';
   runtimeConfig.conversation_mode = 'retail';
   runtimeConfig.media_behavior = 'answer_from_media';
+  runtimeConfig.media_node_rules_text = DEFAULT_MEDIA_NODE_RULES_TEXT;
   runtimeConfig.auto_reply_enabled = true;
   runtimeConfig.memory_enabled = false;
   runtimeConfig.memory_recent_limit = MEMORY_RECENT_LIMIT;
@@ -10563,6 +13938,7 @@ app.delete('/config', (req, res) => {
   runtimeConfig.reply_mode = 'smart';
   runtimeConfig.human_typing_mode = 'natural';
   runtimeConfig.manager_takeover_enabled = true;
+  runtimeConfig.manager_node_rules_text = DEFAULT_MANAGER_NODE_RULES_TEXT;
   runtimeConfig.manager_return_delay_ms = MANAGER_RETURN_DELAY_MS;
   runtimeConfig.listen_wait_enabled = true;
   runtimeConfig.listen_wait_debounce_ms = MULTIPART_RESPONSE_DEBOUNCE_MS;
@@ -10573,16 +13949,25 @@ app.delete('/config', (req, res) => {
   runtimeConfig.payment_recipient_name = '';
   runtimeConfig.payment_bank = '';
   runtimeConfig.payment_comment = '';
-  runtimeConfig.payment_style_text = '';
-  runtimeConfig.payment_layout_text = '';
+  runtimeConfig.payment_style_text = DEFAULT_PAYMENT_STYLE_TEXT;
+  runtimeConfig.payment_layout_text = DEFAULT_PAYMENT_LAYOUT_TEXT;
+  runtimeConfig.payment_guard_rules_text = DEFAULT_PAYMENT_GUARD_RULES_TEXT;
   runtimeConfig.payment_bold_mode = 'off';
-  runtimeConfig.payment_example_text = '';
-  runtimeConfig.delivery_rules_enabled = false;
-  runtimeConfig.delivery_rules_text = '';
-  runtimeConfig.delivery_style_text = '';
-  runtimeConfig.delivery_layout_text = '';
+  runtimeConfig.payment_example_text = DEFAULT_PAYMENT_EXAMPLE_TEXT;
+  runtimeConfig.reader_node_rules_text = DEFAULT_READER_NODE_RULES_TEXT;
+  runtimeConfig.order_chat_template_text = DEFAULT_ORDER_CHAT_TEMPLATE_TEXT;
+  runtimeConfig.memory_node_rules_text = DEFAULT_MEMORY_NODE_RULES_TEXT;
+  runtimeConfig.delivery_rules_enabled = true;
+  runtimeConfig.delivery_free_services = DEFAULT_DELIVERY_FREE_SERVICES;
+  runtimeConfig.delivery_paid_services = DEFAULT_DELIVERY_PAID_SERVICES;
+  runtimeConfig.delivery_rules_text = DEFAULT_DELIVERY_RULES_TEXT;
+  runtimeConfig.delivery_style_text = DEFAULT_DELIVERY_STYLE_TEXT;
+  runtimeConfig.delivery_layout_text = DEFAULT_DELIVERY_LAYOUT_TEXT;
+  runtimeConfig.delivery_consultant_enabled = true;
+  runtimeConfig.delivery_consultant_options_text = DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT;
+  runtimeConfig.delivery_consultant_rules_text = DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT;
   runtimeConfig.delivery_bold_mode = 'off';
-  runtimeConfig.delivery_example_text = '';
+  runtimeConfig.delivery_example_text = DEFAULT_DELIVERY_EXAMPLE_TEXT;
   runtimeConfig.delivery_tracking_enabled = true;
   runtimeConfig.delivery_tracking_text = DEFAULT_DELIVERY_TRACKING_TEXT;
   runtimeConfig.webhook_url = '';
@@ -10603,20 +13988,36 @@ app.delete('/config', (req, res) => {
   process.env.CORE_NO_STOCK_CHECK_ENABLED = 'true';
   process.env.CORE_NO_CATALOG_RETURN_ENABLED = 'true';
   process.env.CORE_NO_RESELL_ENABLED = 'true';
-  process.env.CORE_RULES_TEXT = '';
+  process.env.CORE_RULES_TEXT = DEFAULT_CORE_RULES_TEXT;
+  process.env.PROBLEM_SOLVER_ENABLED = 'true';
+  process.env.PROBLEM_SOLVER_TRIGGERS_TEXT = DEFAULT_PROBLEM_SOLVER_TRIGGERS_TEXT;
+  process.env.PROBLEM_SOLVER_RULES_TEXT = DEFAULT_PROBLEM_SOLVER_RULES_TEXT;
+  process.env.PROBLEM_SOLVER_FORBIDDEN_TEXT = DEFAULT_PROBLEM_SOLVER_FORBIDDEN_TEXT;
+  process.env.PROBLEM_SOLVER_EXAMPLES_TEXT = DEFAULT_PROBLEM_SOLVER_EXAMPLES_TEXT;
   process.env.FACTS_NO_INVENT_ENABLED = 'true';
   process.env.FACTS_NO_FAKE_PAYMENT_ENABLED = 'true';
   process.env.FACTS_NO_FAKE_DELIVERY_ENABLED = 'true';
   process.env.FACTS_NO_FAKE_DISCOUNTS_ENABLED = 'true';
   process.env.FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED = 'true';
   process.env.FACTS_NO_FAKE_DELIVERY_TIME_ENABLED = 'true';
-  process.env.FACTS_RULES_TEXT = '';
+  process.env.FACTS_RULES_TEXT = DEFAULT_FACTS_RULES_TEXT;
   process.env.SMALLTALK_ENABLED = 'true';
   process.env.SMALLTALK_STYLE_ENABLED = 'true';
   process.env.SMALLTALK_OUTFIT_ADVICE_ENABLED = 'true';
   process.env.SMALLTALK_WEATHER_ENABLED = 'true';
   process.env.SMALLTALK_SOFT_PRODUCT_LINK_ENABLED = 'true';
-  process.env.SMALLTALK_RULES_TEXT = '';
+  process.env.SMALLTALK_RULES_TEXT = DEFAULT_SMALLTALK_RULES_TEXT;
+  process.env.SALES_PSYCHOLOGY_ENABLED = 'true';
+  process.env.SALES_PSYCHOLOGY_TRIGGERS_TEXT = DEFAULT_SALES_PSYCHOLOGY_TRIGGERS_TEXT;
+  process.env.SALES_PSYCHOLOGY_PRINCIPLES_TEXT = DEFAULT_SALES_PSYCHOLOGY_PRINCIPLES_TEXT;
+  process.env.SALES_PSYCHOLOGY_TECHNIQUES_TEXT = DEFAULT_SALES_PSYCHOLOGY_TECHNIQUES_TEXT;
+  process.env.SALES_PSYCHOLOGY_FORBIDDEN_TEXT = DEFAULT_SALES_PSYCHOLOGY_FORBIDDEN_TEXT;
+  process.env.SALES_PSYCHOLOGY_EXAMPLES_TEXT = DEFAULT_SALES_PSYCHOLOGY_EXAMPLES_TEXT;
+  process.env.SIZE_FIT_ENABLED = 'true';
+  process.env.SIZE_FIT_SHOE_TABLE_TEXT = DEFAULT_SIZE_FIT_SHOE_TABLE_TEXT;
+  process.env.SIZE_FIT_CATEGORY_RULES_TEXT = DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT;
+  process.env.SIZE_FIT_VALIDATION_RULES_TEXT = DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT;
+  process.env.SIZE_FIT_EXAMPLES_TEXT = DEFAULT_SIZE_FIT_EXAMPLES_TEXT;
   process.env.ORDER_PATH_ENABLED = 'true';
   process.env.ORDER_COLLECT_SIZE_ENABLED = 'true';
   process.env.ORDER_COLLECT_INSOLE_ENABLED = 'true';
@@ -10628,7 +14029,12 @@ app.delete('/config', (req, res) => {
   process.env.ORDER_COLLECT_PAYMENT_ENABLED = 'true';
   process.env.ORDER_COLLECT_RECEIPT_ENABLED = 'true';
   process.env.ORDER_STEP_MODE = 'natural';
-  process.env.ORDER_RULES_TEXT = '';
+  process.env.ORDER_RULES_TEXT = DEFAULT_ORDER_RULES_TEXT;
+  process.env.SOFT_RETENTION_ENABLED = 'true';
+  process.env.SOFT_RETENTION_TRIGGERS_TEXT = DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT;
+  process.env.SOFT_RETENTION_RULES_TEXT = DEFAULT_SOFT_RETENTION_RULES_TEXT;
+  process.env.SOFT_RETENTION_FORBIDDEN_TEXT = DEFAULT_SOFT_RETENTION_FORBIDDEN_TEXT;
+  process.env.SOFT_RETENTION_EXAMPLES_TEXT = DEFAULT_SOFT_RETENTION_EXAMPLES_TEXT;
   process.env.ORDER_CHAT_ENABLED = 'false';
   process.env.ORDER_CHAT_ID = '';
   process.env.RESPONSE_GUARD_ENABLED = 'true';
@@ -10637,7 +14043,12 @@ app.delete('/config', (req, res) => {
   process.env.RESPONSE_GUARD_HUMAN_TONE_ENABLED = 'true';
   process.env.RESPONSE_GUARD_NEXT_STEP_ENABLED = 'true';
   process.env.RESPONSE_GUARD_NO_FINAL_PAYMENT_ENABLED = 'true';
-  process.env.RESPONSE_GUARD_RULES_TEXT = '';
+  process.env.RESPONSE_GUARD_RULES_TEXT = DEFAULT_RESPONSE_GUARD_RULES_TEXT;
+  process.env.SELF_CHECK_ENABLED = 'true';
+  process.env.SELF_CHECK_AUTOCORRECT_LOW_RISK_ENABLED = 'true';
+  process.env.SELF_CHECK_BLOCK_HIGH_RISK_ENABLED = 'false';
+  process.env.SELF_CHECK_CREATE_DRAFT_LESSONS_ENABLED = 'false';
+  process.env.SELF_CHECK_RULES_TEXT = DEFAULT_SELF_CHECK_RULES_TEXT;
   process.env.RECEIPT_CHECK_ENABLED = 'true';
   process.env.RECEIPT_CHECK_AMOUNT_ENABLED = 'true';
   process.env.RECEIPT_CHECK_BANK_ENABLED = 'true';
@@ -10647,11 +14058,11 @@ app.delete('/config', (req, res) => {
   process.env.RECEIPT_CHECK_NO_FINAL_CONFIRM_ENABLED = 'true';
   process.env.RECEIPT_CHECK_SUCCESS_TEXT = runtimeConfig.receipt_check_success_text;
   process.env.RECEIPT_CHECK_MISMATCH_TEXT = runtimeConfig.receipt_check_mismatch_text;
-  process.env.RECEIPT_CHECK_RULES_TEXT = '';
+  process.env.RECEIPT_CHECK_RULES_TEXT = DEFAULT_RECEIPT_CHECK_RULES_TEXT;
   process.env.QUALITY_REPLICA_HONESTY_ENABLED = 'true';
   process.env.QUALITY_NO_ORIGINAL_CLAIMS_ENABLED = 'true';
   process.env.QUALITY_CALM_EXPLANATION_ENABLED = 'true';
-  process.env.QUALITY_RULES_TEXT = '';
+  process.env.QUALITY_RULES_TEXT = DEFAULT_QUALITY_RULES_TEXT;
   process.env.DIALOG_EXAMPLES_ENABLED = 'false';
   process.env.DIALOG_EXAMPLES_TEXT = '';
   process.env.TONE = 'neutral';
@@ -10661,6 +14072,7 @@ app.delete('/config', (req, res) => {
   process.env.PERSONA_AGE = '27';
   process.env.CONVERSATION_MODE = 'retail';
   process.env.MEDIA_BEHAVIOR = 'answer_from_media';
+  process.env.MEDIA_NODE_RULES_TEXT = DEFAULT_MEDIA_NODE_RULES_TEXT;
   process.env.AUTO_REPLY_ENABLED = 'true';
   process.env.MEMORY_ENABLED = 'false';
   process.env.MEMORY_RECENT_LIMIT = String(MEMORY_RECENT_LIMIT);
@@ -10668,6 +14080,7 @@ app.delete('/config', (req, res) => {
   process.env.REPLY_MODE = 'smart';
   process.env.HUMAN_TYPING_MODE = 'natural';
   process.env.MANAGER_TAKEOVER_ENABLED = 'true';
+  process.env.MANAGER_NODE_RULES_TEXT = DEFAULT_MANAGER_NODE_RULES_TEXT;
   process.env.MANAGER_RETURN_DELAY_MS = String(MANAGER_RETURN_DELAY_MS);
   process.env.LISTEN_WAIT_ENABLED = 'true';
   process.env.LISTEN_WAIT_DEBOUNCE_MS = String(MULTIPART_RESPONSE_DEBOUNCE_MS);
@@ -10678,16 +14091,25 @@ app.delete('/config', (req, res) => {
   process.env.PAYMENT_RECIPIENT_NAME = '';
   process.env.PAYMENT_BANK = '';
   process.env.PAYMENT_COMMENT = '';
-  process.env.PAYMENT_STYLE_TEXT = '';
-  process.env.PAYMENT_LAYOUT_TEXT = '';
+  process.env.PAYMENT_STYLE_TEXT = DEFAULT_PAYMENT_STYLE_TEXT;
+  process.env.PAYMENT_LAYOUT_TEXT = DEFAULT_PAYMENT_LAYOUT_TEXT;
   process.env.PAYMENT_BOLD_MODE = 'off';
-  process.env.PAYMENT_EXAMPLE_TEXT = '';
+  process.env.PAYMENT_EXAMPLE_TEXT = DEFAULT_PAYMENT_EXAMPLE_TEXT;
   process.env.DELIVERY_RULES_ENABLED = 'false';
-  process.env.DELIVERY_STYLE_TEXT = '';
-  process.env.DELIVERY_LAYOUT_TEXT = '';
+  process.env.DELIVERY_STYLE_TEXT = DEFAULT_DELIVERY_STYLE_TEXT;
+  process.env.DELIVERY_LAYOUT_TEXT = DEFAULT_DELIVERY_LAYOUT_TEXT;
+  process.env.DELIVERY_CONSULTANT_ENABLED = 'true';
+  process.env.DELIVERY_CONSULTANT_OPTIONS_TEXT = DEFAULT_DELIVERY_CONSULTANT_OPTIONS_TEXT;
+  process.env.DELIVERY_CONSULTANT_RULES_TEXT = DEFAULT_DELIVERY_CONSULTANT_RULES_TEXT;
   process.env.DELIVERY_BOLD_MODE = 'off';
-  process.env.DELIVERY_EXAMPLE_TEXT = '';
-  process.env.DELIVERY_RULES_TEXT = '';
+  process.env.DELIVERY_EXAMPLE_TEXT = DEFAULT_DELIVERY_EXAMPLE_TEXT;
+  process.env.PAYMENT_GUARD_RULES_TEXT = DEFAULT_PAYMENT_GUARD_RULES_TEXT;
+  process.env.READER_NODE_RULES_TEXT = DEFAULT_READER_NODE_RULES_TEXT;
+  process.env.ORDER_CHAT_TEMPLATE_TEXT = DEFAULT_ORDER_CHAT_TEMPLATE_TEXT;
+  process.env.MEMORY_NODE_RULES_TEXT = DEFAULT_MEMORY_NODE_RULES_TEXT;
+  process.env.DELIVERY_FREE_SERVICES = DEFAULT_DELIVERY_FREE_SERVICES;
+  process.env.DELIVERY_PAID_SERVICES = DEFAULT_DELIVERY_PAID_SERVICES;
+  process.env.DELIVERY_RULES_TEXT = DEFAULT_DELIVERY_RULES_TEXT;
   process.env.DELIVERY_TRACKING_ENABLED = 'true';
   process.env.DELIVERY_TRACKING_TEXT = DEFAULT_DELIVERY_TRACKING_TEXT;
   process.env.WEBHOOK_URL = '';
