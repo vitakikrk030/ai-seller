@@ -77,6 +77,7 @@ const DEFAULT_ORDER_CHAT_TEMPLATE_TEXT = [
 const DEFAULT_ORDER_PROGRESS_GUARD_TEXT = [
   'Если клиент прислал полезные данные заказа (ФИО, телефон, город, службу доставки, ПВЗ/адрес или размер), нельзя отвечать пустым "Понял.".',
   'После таких данных продавец обязан вести к ближайшему недостающему шагу: город, служба доставки, ПВЗ/адрес, оплата или чек.',
+  'Если размер, ФИО, телефон, доставка или ПВЗ уже есть в памяти/контексте — не спрашивать это повторно.',
   'Если ФИО и телефон уже есть, а доставки ещё нет — попросить город и удобную доставку, подсветив: Яндекс Доставка и Ozon бесплатные, остальные службы по тарифам.',
   'Если город есть, но службы нет — помочь выбрать доставку, не заставляя клиента разбираться самому.',
   'Если служба есть, но ПВЗ/адреса нет — попросить адрес или название удобного ПВЗ.',
@@ -2435,8 +2436,11 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   const facts = profile.facts || {};
   const lastOrder = profile.lastOrder || {};
   const currentText = normalizeMemoryText(currentInput?.text || '');
-  const product = normalizeMemoryText(facts.currentCart?.value || lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText));
-  const size = normalizeMemoryText(facts.size?.value || facts.shoeSize?.value || extractSize(currentText) || lastOrder.size);
+  const summaryText = normalizeMemoryText(currentInput?.memoryContext?.summary || '');
+  const summaryProduct = summaryText.match(/(?:^|\n)\s*Товар\s*:\s*([^.\n]+)/i)?.[1] || '';
+  const summarySize = summaryText.match(/(?:^|\n)\s*Размер\s+уже\s+известен\s*:\s*([0-9]{2}(?:[.,][0-9])?)/i)?.[1] || '';
+  const product = normalizeMemoryText(facts.currentCart?.value || lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText) || summaryProduct);
+  const size = normalizeMemoryText(facts.size?.value || facts.shoeSize?.value || extractSize(currentText) || lastOrder.size || summarySize);
   const insoleCm = normalizeMemoryText(facts.insoleCm?.value || extractInsoleCm(currentText));
   const fullName = normalizeMemoryText(facts.fullName?.value || extractFullName(currentText) || lastOrder.full_name);
   const phone = normalizeMemoryText(facts.phone?.value || extractPhone(currentText) || lastOrder.phone);
@@ -3920,6 +3924,7 @@ function stripObviousOrderDataNarration(reply = '') {
   if (!source) return '';
   const patterns = [
     /^\s*вижу,\s*(?:что\s*)?(?:вы\s*)?(?:прислали|отправили|скинули)\s+(?:контактные\s+данные|данные|фио\s+и\s+телефон|телефон\s+и\s+фио)[.!,:;\-\s]*/i,
+    /^\s*вижу,\s*(?:вы\s*)?(?:прислали|отправили|скинули)\s+(?:контакты|данные|фио|телефон)[.!,:;\-\s]*/i,
     /^\s*(?:контактные\s+данные|данные|фио\s+и\s+телефон|телефон\s+и\s+фио)\s+(?:получил|получила|вижу|принял|приняла)[.!,:;\-\s]*/i,
   ];
   let previous = '';
@@ -4302,6 +4307,29 @@ function finalizeOrderProgressGuardReply(input = {}, reply = '') {
   return buildOrderProgressNextStepReply({ ...input, config }) || finalReply;
 }
 
+function replyRepeatsKnownOrderSlot(input = {}, reply = '') {
+  const finalReply = String(reply || '');
+  const snapshot = buildSlotSnapshot(input?.chatId, input);
+  if (snapshot.size && /(?:какой|какие|уточните|подскажите|напишите)[\s\S]{0,80}размер|размер[\s\S]{0,80}(?:интересует|нужен|выбрали|оформляем)/i.test(finalReply)) {
+    return true;
+  }
+  if (snapshot.fullName && snapshot.phone && /(?:пришлите|напишите|уточните|подскажите)[\s\S]{0,100}(?:фио|телефон|номер)/i.test(finalReply)) {
+    return true;
+  }
+  if ((snapshot.deliveryService || snapshot.pickupPoint) && /(?:пришлите|напишите|уточните|подскажите)[\s\S]{0,100}(?:служб[ауы]\s+достав|пвз|адрес)/i.test(finalReply)) {
+    return true;
+  }
+  return false;
+}
+
+function finalizeKnownOrderSlotRepeatReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  const config = input.config || runtimeConfig;
+  if (!parseConfigBoolean(config.order_progress_guard_enabled, true)) return finalReply;
+  if (!finalReply || !replyRepeatsKnownOrderSlot({ ...input, config }, finalReply)) return finalReply;
+  return buildOrderProgressNextStepReply({ ...input, config }) || finalReply;
+}
+
 function finalizeOrderFormReply(input, reply) {
   const finalReply = String(reply || '').trim();
   if (!isFullCheckoutFormReply(finalReply)) return finalReply;
@@ -4479,6 +4507,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   finalReply = finalizeOrderProgressGuardReply(input, finalReply);
+  finalReply = finalizeKnownOrderSlotRepeatReply(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
