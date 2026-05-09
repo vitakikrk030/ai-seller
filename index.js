@@ -2406,7 +2406,7 @@ function extractDeliveryService(text) {
   if (/(?:^|[\s.,;:!?()[\]{}"'])сд[эе]к(?=$|[\s.,;:!?()[\]{}"'])|\bcdek\b/i.test(source)) return 'CDEK';
   if (/(wildberries|\bwb\b)/i.test(source)) return 'WB';
   if (/(ozon|озон)\b/i.test(source)) return 'Ozon';
-  if (/(яндекс.*достав|доставк.*яндекс|яндекс go|yandex)/i.test(source)) return 'Яндекс Доставка';
+  if (/(?:^|[\s.,;:!?()[\]{}"'])яндекс(?=$|[\s.,;:!?()[\]{}"'])|яндекс.*достав|доставк.*яндекс|яндекс go|yandex/i.test(source)) return 'Яндекс Доставка';
   if (/(почта\s+россии|почтой|почта)/i.test(source)) return 'Почта России';
   if (/(курьер|до двери)/i.test(source)) return 'Курьер';
   return '';
@@ -2431,6 +2431,10 @@ function detectShoeContextFromText(text) {
   return /(кроссовк|кеды|обув|shoe|sneaker|air max|air force|jordan|new balance|asics|yeezy|nike|adidas|puma|reebok|salomon|lacoste|odyssa)/i.test(source);
 }
 
+function detectNonShoeProductContext(text = '') {
+  return /(костюм|худи|футболк|лонгслив|штаны|брюк|джинс|куртк|свитшот|сумк|рюкзак|одежд|аксессуар|носк|трус)/i.test(String(text || ''));
+}
+
 function buildSlotSnapshot(chatId, currentInput = null) {
   const profile = getCustomerProfileSnapshot(chatId) || {};
   const facts = profile.facts || {};
@@ -2439,8 +2443,24 @@ function buildSlotSnapshot(chatId, currentInput = null) {
   const summaryText = normalizeMemoryText(currentInput?.memoryContext?.summary || '');
   const summaryProduct = summaryText.match(/(?:^|\n)\s*Товар\s*:\s*([^.\n]+)/i)?.[1] || '';
   const summarySize = summaryText.match(/(?:^|\n)\s*Размер\s+уже\s+известен\s*:\s*([0-9]{2}(?:[.,][0-9])?)/i)?.[1] || '';
-  const product = normalizeMemoryText(facts.currentCart?.value || lastOrder.product || facts.lastProduct?.value || facts.interest?.value || extractLastProduct(currentText) || summaryProduct);
-  const size = normalizeMemoryText(facts.size?.value || facts.shoeSize?.value || extractSize(currentText) || lastOrder.size || summarySize);
+  const freshOrderLead = Boolean(
+    currentInput?.cartContext?.orderDetails
+    || currentInput?.productContext?.orderDetails
+    || looksLikeStructuredOrderPayload(currentText)
+    || extractProductLink(currentText)
+    || getIwakCartItemsFromText(currentText).length
+  );
+  const currentDetails = currentInput?.cartContext?.orderDetails || currentInput?.productContext?.orderDetails || {};
+  const currentProduct = normalizeMemoryText(
+    currentDetails.product
+    || extractLastProduct(currentText)
+    || summaryProduct
+  );
+  const rememberedProduct = normalizeMemoryText(facts.currentProduct?.value || facts.lastProduct?.value || facts.currentCart?.value || facts.interest?.value || lastOrder.product);
+  const product = normalizeMemoryText(currentProduct || rememberedProduct);
+  const currentSize = normalizeMemoryText(currentDetails.size || extractSize(currentText) || summarySize);
+  const rememberedSize = normalizeMemoryText(facts.size?.value || facts.shoeSize?.value || lastOrder.size);
+  const size = normalizeMemoryText(currentSize || (freshOrderLead ? '' : rememberedSize));
   const insoleCm = normalizeMemoryText(facts.insoleCm?.value || extractInsoleCm(currentText));
   const fullName = normalizeMemoryText(facts.fullName?.value || extractFullName(currentText) || lastOrder.full_name);
   const phone = normalizeMemoryText(facts.phone?.value || extractPhone(currentText) || lastOrder.phone);
@@ -2453,11 +2473,19 @@ function buildSlotSnapshot(chatId, currentInput = null) {
     || extractDeliveryAddress(currentText)
     || extractPickupPoint(currentText)
   );
-  const shoeContext = Boolean(
-    facts.shoeContext?.value === 'true'
+  const currentProductCategory = normalizeMemoryText(currentDetails.category || facts.productCategory?.value || '');
+  const currentNonShoeContext = Boolean(
+    freshOrderLead
+    && (
+      /одежд|сумк|аксессуар|носк|трус/i.test(currentProductCategory)
+      || detectNonShoeProductContext(currentProduct || currentText)
+    )
+  );
+  const shoeContext = currentNonShoeContext ? false : Boolean(
+    detectShoeContextFromText(currentProduct || currentText)
+    || facts.shoeContext?.value === 'true'
     || detectShoeContextFromText(product)
     || detectShoeContextFromText(facts.interest?.value || '')
-    || detectShoeContextFromText(currentText)
   );
   const paymentRequested = ['payment_details_sent', 'proof_received'].includes(String(lastOrder.payment_status || ''));
   const paymentProofReceived = Boolean(
@@ -4396,6 +4424,11 @@ function hasCartSwitchIntent(text = '') {
 
 function finalizeCartSwitchReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
+  const hasCurrentCartContext = Boolean(input.cartContext?.orderDetails || getIwakCartItemsFromText(input.text).length);
+  const hasExplicitSwitch = hasCartSwitchIntent(input.text);
+  const mentionsCartOrKnownProduct = /корзин|товар|модель|цена|стоимост|₽|руб/i.test(finalReply);
+  if (!hasCurrentCartContext && !hasExplicitSwitch && !mentionsCartOrKnownProduct) return finalReply;
+
   const profile = input.cartContext?.orderDetails ? null : getCustomerProfileSnapshot(input.chatId);
   const cleanChatId = getMemoryChatId(input);
   const memoryCart = profile?.facts?.currentCart?.value || (shouldUseLegacyMemoryFallback() ? memoryStore.facts[cleanChatId]?.currentCart?.value : '');
@@ -4412,7 +4445,7 @@ function finalizeCartSwitchReply(input = {}, reply = '') {
 
   if (!hasWrongPrice && !hasOldPremiata) return finalReply;
 
-  const cartSwitch = hasCartSwitchIntent(input.text)
+  const cartSwitch = hasExplicitSwitch
     ? 'Понял, меняем на товар из новой корзины.'
     : 'Понял.';
   const destination = getKnownDeliveryDestination(input);
