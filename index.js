@@ -545,6 +545,9 @@ const runtimeConfig = {
   facts_no_final_payment_confirm_enabled: process.env.FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED !== 'false',
   facts_no_fake_delivery_time_enabled: process.env.FACTS_NO_FAKE_DELIVERY_TIME_ENABLED !== 'false',
   facts_rules_text: process.env.FACTS_RULES_TEXT || DEFAULT_FACTS_RULES_TEXT,
+  training_enabled: process.env.TRAINING_ENABLED !== 'false',
+  iwak_reader_enabled: process.env.IWAK_READER_ENABLED !== 'false',
+  media_analysis_enabled: process.env.MEDIA_ANALYSIS_ENABLED !== 'false',
   smalltalk_enabled: process.env.SMALLTALK_ENABLED !== 'false',
   smalltalk_style_enabled: process.env.SMALLTALK_STYLE_ENABLED !== 'false',
   smalltalk_outfit_advice_enabled: process.env.SMALLTALK_OUTFIT_ADVICE_ENABLED !== 'false',
@@ -1656,6 +1659,7 @@ function updateTrainingExample(id, input = {}) {
 }
 
 function getTrainingExamplesGuidance(queryText = '', memoryContext = null) {
+  if (!parseConfigBoolean(runtimeConfig.training_enabled, true)) return '';
   const items = selectTrainingExamples(queryText, memoryContext);
   if (!items.length) return '';
 
@@ -4338,8 +4342,23 @@ function hasOrderProgressContext(input = {}, snapshot = {}) {
 }
 
 function buildOrderProgressNextStepReply(input = {}) {
+  if (!parseConfigBoolean(input.config?.order_path_enabled, true)) return '';
   const snapshot = buildSlotSnapshot(input?.chatId, input);
   if (!hasOrderProgressContext(input, snapshot)) return '';
+
+  const naturalMode = String(input.config?.order_step_mode || 'natural') !== 'single';
+  const missing = [];
+  if (!snapshot.fullName && parseConfigBoolean(input.config?.order_collect_full_name_enabled, true)) missing.push('ФИО получателя');
+  if (!snapshot.phone && parseConfigBoolean(input.config?.order_collect_phone_enabled, true)) missing.push('телефон');
+  if (!snapshot.city && parseConfigBoolean(input.config?.order_collect_city_enabled, true)) missing.push('город');
+  if (!snapshot.deliveryService && parseConfigBoolean(input.config?.order_collect_delivery_service_enabled, true)) missing.push('удобную доставку');
+  if (!snapshot.pickupPoint && parseConfigBoolean(input.config?.order_collect_pickup_enabled, true)) missing.push('ПВЗ или адрес');
+  if (naturalMode && missing.length >= 2) {
+    const deliveryHint = missing.some((item) => /достав|ПВЗ|адрес/i.test(item))
+      ? ' Яндекс Доставка и Ozon бесплатные, остальные службы — по тарифам.'
+      : '';
+    return `Отлично, оформляем. Пришлите, пожалуйста, одним сообщением: ${missing.join(', ')}.${deliveryHint}`;
+  }
 
   if (!snapshot.fullName && parseConfigBoolean(input.config?.order_collect_full_name_enabled, true)) {
     return 'Понял. Пришлите, пожалуйста, ФИО получателя.';
@@ -4549,6 +4568,14 @@ function getStaleReceiptAckFallback(input = {}) {
 
 function finalizeAiReply(input, reply) {
   let finalReply = String(reply || '').trim();
+  if (!parseConfigBoolean(input?.config?.response_guard_enabled, true)) {
+    return finalReply;
+  }
+  const readerEnabled = parseConfigBoolean(input?.config?.iwak_reader_enabled, true);
+  const deliveryEnabled = parseConfigBoolean(input?.config?.delivery_rules_enabled, true);
+  const paymentEnabled = parseConfigBoolean(input?.config?.payment_enabled, false);
+  const sizeFitEnabled = parseConfigBoolean(input?.config?.size_fit_enabled, true);
+  const returnsEnabled = parseConfigBoolean(input?.config?.quality_return_soft_enabled, true);
   if (shouldForceReceiptAcknowledgement(input)) {
     return getReceiptAcknowledgementReply();
   }
@@ -4561,19 +4588,19 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeWaitForCustomerContinuation(input, finalReply);
   finalReply = finalizeTimeAwareGreetingReply(input, finalReply);
   finalReply = finalizeRepeatedGreetingReply(input, finalReply);
-  finalReply = finalizeCartSwitchReply(input, finalReply);
-  finalReply = finalizeDeliveryChoiceReply(input, finalReply);
-  finalReply = finalizeDeliveryTrackingReply(input, finalReply);
-  finalReply = finalizeMoscowCourierReply(input, finalReply);
-  finalReply = finalizeDeliveryCostReply(input, finalReply);
-  finalReply = finalizePaymentAmountReply(input, finalReply);
-  finalReply = finalizeProductMediaReply(input, finalReply);
+  if (readerEnabled) finalReply = finalizeCartSwitchReply(input, finalReply);
+  if (deliveryEnabled) finalReply = finalizeDeliveryChoiceReply(input, finalReply);
+  if (deliveryEnabled) finalReply = finalizeDeliveryTrackingReply(input, finalReply);
+  if (deliveryEnabled) finalReply = finalizeMoscowCourierReply(input, finalReply);
+  if (deliveryEnabled) finalReply = finalizeDeliveryCostReply(input, finalReply);
+  if (paymentEnabled) finalReply = finalizePaymentAmountReply(input, finalReply);
+  if (readerEnabled) finalReply = finalizeProductMediaReply(input, finalReply);
   finalReply = stripObviousOrderDataNarration(finalReply);
-  finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
+  if (sizeFitEnabled) finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
-  finalReply = finalizePhotoSizeRealityReply(input, finalReply);
-  finalReply = finalizeDeliveryFittingReply(input, finalReply);
-  finalReply = finalizeReturnConditionReply(input, finalReply);
+  if (sizeFitEnabled) finalReply = finalizePhotoSizeRealityReply(input, finalReply);
+  if (returnsEnabled) finalReply = finalizeDeliveryFittingReply(input, finalReply);
+  if (returnsEnabled) finalReply = finalizeReturnConditionReply(input, finalReply);
   finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
   finalReply = finalizeOrderProgressGuardReply(input, finalReply);
@@ -5950,11 +5977,17 @@ async function processInputBatch(inputs) {
       currentInput: batchInput,
     }) : { summary: '', history: [], facts: {}, state: null };
 
-    const productContext = await enrichIwakProductContext(batchInput);
+    const readerEnabled = parseConfigBoolean(batchInput.config.iwak_reader_enabled, true);
+    const productContext = readerEnabled ? await enrichIwakProductContext(batchInput) : null;
     appendProductContextToMemory(batchInput, productContext);
 
-    const cartContext = await enrichIwakCartContext(batchInput);
+    const cartContext = readerEnabled ? await enrichIwakCartContext(batchInput) : null;
     appendCartContextToMemory(batchInput, cartContext);
+
+    if (!parseConfigBoolean(batchInput.config.media_analysis_enabled, true)) {
+      batchInput.images = [];
+      batchInput.iwakReaderImages = [];
+    }
 
     preparedInputs.forEach((input) => logMessageDelivered(input));
     await waitAndMarkBatchRead(batchInput.config, preparedInputs);
@@ -6493,6 +6526,9 @@ function getRuntimeSnapshot() {
     facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
     facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
     facts_rules_text: runtimeConfig.facts_rules_text || DEFAULT_FACTS_RULES_TEXT,
+    training_enabled: parseConfigBoolean(runtimeConfig.training_enabled, true),
+    iwak_reader_enabled: parseConfigBoolean(runtimeConfig.iwak_reader_enabled, true),
+    media_analysis_enabled: parseConfigBoolean(runtimeConfig.media_analysis_enabled, true),
     smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
     smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
     smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),
@@ -6815,6 +6851,9 @@ function applyConfigUpdate(body) {
     ['facts_no_fake_discounts_enabled', 'FACTS_NO_FAKE_DISCOUNTS_ENABLED'],
     ['facts_no_final_payment_confirm_enabled', 'FACTS_NO_FINAL_PAYMENT_CONFIRM_ENABLED'],
     ['facts_no_fake_delivery_time_enabled', 'FACTS_NO_FAKE_DELIVERY_TIME_ENABLED'],
+    ['training_enabled', 'TRAINING_ENABLED'],
+    ['iwak_reader_enabled', 'IWAK_READER_ENABLED'],
+    ['media_analysis_enabled', 'MEDIA_ANALYSIS_ENABLED'],
     ['smalltalk_enabled', 'SMALLTALK_ENABLED'],
     ['smalltalk_style_enabled', 'SMALLTALK_STYLE_ENABLED'],
     ['smalltalk_outfit_advice_enabled', 'SMALLTALK_OUTFIT_ADVICE_ENABLED'],
@@ -8568,6 +8607,7 @@ function getPersonaGuidance(config) {
 }
 
 function getMediaBehaviorGuidance(config) {
+  if (!parseConfigBoolean(config?.media_analysis_enabled, true)) return '';
   const mediaBehavior = typeof config === 'string' ? config : config?.media_behavior;
   const map = {
     describe_media: 'медиа: если есть фото/скрин/PDF, сначала распознать содержимое: товар, кроссовки, корзина, ПВЗ/адрес, карта доставки, чек оплаты или другое. Не считать любое фото чеком.',
@@ -8744,6 +8784,8 @@ function getOrderPathGuidance(config) {
       && 'Уточнить удобную службу доставки из разрешённых в разделе Доставка.',
     parseConfigBoolean(config.order_collect_pickup_enabled, true)
       && 'Для ПВЗ собрать адрес/название пункта или ориентир; для курьера собрать адрес.',
+    String(config.order_step_mode || 'natural') !== 'single'
+      && 'Если клиент уже подтвердил размер/готовность оформить, не дробить анкету на ФИО, потом телефон, потом город. Просить недостающие данные одним коротким сообщением.',
     parseConfigBoolean(config.order_collect_payment_enabled, true)
       && 'Когда основные данные собраны, аккуратно отправить реквизиты из раздела Оплата.',
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
@@ -8828,6 +8870,7 @@ function getReceiptCheckGuidance(config) {
 }
 
 function getQualityGuidance(config) {
+  const returnsEnabled = parseConfigBoolean(config.quality_return_soft_enabled, true);
   return buildGuidanceSection('Товар и качество:', [
     parseConfigBoolean(config.quality_replica_honesty_enabled, true)
       && 'Если клиент спрашивает про оригинальность, честно говорить: это хорошая фабричная реплика.',
@@ -8837,15 +8880,15 @@ function getQualityGuidance(config) {
       && 'Объяснять качество спокойно, уверенно и без оправданий.',
     parseConfigBoolean(config.quality_no_extra_photos_enabled, true)
       && 'Если клиент просит дополнительные или живые фото, не обещать "сейчас скину/отправлю/найду фото". Мягко объяснить, что все актуальные фото уже есть в карточке, посте или каталоге.',
-    parseConfigBoolean(config.quality_return_soft_enabled, true)
+    returnsEnabled
       && 'Если клиент сомневается по фото или качеству, мягко подвести к возврату/обмену без давления и без юридического тона.',
-    parseConfigBoolean(config.quality_return_inspect_enabled, true)
+    returnsEnabled && parseConfigBoolean(config.quality_return_inspect_enabled, true)
       && 'На вопрос про примерку в доставке/при получении отвечать: да, при получении можно спокойно забрать товар, примерить, осмотреть и проверить. Не писать "примерки в доставке нет". Если что-то не подойдёт, клиент пишет нам — решим через возврат или обмен по правилам магазина.',
-    parseConfigBoolean(config.quality_return_no_dates_enabled, true)
+    returnsEnabled && parseConfigBoolean(config.quality_return_no_dates_enabled, true)
       && 'Не называть сроки возврата/обмена, если срок не указан вручную в AI Control. Не писать "14 дней", "всегда можете" или "политика возврата".',
-    parseConfigBoolean(config.quality_return_soft_enabled, true)
+    returnsEnabled
       && RETURN_CONDITION_RULE_TEXT,
-    parseConfigBoolean(config.quality_return_soft_enabled, true)
+    returnsEnabled
       && String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()
       && `Мягкая формулировка возврата/обмена: ${String(config.quality_return_text || DEFAULT_QUALITY_RETURN_TEXT).trim()}`,
   ], config.quality_rules_text);
@@ -8984,11 +9027,11 @@ function getVisibleControlState(config, memoryContext = null) {
     quality: Boolean(getQualityGuidance(config)),
     storeTrust: Boolean(getStoreTrustGuidance(config)),
     contacts: Boolean(getContactsGuidance(config)),
-    training: Boolean((trainingStore.items || []).length),
+    training: parseConfigBoolean(config.training_enabled, true) && Boolean((trainingStore.items || []).length),
     examples: Boolean(getDialogExamplesGuidance(config)),
     instruction: !!String(config.instruction || '').trim(),
     behavior: true,
-    media: true,
+    media: parseConfigBoolean(config.media_analysis_enabled, true),
     persona: true,
     memory: parseConfigBoolean(config.memory_enabled, true) && !!memoryContext?.summary,
     payment: parseConfigBoolean(config.payment_enabled, false),
@@ -11051,6 +11094,9 @@ app.get('/config/status', async (req, res) => {
     facts_no_final_payment_confirm_enabled: parseConfigBoolean(runtimeConfig.facts_no_final_payment_confirm_enabled, true),
     facts_no_fake_delivery_time_enabled: parseConfigBoolean(runtimeConfig.facts_no_fake_delivery_time_enabled, true),
     facts_rules_text: runtimeConfig.facts_rules_text || DEFAULT_FACTS_RULES_TEXT,
+    training_enabled: parseConfigBoolean(runtimeConfig.training_enabled, true),
+    iwak_reader_enabled: parseConfigBoolean(runtimeConfig.iwak_reader_enabled, true),
+    media_analysis_enabled: parseConfigBoolean(runtimeConfig.media_analysis_enabled, true),
     smalltalk_enabled: parseConfigBoolean(runtimeConfig.smalltalk_enabled, true),
     smalltalk_style_enabled: parseConfigBoolean(runtimeConfig.smalltalk_style_enabled, true),
     smalltalk_outfit_advice_enabled: parseConfigBoolean(runtimeConfig.smalltalk_outfit_advice_enabled, true),

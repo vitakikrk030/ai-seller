@@ -1253,9 +1253,78 @@
         transform: translateY(-2px);
       }
 
+      .visual-node.skill-off {
+        opacity: 0.58;
+        filter: grayscale(0.35);
+      }
+
+      .visual-node.skill-off .map-node-title,
+      .visual-node.skill-off .map-node-subtitle {
+        color: var(--muted);
+      }
+
       .node-icon {
         width: 38px;
         height: 38px;
+      }
+
+      .skill-switch {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 4;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 6px;
+        border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+      }
+
+      .skill-switch-track {
+        position: relative;
+        width: 25px;
+        height: 14px;
+        border-radius: 999px;
+        background: #dbe3eb;
+        transition: background .18s ease;
+      }
+
+      .skill-switch-track span {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
+        transition: transform .18s ease;
+      }
+
+      .skill-switch.is-on {
+        color: var(--accent-strong);
+      }
+
+      .skill-switch.is-on .skill-switch-track {
+        background: color-mix(in srgb, var(--accent) 74%, #5eead4);
+      }
+
+      .skill-switch.is-on .skill-switch-track span {
+        transform: translateX(11px);
+      }
+
+      .skill-switch.is-saving {
+        pointer-events: none;
+        opacity: 0.62;
       }
 
       .node-training { grid-area: training; }
@@ -4732,6 +4801,7 @@
                     <label class="toggle-line"><input id="orderCollectPickupEnabled" type="checkbox" /> ПВЗ или адрес</label>
                     <label class="toggle-line"><input id="orderCollectPaymentEnabled" type="checkbox" /> Реквизиты после данных</label>
                     <label class="toggle-line"><input id="orderCollectReceiptEnabled" type="checkbox" /> Чек или скрин после оплаты</label>
+                    <label class="toggle-line"><input id="orderProgressGuardEnabled" type="checkbox" /> Guard пустого шага заказа</label>
                     <div class="field">
                       <div class="field-label">Дополнительные правила оформления</div>
                       <textarea id="orderRulesText" placeholder="Например: если клиент прислал все данные одним сообщением, не переспрашивать их."></textarea>
@@ -5963,6 +6033,7 @@
       const orderCollectPickupEnabled = document.getElementById('orderCollectPickupEnabled');
       const orderCollectPaymentEnabled = document.getElementById('orderCollectPaymentEnabled');
       const orderCollectReceiptEnabled = document.getElementById('orderCollectReceiptEnabled');
+      const orderProgressGuardEnabled = document.getElementById('orderProgressGuardEnabled');
       const orderRulesText = document.getElementById('orderRulesText');
       const orderProgressGuardText = document.getElementById('orderProgressGuardText');
       const softRetentionEnabled = document.getElementById('softRetentionEnabled');
@@ -6199,6 +6270,21 @@
       const systemMapRoutes = Array.from(document.querySelectorAll('.route-button[data-node]'));
       const visualPipelineStages = Array.from(document.querySelectorAll('[data-pipeline-stage]'));
       const ownerActions = Array.from(document.querySelectorAll('.owner-action[data-node]'));
+      const MAP_SKILL_TOGGLES = {
+        training: { key: 'training_enabled' },
+        memory: { key: 'memory_enabled' },
+        reader: { key: 'iwak_reader_enabled' },
+        guards: { key: 'response_guard_enabled' },
+        selfcheck: { key: 'self_check_enabled' },
+        media: { key: 'media_analysis_enabled' },
+        manager: { key: 'manager_takeover_enabled' },
+        payment: { key: 'payment_enabled' },
+        delivery: { key: 'delivery_rules_enabled' },
+        returns: { key: 'quality_return_soft_enabled' },
+        salesPsychology: { key: 'sales_psychology_enabled' },
+        sizeFit: { key: 'size_fit_enabled' },
+        orders: { key: 'order_path_enabled' },
+      };
       const mapModelKpi = document.getElementById('mapModelKpi');
       const mapModelNote = document.getElementById('mapModelNote');
       const mapMemoryKpi = document.getElementById('mapMemoryKpi');
@@ -7633,6 +7719,10 @@
         }, 1800);
       }
 
+      function showToast(text, type = 'ok') {
+        showSaveToast(type, text);
+      }
+
       function rememberButtonLabel(button) {
         if (!button || saveButtonDefaults.has(button)) return;
         saveButtonDefaults.set(button, button.textContent.trim());
@@ -8369,6 +8459,75 @@
         return value ? on : off;
       }
 
+      function getMapSkillEnabled(nodeKey, data = currentStatus || {}) {
+        const meta = MAP_SKILL_TOGGLES[nodeKey];
+        if (!meta) return true;
+        return typeof data[meta.key] === 'boolean' ? data[meta.key] : true;
+      }
+
+      function ensureMapSkillToggles() {
+        systemMapNodes.forEach((node) => {
+          const nodeKey = node.dataset.node;
+          if (!MAP_SKILL_TOGGLES[nodeKey] || node.querySelector('[data-map-skill-toggle]')) return;
+          const toggle = document.createElement('span');
+          toggle.className = 'skill-switch';
+          toggle.dataset.mapSkillToggle = nodeKey;
+          toggle.setAttribute('role', 'switch');
+          toggle.setAttribute('aria-label', `Включить или выключить ${node.querySelector('.map-node-title')?.textContent || nodeKey}`);
+          toggle.innerHTML = '<span class="skill-switch-track"><span></span></span><em>—</em>';
+          toggle.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await toggleMapSkill(nodeKey);
+          });
+          node.appendChild(toggle);
+        });
+      }
+
+      function updateMapSkillToggles(data = currentStatus || {}) {
+        systemMapNodes.forEach((node) => {
+          const nodeKey = node.dataset.node;
+          if (!MAP_SKILL_TOGGLES[nodeKey]) return;
+          const enabled = getMapSkillEnabled(nodeKey, data);
+          node.classList.toggle('skill-off', !enabled);
+          const toggle = node.querySelector('[data-map-skill-toggle]');
+          if (toggle) {
+            toggle.classList.toggle('is-on', enabled);
+            toggle.setAttribute('aria-checked', enabled ? 'true' : 'false');
+            const label = toggle.querySelector('em');
+            if (label) label.textContent = enabled ? 'вкл' : 'выкл';
+          }
+          const chip = node.querySelector(`[data-chip="${nodeKey}"]`) || node.querySelector('.map-node-chips .map-chip');
+          if (chip) {
+            chip.textContent = enabled ? boolLabel(true) : boolLabel(false, 'включено', 'выключено');
+            chip.classList.toggle('ok', enabled);
+            chip.classList.toggle('warn', !enabled);
+          }
+        });
+      }
+
+      async function toggleMapSkill(nodeKey) {
+        const meta = MAP_SKILL_TOGGLES[nodeKey];
+        if (!meta) return;
+        const toggle = document.querySelector(`[data-map-skill-toggle="${nodeKey}"]`);
+        const nextValue = !getMapSkillEnabled(nodeKey);
+        toggle?.classList.add('is-saving');
+        try {
+          await fetchJSON('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [meta.key]: nextValue }),
+          });
+          await loadStatus();
+          renderSystemMapInspector(activeSystemMapNode || nodeKey);
+          showToast(`${nextValue ? 'Включил' : 'Выключил'} узел на карте`, 'ok');
+        } catch (error) {
+          showToast(error.message || 'Не удалось сохранить тумблер', 'error');
+        } finally {
+          toggle?.classList.remove('is-saving');
+        }
+      }
+
       function setMapChip(name, text, state = '') {
         const chip = document.querySelector(`.map-chip[data-chip="${name}"]`);
         if (!chip) return;
@@ -8425,16 +8584,19 @@
         const data = currentStatus || {};
         if (nodeKey === 'core') return `Модель: ${data.model || '—'} · AI: ${data.ai || '—'} · Telegram: ${data.telegram || '—'}`;
         if (nodeKey === 'prompt') return `Тон: ${data.tone || '—'} · длина: ${data.response_length || '—'} · prompt-блоков: ${countAppliedControls(data)}`;
-        if (nodeKey === 'memory') return `Память: ${boolLabel(data.memory_enabled !== false, 'активна', 'выключена')} · история: ${data.memory_recent_limit || '—'}`;
-        if (nodeKey === 'reader') return 'Reader управляется правилами узла: product/cart читаются до AI_REQUEST.';
-        if (nodeKey === 'media') return `Режим: ${data.media_behavior || '—'} · STT: ${data.stt || '—'}`;
+        if (nodeKey === 'memory') return `Память: ${boolLabel(getMapSkillEnabled('memory', data), 'активна', 'выключена')} · история: ${data.memory_recent_limit || '—'}`;
+        if (nodeKey === 'reader') return `Reader: ${boolLabel(getMapSkillEnabled('reader', data))} · product/cart читаются до AI_REQUEST.`;
+        if (nodeKey === 'media') return `Медиа-анализ: ${boolLabel(getMapSkillEnabled('media', data))} · режим: ${data.media_behavior || '—'} · STT: ${data.stt || '—'}`;
         if (nodeKey === 'guards') return `Response guard: ${boolLabel(data.response_guard_enabled !== false)} · чек: ${boolLabel(data.receipt_check_enabled !== false)}`;
         if (nodeKey === 'selfcheck') return `Самопроверка: ${boolLabel(data.self_check_enabled !== false)} · автокоррекция: ${boolLabel(data.self_check_autocorrect_low_risk_enabled !== false)} · блок high: ${boolLabel(data.self_check_block_high_risk_enabled === true)}`;
-        if (nodeKey === 'orders') return `Заказник: ${boolLabel(data.order_chat_enabled, 'включен', 'выключен')} · chat: ${data.order_chat_id || '—'}`;
-        if (nodeKey === 'training') return data.applied_controls?.training ? 'Уроки попадают в prompt.' : 'Уроки есть отдельно во вкладке Training.';
+        if (nodeKey === 'orders') return `Путь заказа: ${boolLabel(getMapSkillEnabled('orders', data))} · заказник Telegram: ${boolLabel(data.order_chat_enabled, 'включен', 'выключен')}`;
+        if (nodeKey === 'training') return getMapSkillEnabled('training', data) ? 'Уроки включены и могут попасть в prompt.' : 'Уроки выключены на карте и не попадают в prompt.';
         if (nodeKey === 'manager') return `Перехват: ${boolLabel(data.manager_takeover_enabled !== false)} · возврат: ${data.manager_return_delay_ms || '—'} мс`;
         if (nodeKey === 'payment') return `Оплата: ${boolLabel(data.payment_enabled === true, 'включена', 'выключена')} · чек guard: ${boolLabel(data.receipt_check_enabled !== false)}`;
         if (nodeKey === 'delivery') return `Доставка: ${boolLabel(data.delivery_rules_enabled !== false, 'включена', 'выключена')} · трекинг: ${boolLabel(data.delivery_tracking_enabled !== false)}`;
+        if (nodeKey === 'returns') return `Возвраты: ${boolLabel(getMapSkillEnabled('returns', data))} · примерка/обмен по правилам качества.`;
+        if (nodeKey === 'salesPsychology') return `Психология продаж: ${boolLabel(getMapSkillEnabled('salesPsychology', data))}`;
+        if (nodeKey === 'sizeFit') return `Размеры и посадка: ${boolLabel(getMapSkillEnabled('sizeFit', data))}`;
         return '—';
       }
 
@@ -9809,6 +9971,7 @@
       function renderStatus(data) {
         currentStatus = data;
         renderSystemVisibility(data);
+        updateMapSkillToggles(data);
         renderFullPassport(data);
 
         setChainStatus(telegramStatus, 'Telegram', data.telegram_status || (data.telegram === 'подключен' ? 'ok' : 'error'));
@@ -9865,6 +10028,7 @@
         orderCollectPickupEnabled.checked = data.order_collect_pickup_enabled !== false;
         orderCollectPaymentEnabled.checked = data.order_collect_payment_enabled !== false;
         orderCollectReceiptEnabled.checked = data.order_collect_receipt_enabled !== false;
+        orderProgressGuardEnabled.checked = data.order_progress_guard_enabled !== false;
         orderRulesText.value = data.order_rules_text || '';
         orderProgressGuardText.value = data.order_progress_guard_text || '';
         softRetentionEnabled.checked = data.soft_retention_enabled !== false;
@@ -10422,6 +10586,7 @@
               order_collect_pickup_enabled: orderCollectPickupEnabled.checked,
               order_collect_payment_enabled: orderCollectPaymentEnabled.checked,
               order_collect_receipt_enabled: orderCollectReceiptEnabled.checked,
+              order_progress_guard_enabled: orderProgressGuardEnabled.checked,
               order_progress_guard_text: orderProgressGuardText.value,
               order_rules_text: orderRulesText.value,
               soft_retention_enabled: softRetentionEnabled.checked,
@@ -11371,6 +11536,8 @@
 
       logoButton.addEventListener('click', () => switchView('ai-control'));
 
+      ensureMapSkillToggles();
+
       systemMapNodes.forEach((node) => {
         node.addEventListener('click', () => {
           renderSystemMapInspector(node.dataset.node || 'core');
@@ -11517,6 +11684,7 @@
         orderCollectPickupEnabled,
         orderCollectPaymentEnabled,
         orderCollectReceiptEnabled,
+        orderProgressGuardEnabled,
         orderRulesText,
         orderProgressGuardText,
         softRetentionEnabled,
