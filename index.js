@@ -3915,6 +3915,23 @@ function stripObviousMediaNarration(reply = '') {
   return capitalizeFirstLetter(source || String(reply || '').trim());
 }
 
+function stripObviousOrderDataNarration(reply = '') {
+  let source = String(reply || '').trim();
+  if (!source) return '';
+  const patterns = [
+    /^\s*вижу,\s*(?:что\s*)?(?:вы\s*)?(?:прислали|отправили|скинули)\s+(?:контактные\s+данные|данные|фио\s+и\s+телефон|телефон\s+и\s+фио)[.!,:;\-\s]*/i,
+    /^\s*(?:контактные\s+данные|данные|фио\s+и\s+телефон|телефон\s+и\s+фио)\s+(?:получил|получила|вижу|принял|приняла)[.!,:;\-\s]*/i,
+  ];
+  let previous = '';
+  while (source !== previous) {
+    previous = source;
+    patterns.forEach((pattern) => {
+      source = source.replace(pattern, '').trim();
+    });
+  }
+  return capitalizeFirstLetter(source || String(reply || '').trim());
+}
+
 function finalizeProductMediaReply(input = {}, reply = '') {
   let finalReply = String(reply || '').trim();
   if (!finalReply || !input.hasMedia) return finalReply;
@@ -4453,6 +4470,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeDeliveryCostReply(input, finalReply);
   finalReply = finalizePaymentAmountReply(input, finalReply);
   finalReply = finalizeProductMediaReply(input, finalReply);
+  finalReply = stripObviousOrderDataNarration(finalReply);
   finalReply = finalizeShoeSizeInsoleReply(input, finalReply);
   finalReply = finalizeAvailabilityIssueReply(input, finalReply);
   finalReply = finalizePhotoSizeRealityReply(input, finalReply);
@@ -4525,6 +4543,18 @@ function evaluateSelfCheck(input = {}, reply = '', rawReply = '') {
       'Роботная фраза про медиа',
       'Ответ начинался с лишнего описания вроде "вижу, что вы прислали фото".',
       'Оставлять смысл ответа без технического описания входящего медиа.'
+    ));
+  }
+
+  const noOrderDataNarration = stripObviousOrderDataNarration(correctedReply).trim();
+  if (noOrderDataNarration && noOrderDataNarration !== correctedReply) {
+    correctedReply = noOrderDataNarration;
+    issues.push(buildSelfCheckIssue(
+      'low',
+      'orders',
+      'Роботная фраза про данные заказа',
+      'Ответ начинался с лишнего описания вроде "вижу, что вы прислали контактные данные".',
+      'Начинать сразу с понятного следующего шага оформления.'
     ));
   }
 
