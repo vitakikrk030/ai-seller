@@ -3876,9 +3876,10 @@ function finalizeMoscowCourierReply(input = {}, reply = '') {
   const city = normalizeMemoryText(snapshot.city || extractCity(text));
   const asksCourier = /курьер|до\s+двери|срочн|сегодня|день\s+в\s+день/i.test(text);
   const mentionsMoscowCourier = /курьер[\s\S]{0,80}москв|москв[\s\S]{0,80}курьер/i.test(finalReply);
+  const isMoscowContext = /москв/i.test(city) || /москв/i.test(text) || /москв/i.test(finalReply);
   if (!asksCourier && !mentionsMoscowCourier) return finalReply;
 
-  if (/москва/i.test(city || text)) {
+  if (isMoscowContext) {
     if (/в\s+течени[еи]\s+дня|день\s+в\s+день|сегодня/i.test(finalReply)) return finalReply;
     return `${finalReply.replace(/\s+$/g, '')} По Москве курьер — отдельная платная срочная доставка: в течение дня, в удобное для вас время.`;
   }
@@ -3889,17 +3890,30 @@ function finalizeMoscowCourierReply(input = {}, reply = '') {
   return finalReply;
 }
 
+function isDeliveryCostQuestion(text = '') {
+  const source = String(text || '');
+  return /доставк/i.test(source) && /(?:платн|бесплат|стоим|сколько|цен|тариф|выгодн|дешев)/i.test(source);
+}
+
 function finalizeDeliveryCostReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
-  if (!finalReply || !/доставк[ауы][\s\S]{0,80}бесплатн/i.test(finalReply)) return finalReply;
-  const service = extractDeliveryService(input?.text)
-    || input?.memoryContext?.slotSnapshot?.deliveryService
-    || '';
+  if (!finalReply) return finalReply;
   const config = input.config || runtimeConfig;
-  if (isFreeDeliveryService(service, config)) return finalReply;
   const freeText = getFreeDeliveryServices(config).join(' и ');
   const paidText = getPaidDeliveryServices(config).join(', ');
   const replacement = `${freeText} бесплатные, ${paidText} — по тарифам выбранной компании.`;
+
+  if (isDeliveryCostQuestion(input?.text)) {
+    const hasFreeSplit = /(яндекс|yandex)[\s\S]{0,80}(ozon|озон)[\s\S]{0,80}бесплатн|бесплатн[\s\S]{0,80}(яндекс|yandex)[\s\S]{0,80}(ozon|озон)/i.test(finalReply);
+    const hasPaidSplit = /(сд[эе]к|cdek|почт|wb|wildberries|остальн|другие)[\s\S]{0,120}(платн|тариф)/i.test(finalReply);
+    if (!hasFreeSplit || !hasPaidSplit) return replacement;
+  }
+
+  if (!/доставк[ауы][\s\S]{0,80}бесплатн/i.test(finalReply)) return finalReply;
+  const service = extractDeliveryService(input?.text)
+    || input?.memoryContext?.slotSnapshot?.deliveryService
+    || '';
+  if (isFreeDeliveryService(service, config)) return finalReply;
 
   return finalReply
     .replace(/Доставка\s+у\s+нас\s+бесплатная\.?/gi, replacement)
