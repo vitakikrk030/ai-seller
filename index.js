@@ -3867,6 +3867,28 @@ function finalizeDeliveryTrackingReply(input = {}, reply = '') {
   return `После оформления накладной статус обычно появляется в приложении или личном кабинете${serviceText}, если ваш номер телефона там зарегистрирован. Там можно будет отслеживать путь заказа до получения.`;
 }
 
+function finalizeMoscowCourierReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  if (!finalReply || !/курьер/i.test(finalReply)) return finalReply;
+
+  const text = String(input?.text || '');
+  const snapshot = input?.memoryContext?.slotSnapshot || {};
+  const city = normalizeMemoryText(snapshot.city || extractCity(text));
+  const asksCourier = /курьер|до\s+двери|срочн|сегодня|день\s+в\s+день/i.test(text);
+  const mentionsMoscowCourier = /курьер[\s\S]{0,80}москв|москв[\s\S]{0,80}курьер/i.test(finalReply);
+  if (!asksCourier && !mentionsMoscowCourier) return finalReply;
+
+  if (/москва/i.test(city || text)) {
+    if (/в\s+течени[еи]\s+дня|день\s+в\s+день|сегодня/i.test(finalReply)) return finalReply;
+    return `${finalReply.replace(/\s+$/g, '')} По Москве курьер — отдельная платная срочная доставка: в течение дня, в удобное для вас время.`;
+  }
+
+  if (/курьер[\s\S]{0,120}(?:возмож|можно|есть|достав)/i.test(finalReply)) {
+    return finalReply.replace(/[^.!?\n]*курьер[^.!?\n]*(?:возмож|можно|есть|достав)[^.!?\n]*[.!?]?/i, 'Для других городов курьера от себя не предлагаем: лучше подобрать ПВЗ, постамат или выбранную транспортную компанию.').trim();
+  }
+  return finalReply;
+}
+
 function finalizeDeliveryCostReply(input = {}, reply = '') {
   const finalReply = String(reply || '').trim();
   if (!finalReply || !/доставк[ауы][\s\S]{0,80}бесплатн/i.test(finalReply)) return finalReply;
@@ -4528,6 +4550,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeCartSwitchReply(input, finalReply);
   finalReply = finalizeDeliveryChoiceReply(input, finalReply);
   finalReply = finalizeDeliveryTrackingReply(input, finalReply);
+  finalReply = finalizeMoscowCourierReply(input, finalReply);
   finalReply = finalizeDeliveryCostReply(input, finalReply);
   finalReply = finalizePaymentAmountReply(input, finalReply);
   finalReply = finalizeProductMediaReply(input, finalReply);
