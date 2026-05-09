@@ -4736,6 +4736,10 @@
                       <div class="field-label">Дополнительные правила оформления</div>
                       <textarea id="orderRulesText" placeholder="Например: если клиент прислал все данные одним сообщением, не переспрашивать их."></textarea>
                     </div>
+                    <div class="field">
+                      <div class="field-label">Guard пустого шага заказа</div>
+                      <textarea id="orderProgressGuardText" placeholder="Если клиент прислал ФИО/телефон/город/ПВЗ, нельзя отвечать просто “Понял.” — надо вести к следующему шагу."></textarea>
+                    </div>
                     <div class="subsection">
                       <div class="subsection-title">Мягкое удержание</div>
                       <div class="subsection-text">Скилл для моментов, когда клиент пишет “подумаю”, “вечером замерю”, “позже”. Продавец снимает барьер и мягко ведёт к следующему шагу.</div>
@@ -5960,6 +5964,7 @@
       const orderCollectPaymentEnabled = document.getElementById('orderCollectPaymentEnabled');
       const orderCollectReceiptEnabled = document.getElementById('orderCollectReceiptEnabled');
       const orderRulesText = document.getElementById('orderRulesText');
+      const orderProgressGuardText = document.getElementById('orderProgressGuardText');
       const softRetentionEnabled = document.getElementById('softRetentionEnabled');
       const softRetentionTriggersText = document.getElementById('softRetentionTriggersText');
       const softRetentionRulesText = document.getElementById('softRetentionRulesText');
@@ -9182,6 +9187,7 @@
             { key: 'sales_psychology_forbidden_text', label: 'Психология продаж: запрещённые приёмы', value: data.sales_psychology_forbidden_text },
             { key: 'sales_psychology_examples_text', label: 'Психология продаж: примеры', value: data.sales_psychology_examples_text },
             { key: 'order_rules_text', label: 'Путь заказа', value: data.order_rules_text },
+            { key: 'order_progress_guard_text', label: 'Guard пустого шага заказа', value: data.order_progress_guard_text },
             { key: 'soft_retention_rules_text', label: 'Мягкое удержание клиента', value: data.soft_retention_rules_text },
             { key: 'response_guard_rules_text', label: 'Финальный response guard', value: data.response_guard_rules_text },
             { key: 'quality_rules_text', label: 'Качество, реплика, возвраты', value: data.quality_rules_text },
@@ -9221,6 +9227,7 @@
           ],
           orders: [
             { key: 'order_rules_text', label: 'Правила пути заказа', value: data.order_rules_text },
+            { key: 'order_progress_guard_text', label: 'Guard: не отвечать пустым "Понял."', value: data.order_progress_guard_text },
             { key: 'size_fit_shoe_table_text', label: 'Размеры и стелька для оформления обуви', value: data.size_fit_shoe_table_text },
             { key: 'size_fit_category_rules_text', label: 'Когда размер/стелька нужны по категориям', value: data.size_fit_category_rules_text },
             { key: 'soft_retention_triggers_text', label: 'Триггеры ухода на потом', value: data.soft_retention_triggers_text },
@@ -9859,6 +9866,7 @@
         orderCollectPaymentEnabled.checked = data.order_collect_payment_enabled !== false;
         orderCollectReceiptEnabled.checked = data.order_collect_receipt_enabled !== false;
         orderRulesText.value = data.order_rules_text || '';
+        orderProgressGuardText.value = data.order_progress_guard_text || '';
         softRetentionEnabled.checked = data.soft_retention_enabled !== false;
         softRetentionTriggersText.value = data.soft_retention_triggers_text || '';
         softRetentionRulesText.value = data.soft_retention_rules_text || '';
@@ -10414,6 +10422,7 @@
               order_collect_pickup_enabled: orderCollectPickupEnabled.checked,
               order_collect_payment_enabled: orderCollectPaymentEnabled.checked,
               order_collect_receipt_enabled: orderCollectReceiptEnabled.checked,
+              order_progress_guard_text: orderProgressGuardText.value,
               order_rules_text: orderRulesText.value,
               soft_retention_enabled: softRetentionEnabled.checked,
               soft_retention_triggers_text: softRetentionTriggersText.value,
@@ -11509,6 +11518,7 @@
         orderCollectPaymentEnabled,
         orderCollectReceiptEnabled,
         orderRulesText,
+        orderProgressGuardText,
         softRetentionEnabled,
         softRetentionTriggersText,
         softRetentionRulesText,

@@ -74,6 +74,13 @@ const DEFAULT_ORDER_CHAT_TEMPLATE_TEXT = [
   'Город: {city}',
   'Доставка: {delivery}',
 ].join('\n');
+const DEFAULT_ORDER_PROGRESS_GUARD_TEXT = [
+  'Если клиент прислал полезные данные заказа (ФИО, телефон, город, службу доставки, ПВЗ/адрес или размер), нельзя отвечать пустым "Понял.".',
+  'После таких данных продавец обязан вести к ближайшему недостающему шагу: город, служба доставки, ПВЗ/адрес, оплата или чек.',
+  'Если ФИО и телефон уже есть, а доставки ещё нет — попросить город и удобную доставку, подсветив: Яндекс Доставка и Ozon бесплатные, остальные службы по тарифам.',
+  'Если город есть, но службы нет — помочь выбрать доставку, не заставляя клиента разбираться самому.',
+  'Если служба есть, но ПВЗ/адреса нет — попросить адрес или название удобного ПВЗ.',
+].join('\n');
 const DEFAULT_MEMORY_NODE_RULES_TEXT = [
   'Память хранит только факты клиента: ФИО, телефон, размер, стельку, город, ПВЗ/адрес, товар, заказ и режим диалога.',
   'Не писать в lastProduct сырые приветствия, ссылки, корзины целиком или обычный текст клиента.',
@@ -564,6 +571,8 @@ const runtimeConfig = {
   order_collect_pickup_enabled: process.env.ORDER_COLLECT_PICKUP_ENABLED !== 'false',
   order_collect_payment_enabled: process.env.ORDER_COLLECT_PAYMENT_ENABLED !== 'false',
   order_collect_receipt_enabled: process.env.ORDER_COLLECT_RECEIPT_ENABLED !== 'false',
+  order_progress_guard_enabled: process.env.ORDER_PROGRESS_GUARD_ENABLED !== 'false',
+  order_progress_guard_text: process.env.ORDER_PROGRESS_GUARD_TEXT || DEFAULT_ORDER_PROGRESS_GUARD_TEXT,
   order_step_mode: process.env.ORDER_STEP_MODE || 'natural',
   order_rules_text: process.env.ORDER_RULES_TEXT || DEFAULT_ORDER_RULES_TEXT,
   soft_retention_enabled: process.env.SOFT_RETENTION_ENABLED !== 'false',
@@ -4208,6 +4217,74 @@ function finalizeEarlyOrderContactRequest(input = {}, reply = '') {
   return buildSoftOrderStartReply(input);
 }
 
+function isBareOrderAcknowledgement(reply = '') {
+  const normalized = String(reply || '')
+    .trim()
+    .replace(/[.!?,;:]+$/g, '')
+    .toLowerCase()
+    .replace(/ё/g, 'е');
+  if (!normalized || normalized.length > 90) return false;
+  return /^(?:понял|поняла|принял|приняла|отлично|хорошо|ок|окей|супер)(?:\s*,?\s*(?:понял|принял|хорошо|ок|окей|спасибо))*$/.test(normalized);
+}
+
+function inputContainsOrderProgressData(input = {}) {
+  const text = String(input?.text || '');
+  return Boolean(
+    extractPhone(text)
+    || extractFullName(text)
+    || extractCity(text)
+    || extractDeliveryService(text)
+    || extractDeliveryAddress(text)
+    || extractPickupPoint(text)
+    || extractSize(text)
+  );
+}
+
+function hasOrderProgressContext(input = {}, snapshot = {}) {
+  const summary = normalizeMemoryText(input?.memoryContext?.summary || '');
+  return Boolean(
+    snapshot.product
+    || snapshot.size
+    || input?.cartContext?.orderDetails
+    || input?.productContext?.orderDetails
+    || /(?:заказ|оформ|корзин|доставк|пвз|получател|телефон|фио)/i.test(summary)
+  );
+}
+
+function buildOrderProgressNextStepReply(input = {}) {
+  const snapshot = buildSlotSnapshot(input?.chatId, input);
+  if (!hasOrderProgressContext(input, snapshot)) return '';
+
+  if (!snapshot.fullName && parseConfigBoolean(input.config?.order_collect_full_name_enabled, true)) {
+    return 'Понял. Пришлите, пожалуйста, ФИО получателя.';
+  }
+  if (!snapshot.phone && parseConfigBoolean(input.config?.order_collect_phone_enabled, true)) {
+    return 'Понял. Пришлите, пожалуйста, телефон получателя.';
+  }
+  if (!snapshot.city && parseConfigBoolean(input.config?.order_collect_city_enabled, true)) {
+    return 'Понял, данные получил. Пришлите, пожалуйста, город доставки.';
+  }
+  if (!snapshot.deliveryService && parseConfigBoolean(input.config?.order_collect_delivery_service_enabled, true)) {
+    return 'Понял, данные получил. По доставке самый выгодный вариант — Яндекс Доставка или Ozon, они бесплатные. Остальные службы можно выбрать, но они уже по тарифам компании. Какую доставку ставим?';
+  }
+  if (!snapshot.pickupPoint && parseConfigBoolean(input.config?.order_collect_pickup_enabled, true)) {
+    return 'Понял, данные получил. Пришлите, пожалуйста, адрес или название удобного ПВЗ.';
+  }
+  if (parseConfigBoolean(input.config?.payment_enabled, false) && !snapshot.paymentRequested) {
+    return 'Отлично, данные есть. Сейчас можно переходить к оплате.';
+  }
+  return '';
+}
+
+function finalizeOrderProgressGuardReply(input = {}, reply = '') {
+  const finalReply = String(reply || '').trim();
+  const config = input.config || runtimeConfig;
+  if (!parseConfigBoolean(config.order_progress_guard_enabled, true)) return finalReply;
+  if (!isBareOrderAcknowledgement(finalReply)) return finalReply;
+  if (!inputContainsOrderProgressData(input)) return finalReply;
+  return buildOrderProgressNextStepReply({ ...input, config }) || finalReply;
+}
+
 function finalizeOrderFormReply(input, reply) {
   const finalReply = String(reply || '').trim();
   if (!isFullCheckoutFormReply(finalReply)) return finalReply;
@@ -4383,6 +4460,7 @@ function finalizeAiReply(input, reply) {
   finalReply = finalizeReturnConditionReply(input, finalReply);
   finalReply = finalizeStoreOfflineReply(input, finalReply);
   finalReply = finalizeEarlyOrderContactRequest(input, finalReply);
+  finalReply = finalizeOrderProgressGuardReply(input, finalReply);
   if (isBotIdentityChallengeText(input?.text) && containsForbiddenBotIdentityReply(finalReply)) {
     return 'Почему так решили?';
   }
@@ -6313,6 +6391,8 @@ function getRuntimeSnapshot() {
     order_collect_pickup_enabled: parseConfigBoolean(runtimeConfig.order_collect_pickup_enabled, true),
     order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
+    order_progress_guard_enabled: parseConfigBoolean(runtimeConfig.order_progress_guard_enabled, true),
+    order_progress_guard_text: runtimeConfig.order_progress_guard_text || DEFAULT_ORDER_PROGRESS_GUARD_TEXT,
     order_step_mode: runtimeConfig.order_step_mode,
     order_rules_text: runtimeConfig.order_rules_text || DEFAULT_ORDER_RULES_TEXT,
     soft_retention_enabled: parseConfigBoolean(runtimeConfig.soft_retention_enabled, true),
@@ -6623,6 +6703,7 @@ function applyConfigUpdate(body) {
     ['order_collect_pickup_enabled', 'ORDER_COLLECT_PICKUP_ENABLED'],
     ['order_collect_payment_enabled', 'ORDER_COLLECT_PAYMENT_ENABLED'],
     ['order_collect_receipt_enabled', 'ORDER_COLLECT_RECEIPT_ENABLED'],
+    ['order_progress_guard_enabled', 'ORDER_PROGRESS_GUARD_ENABLED'],
     ['soft_retention_enabled', 'SOFT_RETENTION_ENABLED'],
     ['response_guard_enabled', 'RESPONSE_GUARD_ENABLED'],
     ['response_guard_no_fake_payment_enabled', 'RESPONSE_GUARD_NO_FAKE_PAYMENT_ENABLED'],
@@ -6680,6 +6761,7 @@ function applyConfigUpdate(body) {
     ['size_fit_category_rules_text', 'SIZE_FIT_CATEGORY_RULES_TEXT', DEFAULT_SIZE_FIT_CATEGORY_RULES_TEXT],
     ['size_fit_validation_rules_text', 'SIZE_FIT_VALIDATION_RULES_TEXT', DEFAULT_SIZE_FIT_VALIDATION_RULES_TEXT],
     ['size_fit_examples_text', 'SIZE_FIT_EXAMPLES_TEXT', DEFAULT_SIZE_FIT_EXAMPLES_TEXT],
+    ['order_progress_guard_text', 'ORDER_PROGRESS_GUARD_TEXT', DEFAULT_ORDER_PROGRESS_GUARD_TEXT],
     ['order_rules_text', 'ORDER_RULES_TEXT', DEFAULT_ORDER_RULES_TEXT],
     ['soft_retention_triggers_text', 'SOFT_RETENTION_TRIGGERS_TEXT', DEFAULT_SOFT_RETENTION_TRIGGERS_TEXT],
     ['soft_retention_rules_text', 'SOFT_RETENTION_RULES_TEXT', DEFAULT_SOFT_RETENTION_RULES_TEXT],
@@ -8537,6 +8619,9 @@ function getOrderPathGuidance(config) {
       && 'Когда основные данные собраны, аккуратно отправить реквизиты из раздела Оплата.',
     parseConfigBoolean(config.order_collect_receipt_enabled, true)
       && 'После оплаты попросить чек или скрин и сверить видимые данные с заказом настолько, насколько возможно по сообщению/изображению.',
+    parseConfigBoolean(config.order_progress_guard_enabled, true)
+      && String(config.order_progress_guard_text || DEFAULT_ORDER_PROGRESS_GUARD_TEXT).trim()
+      && `Guard пустого шага заказа:\n${String(config.order_progress_guard_text || DEFAULT_ORDER_PROGRESS_GUARD_TEXT).trim()}`,
     parseConfigBoolean(config.soft_retention_enabled, true)
       && `Скилл "Мягкое удержание" включён. Если клиент уходит на потом, не отпускать сухим "хорошо, жду"; мягко снять барьер и предложить понятный следующий шаг.`,
     parseConfigBoolean(config.soft_retention_enabled, true)
@@ -10864,6 +10949,8 @@ app.get('/config/status', async (req, res) => {
     order_collect_pickup_enabled: parseConfigBoolean(runtimeConfig.order_collect_pickup_enabled, true),
     order_collect_payment_enabled: parseConfigBoolean(runtimeConfig.order_collect_payment_enabled, true),
     order_collect_receipt_enabled: parseConfigBoolean(runtimeConfig.order_collect_receipt_enabled, true),
+    order_progress_guard_enabled: parseConfigBoolean(runtimeConfig.order_progress_guard_enabled, true),
+    order_progress_guard_text: runtimeConfig.order_progress_guard_text || DEFAULT_ORDER_PROGRESS_GUARD_TEXT,
     order_step_mode: runtimeConfig.order_step_mode || 'natural',
     order_rules_text: runtimeConfig.order_rules_text || DEFAULT_ORDER_RULES_TEXT,
     soft_retention_enabled: parseConfigBoolean(runtimeConfig.soft_retention_enabled, true),
@@ -11194,6 +11281,8 @@ function buildPromptPassport(config = runtimeConfig) {
       'order_collect_pickup_enabled',
       'order_collect_payment_enabled',
       'order_collect_receipt_enabled',
+      'order_progress_guard_enabled',
+      'order_progress_guard_text',
       'order_step_mode',
       'order_rules_text',
       'soft_retention_enabled',
@@ -13863,6 +13952,8 @@ app.delete('/config', (req, res) => {
   runtimeConfig.order_collect_pickup_enabled = true;
   runtimeConfig.order_collect_payment_enabled = true;
   runtimeConfig.order_collect_receipt_enabled = true;
+  runtimeConfig.order_progress_guard_enabled = true;
+  runtimeConfig.order_progress_guard_text = DEFAULT_ORDER_PROGRESS_GUARD_TEXT;
   runtimeConfig.order_step_mode = 'natural';
   runtimeConfig.order_rules_text = DEFAULT_ORDER_RULES_TEXT;
   runtimeConfig.soft_retention_enabled = true;
