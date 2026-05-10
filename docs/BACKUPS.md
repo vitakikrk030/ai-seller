@@ -12,6 +12,8 @@ Before every meaningful change or server deploy:
 
 ### Server
 
+- `/root/sai_backups/sai_before-postgres-foundation-20260510-2227.tgz`
+- `/root/sai_backups/runtime-config-before-postgres-foundation-20260510-2227.json`
 - `/root/sai_backups/sai_passport-docs-20260510-170545.tgz`
 - `/root/sai_backups/sai_before-bare-magistral-20260510-133026.tgz`
 - `/root/sai_backups/sai_before-bare-magistral-20260510-133026`

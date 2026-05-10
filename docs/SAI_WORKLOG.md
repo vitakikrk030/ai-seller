@@ -514,3 +514,32 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-postgres-foundation-20260510-210133.tgz`
+
+## 2026-05-10 23:25:00 +03
+
+Deployed the PostgreSQL conversation foundation to the server.
+
+What changed:
+
+- Pushed commit `1dc32a2 Add PostgreSQL conversation foundation` to GitHub.
+- Backed up server `/root/sai` before replacing it.
+- Cloned the fresh repository into `/root/sai_new`.
+- Preserved the live server `data/runtime-config.json`.
+- Created PostgreSQL role/database for S.AI on the server.
+- Added server-only `.env` with `DATABASE_URL`.
+- Installed production dependencies on the server.
+- Switched `/root/sai` to the new code.
+- Restarted PM2 app `sai`.
+
+Verification:
+
+- PM2 app `sai` is online.
+- Server `/health` reports `database.ready: true`.
+- Server `/db/status` reports foundation tables exist.
+- Server `/config/status` still shows Telegram and AI configured.
+- Server migration table contains `001_foundation`.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-postgres-foundation-20260510-2227.tgz`
+- `/root/sai_backups/runtime-config-before-postgres-foundation-20260510-2227.json`
