@@ -570,3 +570,23 @@ Boundary:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-api-20260511-000147.tgz`
+
+Server deploy:
+
+- Pushed commit `1343b16 Add CRM API foundation` to GitHub.
+- Backed up server `/root/sai` before deploy.
+- Pulled latest `main` on `/root/sai`.
+- Restarted PM2 app `sai`.
+- Confirmed migration `002_crm_api` is applied.
+
+Server verification:
+
+- `/health` reports `database.ready: true`.
+- `/db/status` reports `customers`, `chats`, `messages`, `events`, and `ai_turns` exist.
+- `/api/crm/overview` returns the real Telegram conversation totals.
+- `/api/crm/chats?limit=5` returns the real Telegram chat.
+- `/api/crm/chats/:chatId/messages`, `/ai-turns`, and `/events` return the recorded real dialog, AI turn, and trace events.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-crm-api-20260511-0008.tgz`
