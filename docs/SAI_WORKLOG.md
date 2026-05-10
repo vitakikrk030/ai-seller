@@ -686,3 +686,22 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-events-20260511-013036.tgz`
+
+Server deploy:
+
+- Pushed commit `433186b Add CRM live events` to GitHub.
+- Backed up server `/root/sai`.
+- Pulled latest `main` on `/root/sai`.
+- Restarted PM2 app `sai`.
+
+Server verification:
+
+- Server is on commit `433186b`.
+- PM2 app `sai` is online.
+- `/health` reports `database.ready: true`.
+- `/api/crm/live` returns the initial SSE `connected` event.
+- `/api/crm/chats?limit=5` returns the real Telegram dialog.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-crm-live-events-20260511-0143.tgz`
