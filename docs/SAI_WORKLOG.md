@@ -590,3 +590,40 @@ Server verification:
 Server backup before deploy:
 
 - `/root/sai_backups/sai_before-crm-api-20260511-0008.tgz`
+
+## 2026-05-11 01:08:00 +03
+
+Added the first `Диалоги` UI screen from the approved AI-inbox reference.
+
+What changed:
+
+- Added a second rail section: `Диалоги`.
+- Kept `Соединение` as the transport settings section.
+- Added a three-column hybrid CRM/chat layout:
+  - left: dialog list with search and channel chips;
+  - center: selected conversation;
+  - right: client card, AI control, deal summary, notes, and events.
+- Connected the screen to the CRM API:
+  - `/api/crm/chats`;
+  - `/api/crm/chats/:chatId`;
+  - `/api/crm/chats/:chatId/messages`;
+  - `/api/crm/chats/:chatId/ai-turns`;
+  - `/api/crm/chats/:chatId/events`;
+  - `PATCH /api/crm/chats/:chatId`.
+- Added AI on/off control and notes saving for the selected chat.
+
+Boundary:
+
+- Manual reply is intentionally not active yet.
+- No seller prompts, product logic, delivery logic, payment logic, or hidden AI behavior were added.
+
+Verification:
+
+- Reloaded `http://127.0.0.1:3001/`.
+- Opened `Диалоги` from the rail.
+- Confirmed no browser console errors.
+- Confirmed empty-state layout is stable on the visible desktop viewport.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-dialogs-ui-20260511-005959.tgz`

@@ -1,6 +1,6 @@
 # S.AI Project Passport
 
-Updated: 2026-05-11 00:08:00 +03
+Updated: 2026-05-11 01:08:00 +03
 
 ## Project Rule
 
@@ -104,14 +104,24 @@ UI style: Apple-like minimal interface.
 Current visible section:
 
 - `Подключение`
+- `Диалоги`
 
-Planned screens inside `Подключение`:
+Working screens inside `Подключение`:
 
 - `Telegram`
 - `AI-модель` with operator model list loaded from `/models`
 - `База`
 - `Логи`
 - `Тест-чат`
+
+Working screen `Диалоги`:
+
+- conversation list from `/api/crm/chats`;
+- selected chat messages from `/api/crm/chats/:chatId/messages`;
+- customer card and basic deal/AI status;
+- chat AI toggle through `/api/crm/chats/:chatId`;
+- notes through `/api/crm/chats/:chatId`;
+- technical event timeline from `/api/crm/chats/:chatId/events`.
 
 ## Change Discipline
 
