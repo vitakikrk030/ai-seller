@@ -12,6 +12,7 @@ Before every meaningful change or server deploy:
 
 ### Server
 
+- `/root/sai_backups/sai_before-dialogs-ui-20260511-0108.tgz`
 - `/root/sai_backups/sai_before-crm-api-20260511-0008.tgz`
 - `/root/sai_backups/sai_before-postgres-foundation-20260510-2227.tgz`
 - `/root/sai_backups/runtime-config-before-postgres-foundation-20260510-2227.json`

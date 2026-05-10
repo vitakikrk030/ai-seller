@@ -627,3 +627,21 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-dialogs-ui-20260511-005959.tgz`
+
+Server deploy:
+
+- Pushed commit `2e838fe Add dialogs CRM screen` to GitHub.
+- Backed up server `/root/sai`.
+- Pulled latest `main` on `/root/sai`.
+- Restarted PM2 app `sai`.
+
+Server verification:
+
+- Server is on commit `2e838fe`.
+- PM2 app `sai` is online.
+- `/health` reports `database.ready: true`.
+- `/api/crm/chats?limit=5` returns the real Telegram dialog.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-dialogs-ui-20260511-0108.tgz`
