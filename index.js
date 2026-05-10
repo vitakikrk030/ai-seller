@@ -128,6 +128,37 @@ function normalizeMessages(messages) {
     .slice(-20);
 }
 
+function parseBool(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === true || value === 'true' || value === '1' || value === 'yes') return true;
+  if (value === false || value === 'false' || value === '0' || value === 'no') return false;
+  return undefined;
+}
+
+function crmOk(res, data, page) {
+  res.json({ ok: true, data, ...(page ? { page } : {}) });
+}
+
+function crmError(res, error, statusCode = 500) {
+  const database = db.status();
+  const code = database.enabled && !database.ready ? 503 : statusCode;
+  res.status(code).json({
+    ok: false,
+    error: error.message,
+    database,
+  });
+}
+
+function crmHandler(fn) {
+  return async (req, res) => {
+    try {
+      await fn(req, res);
+    } catch (error) {
+      crmError(res, error);
+    }
+  };
+}
+
 function buildMessages(clientText, history = []) {
   return [
     ...normalizeMessages(history),
@@ -298,6 +329,70 @@ app.get('/db/status', async (req, res) => {
     res.status(500).json({ ok: false, database: db.status(), error: error.message });
   }
 });
+
+app.get('/api/crm/overview', crmHandler(async (req, res) => {
+  crmOk(res, await db.crmOverview());
+}));
+
+app.get('/api/crm/chats', crmHandler(async (req, res) => {
+  const result = await db.listCrmChats({
+    status: req.query.status ? String(req.query.status) : '',
+    source: req.query.source ? String(req.query.source) : '',
+    aiEnabled: parseBool(req.query.ai_enabled),
+    q: req.query.q ? String(req.query.q) : '',
+    limit: req.query.limit,
+    cursor: req.query.cursor,
+  });
+  crmOk(res, result.items, result.page);
+}));
+
+app.get('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
+  const chat = await db.getCrmChat(req.params.chatId);
+  if (!chat) {
+    res.status(404).json({ ok: false, error: 'Chat not found' });
+    return;
+  }
+  crmOk(res, chat);
+}));
+
+app.get('/api/crm/chats/:chatId/messages', crmHandler(async (req, res) => {
+  const result = await db.listCrmMessages(req.params.chatId, {
+    direction: req.query.direction ? String(req.query.direction) : '',
+    role: req.query.role ? String(req.query.role) : '',
+    limit: req.query.limit,
+    cursor: req.query.cursor,
+  });
+  crmOk(res, result.items, result.page);
+}));
+
+app.get('/api/crm/chats/:chatId/ai-turns', crmHandler(async (req, res) => {
+  const result = await db.listCrmAiTurns(req.params.chatId, {
+    limit: req.query.limit,
+    cursor: req.query.cursor,
+  });
+  crmOk(res, result.items, result.page);
+}));
+
+app.get('/api/crm/chats/:chatId/events', crmHandler(async (req, res) => {
+  const result = await db.listCrmEvents(req.params.chatId, {
+    limit: req.query.limit,
+    cursor: req.query.cursor,
+  });
+  crmOk(res, result.items, result.page);
+}));
+
+app.patch('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
+  const chat = await db.updateCrmChat(req.params.chatId, req.body || {});
+  if (!chat) {
+    res.status(404).json({ ok: false, error: 'Chat not found' });
+    return;
+  }
+  logEvent('CRM_CHAT_UPDATE', {
+    chatDbId: req.params.chatId,
+    keys: Object.keys(req.body || {}),
+  });
+  crmOk(res, chat);
+}));
 
 app.delete('/logs', (req, res) => {
   fs.writeFileSync(LOG_FILE, '');

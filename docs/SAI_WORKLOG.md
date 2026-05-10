@@ -543,3 +543,30 @@ Server backup before deploy:
 
 - `/root/sai_backups/sai_before-postgres-foundation-20260510-2227.tgz`
 - `/root/sai_backups/runtime-config-before-postgres-foundation-20260510-2227.json`
+
+## 2026-05-11 00:08:00 +03
+
+Added the CRM API foundation for the future hybrid AI chat/CRM.
+
+What changed:
+
+- Added migration `002_crm_api.sql`.
+- Added visible chat-control fields to `chats`: `notes`, `priority`, `assigned_to`, `last_read_at`.
+- Added CRM API endpoints:
+  - `GET /api/crm/overview`
+  - `GET /api/crm/chats`
+  - `GET /api/crm/chats/:chatId`
+  - `GET /api/crm/chats/:chatId/messages`
+  - `GET /api/crm/chats/:chatId/ai-turns`
+  - `GET /api/crm/chats/:chatId/events`
+  - `PATCH /api/crm/chats/:chatId`
+- Added pagination, filters, search, and AI/chat status controls for future CRM screens.
+
+Boundary:
+
+- No seller prompts, product logic, delivery logic, payment logic, or hidden AI behavior were added.
+- This is API infrastructure for the future CRM/chat interface only.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-api-20260511-000147.tgz`

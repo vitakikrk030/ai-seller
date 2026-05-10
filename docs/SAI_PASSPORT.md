@@ -1,6 +1,6 @@
 # S.AI Project Passport
 
-Updated: 2026-05-10 21:00:00 +03
+Updated: 2026-05-11 00:08:00 +03
 
 ## Project Rule
 
@@ -25,7 +25,8 @@ Current transport:
 - Server sends the exact user message to the AI model.
 - AI model returns a reply.
 - Server sends the reply back to Telegram.
-- PostgreSQL records Telegram customers, chats, messages, events, and AI turns when `DATABASE_URL` is configured.
+- PostgreSQL records channel customers, chats, messages, events, and AI turns when `DATABASE_URL` is configured.
+- CRM API exposes conversations for the future hybrid chat/CRM interface.
 
 No business behavior is active in this foundation.
 
@@ -70,6 +71,12 @@ Current database scope:
 Visible status:
 
 - `/db/status`;
+- `/api/crm/overview`;
+- `/api/crm/chats`;
+- `/api/crm/chats/:chatId`;
+- `/api/crm/chats/:chatId/messages`;
+- `/api/crm/chats/:chatId/ai-turns`;
+- `/api/crm/chats/:chatId/events`;
 - `База` block in the local interface.
 
 Full database passport:

@@ -114,6 +114,48 @@ function json(value) {
   return value == null ? null : JSON.stringify(value);
 }
 
+function ensureReady() {
+  if (!ready) throw new Error('PostgreSQL is not ready');
+}
+
+function clampLimit(value, fallback = 50, max = 100) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(number)));
+}
+
+function encodeCursor(row, field = 'sort_at') {
+  if (!row?.[field] || !row?.id) return null;
+  return Buffer.from(JSON.stringify({
+    at: new Date(row[field]).toISOString(),
+    id: String(row.id),
+  })).toString('base64url');
+}
+
+function decodeCursor(cursor) {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(String(cursor), 'base64url').toString('utf8'));
+    if (!parsed.at || !parsed.id) return null;
+    return { at: new Date(parsed.at).toISOString(), id: String(parsed.id) };
+  } catch {
+    return null;
+  }
+}
+
+function pageResult(rows, limit, field = 'sort_at') {
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    items,
+    page: {
+      limit,
+      hasMore,
+      nextCursor: hasMore ? encodeCursor(items[items.length - 1], field) : null,
+    },
+  };
+}
+
 async function recordEvent(event, data = {}) {
   if (!ready) return null;
   const result = await query(`
@@ -276,6 +318,317 @@ async function recordAiTurn({
   return result.rows[0]?.id || null;
 }
 
+async function crmOverview() {
+  ensureReady();
+  const result = await query(`
+    select
+      count(*)::int as chats_total,
+      count(*) filter (where status = 'open')::int as chats_open,
+      count(*) filter (where ai_enabled)::int as ai_enabled,
+      count(*) filter (where not ai_enabled)::int as ai_paused,
+      count(*) filter (where last_message_at > now() - interval '24 hours')::int as active_24h
+    from chats
+  `);
+  const messages = await query(`
+    select
+      count(*)::int as messages_total,
+      count(*) filter (where direction = 'in')::int as inbound,
+      count(*) filter (where direction = 'out')::int as outbound
+    from messages
+  `);
+  const ai = await query(`
+    select
+      count(*)::int as turns_total,
+      count(*) filter (where ok)::int as ok,
+      count(*) filter (where not ok)::int as failed,
+      round(avg(latency_ms))::int as avg_latency_ms
+    from ai_turns
+  `);
+  const channels = await query(`
+    select source, count(*)::int as chats
+    from chats
+    group by source
+    order by chats desc, source asc
+  `);
+  return {
+    chats: result.rows[0] || {},
+    messages: messages.rows[0] || {},
+    ai: ai.rows[0] || {},
+    channels: channels.rows,
+  };
+}
+
+async function listCrmChats(filters = {}) {
+  ensureReady();
+  const limit = clampLimit(filters.limit, 30, 100);
+  const cursor = decodeCursor(filters.cursor);
+  const where = [];
+  const params = [];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (filters.status) where.push(`c.status = ${add(filters.status)}`);
+  if (filters.source) where.push(`c.source = ${add(filters.source)}`);
+  if (typeof filters.aiEnabled === 'boolean') where.push(`c.ai_enabled = ${add(filters.aiEnabled)}`);
+  if (filters.q) {
+    const token = `%${String(filters.q).trim()}%`;
+    const p1 = add(token);
+    const p2 = add(token);
+    const p3 = add(token);
+    where.push(`(
+      c.title ilike ${p1}
+      or cu.display_name ilike ${p2}
+      or exists (
+        select 1 from messages mq
+        where mq.chat_id = c.id and mq.text ilike ${p3}
+      )
+    )`);
+  }
+  if (cursor) {
+    const p1 = add(cursor.at);
+    const p2 = add(cursor.id);
+    where.push(`(coalesce(c.last_message_at, c.updated_at, c.created_at), c.id) < (${p1}::timestamptz, ${p2}::uuid)`);
+  }
+
+  const result = await query(`
+    select
+      c.id,
+      c.source,
+      c.external_chat_id,
+      c.title,
+      c.status,
+      c.ai_enabled,
+      c.priority,
+      c.assigned_to,
+      c.notes,
+      c.last_message_at,
+      c.created_at,
+      c.updated_at,
+      coalesce(c.last_message_at, c.updated_at, c.created_at) as sort_at,
+      cu.id as customer_id,
+      cu.display_name as customer_display_name,
+      cu.telegram_username as customer_username,
+      cu.phone as customer_phone,
+      lm.text as last_message_text,
+      lm.direction as last_message_direction,
+      lm.role as last_message_role,
+      lm.created_at as last_message_created_at,
+      coalesce(mc.messages_count, 0)::int as messages_count,
+      coalesce(at.ai_turns_count, 0)::int as ai_turns_count
+    from chats c
+    left join customers cu on cu.id = c.customer_id
+    left join lateral (
+      select text, direction, role, created_at
+      from messages
+      where chat_id = c.id
+      order by created_at desc, id desc
+      limit 1
+    ) lm on true
+    left join lateral (
+      select count(*) as messages_count
+      from messages
+      where chat_id = c.id
+    ) mc on true
+    left join lateral (
+      select count(*) as ai_turns_count
+      from ai_turns
+      where chat_id = c.id
+    ) at on true
+    ${where.length ? `where ${where.join(' and ')}` : ''}
+    order by sort_at desc, c.id desc
+    limit ${add(limit + 1)}
+  `, params);
+  return pageResult(result.rows, limit);
+}
+
+async function getCrmChat(chatId) {
+  ensureReady();
+  const result = await query(`
+    select
+      c.*,
+      cu.id as customer_id,
+      cu.source as customer_source,
+      cu.telegram_user_id,
+      cu.telegram_username,
+      cu.first_name,
+      cu.last_name,
+      cu.display_name,
+      cu.phone,
+      cu.notes as customer_notes,
+      cu.created_at as customer_created_at,
+      cu.updated_at as customer_updated_at,
+      coalesce(mc.messages_count, 0)::int as messages_count,
+      coalesce(at.ai_turns_count, 0)::int as ai_turns_count
+    from chats c
+    left join customers cu on cu.id = c.customer_id
+    left join lateral (
+      select count(*) as messages_count from messages where chat_id = c.id
+    ) mc on true
+    left join lateral (
+      select count(*) as ai_turns_count from ai_turns where chat_id = c.id
+    ) at on true
+    where c.id = $1
+  `, [chatId]);
+  return result.rows[0] || null;
+}
+
+async function listCrmMessages(chatId, filters = {}) {
+  ensureReady();
+  const limit = clampLimit(filters.limit, 50, 100);
+  const cursor = decodeCursor(filters.cursor);
+  const where = ['chat_id = $1'];
+  const params = [chatId];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (filters.direction) where.push(`direction = ${add(filters.direction)}`);
+  if (filters.role) where.push(`role = ${add(filters.role)}`);
+  if (cursor) where.push(`(created_at, id) < (${add(cursor.at)}::timestamptz, ${add(cursor.id)}::uuid)`);
+
+  const result = await query(`
+    select
+      id,
+      chat_id,
+      customer_id,
+      direction,
+      role,
+      text,
+      telegram_message_id,
+      trace_id,
+      created_at,
+      created_at as sort_at
+    from messages
+    where ${where.join(' and ')}
+    order by created_at desc, id desc
+    limit ${add(limit + 1)}
+  `, params);
+  return pageResult(result.rows, limit);
+}
+
+async function listCrmAiTurns(chatId, filters = {}) {
+  ensureReady();
+  const limit = clampLimit(filters.limit, 30, 100);
+  const cursor = decodeCursor(filters.cursor);
+  const params = [chatId];
+  const where = ['chat_id = $1'];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (cursor) where.push(`(created_at, id) < (${add(cursor.at)}::timestamptz, ${add(cursor.id)}::uuid)`);
+
+  const result = await query(`
+    select
+      id,
+      chat_id,
+      trace_id,
+      model,
+      request_messages,
+      response_text,
+      latency_ms,
+      ok,
+      error,
+      created_at,
+      created_at as sort_at
+    from ai_turns
+    where ${where.join(' and ')}
+    order by created_at desc, id desc
+    limit ${add(limit + 1)}
+  `, params);
+  return pageResult(result.rows, limit);
+}
+
+async function listCrmEvents(chatId, filters = {}) {
+  ensureReady();
+  const limit = clampLimit(filters.limit, 50, 100);
+  const cursor = decodeCursor(filters.cursor);
+  const params = [chatId];
+  const where = [`
+    (
+      trace_id in (select trace_id from messages where chat_id = $1 and trace_id is not null)
+      or trace_id in (select trace_id from ai_turns where chat_id = $1 and trace_id is not null)
+      or payload->>'chatDbId' = $1::text
+    )
+  `];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (cursor) where.push(`(created_at, id) < (${add(cursor.at)}::timestamptz, ${add(cursor.id)}::bigint)`);
+
+  const result = await query(`
+    select
+      id::text,
+      trace_id,
+      event_type,
+      source,
+      payload,
+      created_at,
+      created_at as sort_at
+    from events
+    where ${where.join(' and ')}
+    order by created_at desc, id desc
+    limit ${add(limit + 1)}
+  `, params);
+  return pageResult(result.rows, limit);
+}
+
+async function updateCrmChat(chatId, changes = {}) {
+  ensureReady();
+  const allowedStatuses = new Set(['open', 'paused', 'needs_human', 'closed', 'archived']);
+  const sets = [];
+  const params = [];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'status')) {
+    if (!allowedStatuses.has(changes.status)) throw new Error('Unsupported chat status');
+    sets.push(`status = ${add(changes.status)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'ai_enabled')) {
+    sets.push(`ai_enabled = ${add(Boolean(changes.ai_enabled))}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'notes')) {
+    sets.push(`notes = ${add(String(changes.notes || ''))}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'priority')) {
+    const priority = Number(changes.priority);
+    if (!Number.isInteger(priority) || priority < 0 || priority > 5) throw new Error('Priority must be an integer from 0 to 5');
+    sets.push(`priority = ${add(priority)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'assigned_to')) {
+    sets.push(`assigned_to = ${add(String(changes.assigned_to || '').trim() || null)}`);
+  }
+  if (changes.mark_read) {
+    sets.push('last_read_at = now()');
+  }
+  if (!sets.length) return getCrmChat(chatId);
+
+  sets.push('updated_at = now()');
+  params.push(chatId);
+  const result = await query(`
+    update chats
+    set ${sets.join(', ')}
+    where id = $${params.length}
+    returning id
+  `, params);
+  if (!result.rowCount) return null;
+  return getCrmChat(chatId);
+}
+
 module.exports = {
   init,
   status,
@@ -286,4 +639,11 @@ module.exports = {
   upsertTelegramChat,
   recordMessage,
   recordAiTurn,
+  crmOverview,
+  listCrmChats,
+  getCrmChat,
+  listCrmMessages,
+  listCrmAiTurns,
+  listCrmEvents,
+  updateCrmChat,
 };

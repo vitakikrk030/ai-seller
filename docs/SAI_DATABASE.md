@@ -1,12 +1,12 @@
 # S.AI Database Foundation
 
-Updated: 2026-05-10 21:00 +03
+Updated: 2026-05-11 00:08 +03
 
 ## Decision
 
 Primary database: PostgreSQL.
 
-Purpose right now: store Telegram conversations and transport diagnostics only.
+Purpose right now: store channel conversations, AI turns, and transport diagnostics only.
 
 Not included yet:
 
@@ -43,12 +43,48 @@ Migration file:
 
 Tables:
 
-- `customers` — Telegram people who write to S.AI.
-- `chats` — Telegram conversations, AI toggle per chat, status, last activity.
+- `customers` — people who write to S.AI through any supported channel. Telegram fields exist because Telegram is the first transport.
+- `chats` — channel conversations, AI toggle per chat, status, priority, notes, last activity.
 - `messages` — incoming and outgoing message history.
 - `events` — technical event stream: webhook, AI request, send, errors.
 - `ai_turns` — exact model turn: request messages, response, latency, success/error.
 - `schema_migrations` — applied migration versions.
+
+## CRM API Foundation
+
+The CRM API is read-first and channel-neutral. It exists so the future hybrid chat/CRM interface can read the same data no matter which transport produced it.
+
+Endpoints:
+
+- `GET /api/crm/overview` — totals for chats, messages, AI turns, and channels.
+- `GET /api/crm/chats` — paginated chat list with filters: `status`, `source`, `ai_enabled`, `q`, `limit`, `cursor`.
+- `GET /api/crm/chats/:chatId` — one chat with customer summary.
+- `GET /api/crm/chats/:chatId/messages` — paginated message history with filters: `direction`, `role`, `limit`, `cursor`.
+- `GET /api/crm/chats/:chatId/ai-turns` — model turns for this chat.
+- `GET /api/crm/chats/:chatId/events` — technical events connected through the chat trace ids.
+- `PATCH /api/crm/chats/:chatId` — update visible chat controls: `status`, `ai_enabled`, `notes`, `priority`, `assigned_to`, `mark_read`.
+
+Current allowed chat statuses:
+
+- `open`
+- `paused`
+- `needs_human`
+- `closed`
+- `archived`
+
+All list endpoints return:
+
+```json
+{
+  "ok": true,
+  "data": [],
+  "page": {
+    "limit": 30,
+    "hasMore": false,
+    "nextCursor": null
+  }
+}
+```
 
 ## Runtime Behavior
 
