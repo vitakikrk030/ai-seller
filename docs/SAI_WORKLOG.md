@@ -645,3 +645,44 @@ Server verification:
 Server backup before deploy:
 
 - `/root/sai_backups/sai_before-dialogs-ui-20260511-0108.tgz`
+
+## 2026-05-11 01:43:00 +03
+
+Added live CRM updates through Server-Sent Events.
+
+What changed:
+
+- Added `GET /api/crm/live`.
+- Added a lightweight in-memory SSE client list on the server.
+- Server now emits live events for:
+  - `message.created`;
+  - `chat.updated`;
+  - `ai.requested`;
+  - `ai.replied`;
+  - `ai.error`;
+  - `telegram.sent`;
+  - `error`.
+- Telegram webhook emits live updates after incoming message recording.
+- AI request/reply lifecycle emits live updates.
+- Telegram outgoing message recording emits live updates.
+- `PATCH /api/crm/chats/:chatId` emits `chat.updated`.
+- The `Диалоги` screen subscribes to `/api/crm/live` through `EventSource`.
+- The `Диалоги` screen shows a small live status pill and refreshes list/chat after live events.
+- A slow 30-second fallback refresh remains as a safety net.
+
+Boundary:
+
+- This does not add seller prompts, product logic, delivery logic, payment logic, or hidden AI behavior.
+- This only makes the CRM interface react immediately to transport events.
+
+Verification:
+
+- `node --check index.js` passed.
+- Local `/health` reports ok.
+- Local `/api/crm/live` returns the initial SSE `connected` event.
+- Browser `Диалоги` screen shows live connection active.
+- Browser console has no reported errors during the live check.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-events-20260511-013036.tgz`

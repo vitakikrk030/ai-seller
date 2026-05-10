@@ -714,6 +714,14 @@
       white-space: nowrap;
     }
 
+    .live-pill {
+      gap: 8px;
+    }
+
+    .live-pill .status-dot {
+      flex: 0 0 auto;
+    }
+
     .crm-chat-box {
       min-height: 0;
       overflow: auto;
@@ -1168,6 +1176,7 @@
           <section class="crm-column dialogs-list-column">
             <div class="crm-head">
               <h1>Диалоги</h1>
+              <span class="crm-pill live-pill" id="crmLivePill"><span class="status-dot off"></span>live</span>
               <button class="mini-action" id="refreshCrm" type="button">Обновить</button>
             </div>
             <input class="crm-search" id="crmSearch" placeholder="Поиск по клиентам и сообщениям">
@@ -1264,6 +1273,9 @@
       messages: [],
       aiTurns: [],
       events: [],
+      live: null,
+      liveRefreshTimer: null,
+      backupRefreshTimer: null,
     };
     let currentModel = '';
 
@@ -1462,7 +1474,10 @@
       document.getElementById('connectScreen').classList.toggle('active', screen === 'connect');
       document.getElementById('dialogsScreen').classList.toggle('active', screen === 'dialogs');
       document.getElementById('mainArea').classList.toggle('crm-open', screen === 'dialogs');
-      if (screen === 'dialogs') loadCrmChats();
+      if (screen === 'dialogs') {
+        startCrmLive();
+        loadCrmChats();
+      }
     }
 
     function formatCrmDate(value, withSeconds = false) {
@@ -1496,6 +1511,13 @@
       `).join('');
     }
 
+    function setCrmLiveState(isOn, text = 'live') {
+      const pill = document.getElementById('crmLivePill');
+      if (!pill) return;
+      pill.innerHTML = `<span class="status-dot${isOn ? '' : ' off'}"></span>${escapeHtml(text)}`;
+      pill.title = isOn ? 'Live-соединение активно' : 'Live-соединение не активно';
+    }
+
     async function crmFetch(path, options = {}) {
       const response = await fetch(path, options);
       const data = await response.json();
@@ -1505,7 +1527,7 @@
 
     async function loadCrmChats() {
       const list = document.getElementById('crmChatList');
-      list.innerHTML = '<div class="crm-empty">Загружаю диалоги...</div>';
+      if (!crmState.chats.length) list.innerHTML = '<div class="crm-empty">Загружаю диалоги...</div>';
       const params = new URLSearchParams({ limit: '40' });
       if (crmState.source) params.set('source', crmState.source);
       if (crmState.q) params.set('q', crmState.q);
@@ -1518,6 +1540,42 @@
       } catch (error) {
         list.innerHTML = `<div class="crm-empty">${escapeHtml(error.message)}</div>`;
       }
+    }
+
+    function scheduleCrmRefresh(event = {}) {
+      clearTimeout(crmState.liveRefreshTimer);
+      crmState.liveRefreshTimer = setTimeout(async () => {
+        await loadCrmChats();
+        if (crmState.selectedChatId && (!event.chatId || event.chatId === crmState.selectedChatId)) {
+          await loadCrmChat(crmState.selectedChatId);
+        }
+      }, 180);
+    }
+
+    function startCrmLive() {
+      if (crmState.live) return;
+      if (!window.EventSource) {
+        setCrmLiveState(false, 'нет live');
+        return;
+      }
+      const live = new EventSource('/api/crm/live');
+      crmState.live = live;
+      live.addEventListener('connected', () => setCrmLiveState(true, 'live'));
+      live.addEventListener('open', () => setCrmLiveState(true, 'live'));
+      live.addEventListener('error', () => setCrmLiveState(false, 'переподключение'));
+      ['message.created', 'chat.updated', 'ai.requested', 'ai.replied', 'ai.error', 'telegram.sent'].forEach((type) => {
+        live.addEventListener(type, (rawEvent) => {
+          try {
+            scheduleCrmRefresh(JSON.parse(rawEvent.data || '{}'));
+          } catch {
+            scheduleCrmRefresh();
+          }
+        });
+      });
+      clearInterval(crmState.backupRefreshTimer);
+      crmState.backupRefreshTimer = setInterval(() => {
+        if (document.getElementById('dialogsScreen').classList.contains('active')) loadCrmChats();
+      }, 30000);
     }
 
     function renderCrmChatList() {

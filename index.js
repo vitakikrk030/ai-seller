@@ -20,6 +20,24 @@ app.use(express.json({ limit: '20mb' }));
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
+const liveClients = new Map();
+
+function emitLive(type, payload = {}) {
+  const event = {
+    type,
+    time: new Date().toISOString(),
+    ...payload,
+  };
+  const data = `event: ${type}\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const [id, client] of liveClients) {
+    try {
+      client.write(data);
+    } catch {
+      liveClients.delete(id);
+    }
+  }
+}
+
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -181,6 +199,11 @@ async function requestAi(clientText, traceId, history = [], context = {}) {
     text: clientText,
     messages: messages.length,
   });
+  emitLive('ai.requested', {
+    traceId,
+    chatId: context.chatDbId || null,
+    model: runtimeConfig.model,
+  });
   try {
     const response = await axios.post(`${baseUrl}/chat/completions`, payload, {
       timeout: REQUEST_TIMEOUT_MS,
@@ -193,6 +216,11 @@ async function requestAi(clientText, traceId, history = [], context = {}) {
     if (!reply) throw new Error('AI returned empty reply');
     const latencyMs = Date.now() - startedAt;
     logEvent('AI_REPLY', { traceId, text: reply, latencyMs });
+    emitLive('ai.replied', {
+      traceId,
+      chatId: context.chatDbId || null,
+      latencyMs,
+    });
     db.recordAiTurn({
       chatId: context.chatDbId || null,
       traceId,
@@ -204,6 +232,11 @@ async function requestAi(clientText, traceId, history = [], context = {}) {
     }).catch(() => {});
     return reply;
   } catch (error) {
+    emitLive('ai.error', {
+      traceId,
+      chatId: context.chatDbId || null,
+      error: error.message,
+    });
     db.recordAiTurn({
       chatId: context.chatDbId || null,
       traceId,
@@ -235,7 +268,7 @@ async function sendTelegramMessage({ chatId, chatDbId = null, customerId = null,
     text,
     telegramOk: response.data?.ok === true,
   });
-  db.recordMessage({
+  await db.recordMessage({
     chatId: chatDbId,
     customerId,
     direction: 'out',
@@ -244,7 +277,21 @@ async function sendTelegramMessage({ chatId, chatDbId = null, customerId = null,
     telegramMessageId: response.data?.result?.message_id || null,
     traceId,
     raw: response.data?.result || response.data,
-  }).catch(() => {});
+  });
+  emitLive('message.created', {
+    traceId,
+    chatId: chatDbId,
+    customerId,
+    direction: 'out',
+    role: 'assistant',
+    source: 'telegram',
+  });
+  emitLive('telegram.sent', {
+    traceId,
+    chatId: chatDbId,
+    externalChatId: String(chatId),
+    telegramOk: response.data?.ok === true,
+  });
   return response.data;
 }
 
@@ -334,6 +381,21 @@ app.get('/api/crm/overview', crmHandler(async (req, res) => {
   crmOk(res, await db.crmOverview());
 }));
 
+app.get('/api/crm/live', (req, res) => {
+  const clientId = createTraceId();
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(`event: connected\ndata: ${JSON.stringify({ type: 'connected', time: new Date().toISOString(), clientId })}\n\n`);
+  liveClients.set(clientId, res);
+  req.on('close', () => {
+    liveClients.delete(clientId);
+  });
+});
+
 app.get('/api/crm/chats', crmHandler(async (req, res) => {
   const result = await db.listCrmChats({
     status: req.query.status ? String(req.query.status) : '',
@@ -391,6 +453,7 @@ app.patch('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
     chatDbId: req.params.chatId,
     keys: Object.keys(req.body || {}),
   });
+  emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'crm.patch' });
   crmOk(res, chat);
 }));
 
@@ -455,6 +518,15 @@ app.post('/api/telegram/webhook', (req, res) => {
         traceId,
         raw: message,
       });
+      emitLive('message.created', {
+        traceId,
+        chatId: chatDbId,
+        customerId,
+        direction: 'in',
+        role: 'customer',
+        source: 'telegram',
+      });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'telegram.in' });
       logEvent('IN', {
         traceId,
         updateType,
@@ -467,6 +539,7 @@ app.post('/api/telegram/webhook', (req, res) => {
       if (!text) return;
       if (!runtimeConfig.auto_reply_enabled) {
         logEvent('AUTO_REPLY_DISABLED', { traceId, chatId });
+        emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'auto_reply_disabled' });
         return;
       }
       const reply = await requestAi(text, traceId, [], { chatDbId });
@@ -477,6 +550,11 @@ app.post('/api/telegram/webhook', (req, res) => {
         scope: 'webhook',
         error: error.message,
         providerError: error.response?.data || null,
+      });
+      emitLive('error', {
+        traceId,
+        scope: 'webhook',
+        error: error.message,
       });
     }
   });

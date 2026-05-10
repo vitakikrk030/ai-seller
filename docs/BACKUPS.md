@@ -24,6 +24,7 @@ Before every meaningful change or server deploy:
 
 ### Local
 
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-events-20260511-013036.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-dialogs-ui-20260511-005959.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-api-20260511-000147.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-postgres-foundation-20260510-210133.tgz`
