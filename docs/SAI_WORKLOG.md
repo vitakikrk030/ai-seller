@@ -1,601 +1,516 @@
 # S.AI Worklog
 
-Дневник работ нужен, чтобы не держать историю системы в голове и в разных чатах.
+## 2026-05-10 14:17:48 +03
 
-Правило:
+Established the clean S.AI foundation after removing the old seller behavior.
 
-- каждая значимая правка S.AI фиксируется здесь;
-- запись должна отвечать: дата/время, что меняли, зачем, где проверили, локально это или сервер;
-- если правка влияет на AI, она должна быть связана с AI Control/паспортом;
-- если правка не выкачена на сервер, так и писать: `локально`.
+What changed:
 
-## 2026-05-08 21:55 +03 - Delivery Skill: умный подбор доставки
+- Local project was cleaned to transport-only runtime.
+- Server `/root/sai` was cleaned to transport-only runtime.
+- Interface direction changed to Apple-like minimal UI.
+- Current UI section is `Подключение`.
+- Added four planned connection screens locally:
+  - `Telegram`
+  - `AI-модель`
+  - `Логи`
+  - `Тест-чат`
+- Added local test-chat endpoint: `/api/test-chat`.
+- Confirmed transport sends only the user message to the AI model.
 
-Статус: локально, не выкачено на сервер.
+Important decision:
 
-Что сделано:
+- Project history, backups, and decisions must be tracked in repo files from now on.
+- Every meaningful change should have a backup entry before deploy.
 
-- добавлен скилл доставки `Умный подбор доставки`;
-- AI теперь получает роль `консультант-решатель`: не просто перечислить службы, а подобрать 1-2 лучших варианта за клиента;
-- в AI Control добавлены редактируемые поля:
-  - `delivery_consultant_enabled`;
-  - `delivery_consultant_options_text`;
-  - `delivery_consultant_rules_text`;
-- в таблицу вариантов вынесены: служба, бесплатно/платно, сроки, ПВЗ/курьер, регионы, когда рекомендовать;
-- в prompt доставки добавлены правила: если клиенту важно выгодно/бесплатно — сначала Яндекс/Ozon, если важнее скорость/конкретная служба — сравнить с платным вариантом;
-- пример ответа про доставку заменён с сухого списка на живой продающий формат: `я бы предложил Яндекс/Ozon`, `чтобы не переплачивать`, `давайте поставлю бесплатный вариант`;
-- `/system/delivery` показывает этот скилл в паспорте узла, pipeline, правила и готовые паттерны ответов;
-- в визуальном паспорте узла `Доставка` поля скилла видны и редактируются, без скрытого кода.
+Verification:
 
-Проверка:
+- Local server runs on `http://127.0.0.1:3001/`.
+- Server health previously verified as `mode: trunk`.
 
-- `npm run check` ok;
-- `data/runtime-config.json` валиден;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- `/health` ok;
-- `/system/delivery` отдаёт `delivery_consultant_*`, новый `exampleText`, pipeline и паттерны ответов;
-- в in-app browser узел `Доставка` открывается, паспорт узла видит `Умный подбор доставки`.
+## 2026-05-10 16:43:00 +03
 
-Дополнение:
+Added model loading for the `AI-модель` connection screen.
 
-- добавлен отдельный вариант `Курьер по Москве`;
-- курьер теперь предлагается только если город Москва и клиенту нужна срочная доставка в течение дня в удобное время;
-- для других городов AI не должен предлагать курьера от себя, только ПВЗ/постамат или выбранную транспортную компанию.
+What changed:
 
-## 2026-05-07 23:55 +03 - Server Training: чистка уроков и good-эталоны
+- Added backend endpoint `GET /config/models`.
+- Endpoint calls the configured operator `/models` API using current `ai_url` and `ai_key`.
+- UI model field is now a select control.
+- Added `Загрузить` button to fetch available models from the operator.
+- Verified locally that the operator returns model ids, including `gemini-2.5-flash`.
 
-Статус: сервер, применено.
+Backup before change:
 
-Что сделано:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-model-loader-20260510-164300.tgz`
 
-- на сервере создан backup `data/training-examples.json.bak-20260507-234923`;
-- два старых `good`-урока выключены как ошибочные эталоны: внутри были длинные/спорные ответы, повторные приветствия, ранний сбор данных и оплата;
-- добавлено 10 новых активных `good`-уроков:
-  - фото бирки/размера: `вижу у вас 41 размер`;
-  - клиент пишет `сейчас скину модель`;
-  - ссылка после вопроса про скидку;
-  - шоурум и примерка при получении;
-  - отслеживание доставки;
-  - реквизиты только вместе с суммой;
-  - вопрос `ты бот?`;
-  - не повторять уже выбранный размер;
-  - 45 размер = примерно 29 см по стельке;
-  - ПВЗ/адрес уже дан текстом или скрином.
+## 2026-05-10 16:50:00 +03
 
-Итог на сервере:
+Simplified the `Подключение` interface.
 
-- всего уроков: `24`;
-- активных: `22`;
-- выключенных: `2`;
-- good всего: `12`;
-- активных good: `10`;
-- bad: `12`.
+What changed:
 
-Проверка:
+- Removed the decorative transport diagram from the right side.
+- Removed the duplicate connection summary block.
+- Kept only the functional screen content for the selected tab.
 
-- `pm2 restart sai --update-env`;
-- `pm2 list`: `sai online`;
-- `/health`: ok;
-- последние логи после рестарта без новых ошибок.
+Reason:
 
-## 2026-05-07 18:35 +03 - AI Control: паспорт Training с учётом сервера
+- These blocks did not carry real function at this stage and made the foundation screen heavier.
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 16:58:57 +03
 
-Что сделано:
+Polished the `Подключение` interface.
 
-- добавлен паспорт узла `Уроки обучения` на визуальной карте AI Control;
-- узел показывает смысл обучения, лимит попадания в prompt, категории уроков, риски good/bad баланса;
-- добавлена кнопка перехода во вкладку `Training`;
-- сверено с живым сервером: на сервере `14` уроков, `14` активных, `2` good, `12` bad;
-- распределение сервера: `order_context 4`, `hallucination 2`, `tone 5`, `payment 1`, `repeated_question 2`;
-- зафиксировано отличие: локальная база обучения пустая, поэтому локальный UI показывает `0`, а после выката на сервер увидит серверные уроки.
+What changed:
 
-Проверка:
+- Panels no longer stretch to fill the whole page height.
+- `Telegram` screen now shows current token status and webhook clearly.
+- `Логи` screen has an internal scroll area.
+- `Тест-чат` was redesigned as a simple readable chat for checking the AI transport.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- серверная база проверена read-only через SSH, без правок и без деплоя.
+Backup before change:
 
-## 2026-05-07 18:20 +03 - AI Control: первый этап Guards-паспорта
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-connect-ui-polish-20260510-165857.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 17:05:50 +03
 
-Что сделано:
+Restyled the local `Подключение` interface using the provided visual reference.
 
-- добавлен API `GET /system/guards`;
-- в узле `Guard-проверки` теперь показывается список предохранителей: ответ клиенту, чек, доставка, возвраты, менеджер, медиа, оплата;
-- для каждого guard видно: включён/выключен, ключ настройки, что защищает и где живёт в коде;
-- в guard-паспорте видны редактируемые правила guard-узла;
-- найден скрытый риск: локально правила доставки были выключены через runtime config;
-- дефолт доставки изменён на включённый, а в текущем локальном runtime доставка включена через `/config`.
+What changed:
 
-Проверка:
+- Added a dark vertical icon rail.
+- Added a secondary gray navigation sidebar.
+- Moved Connect screens into the sidebar navigation.
+- Restyled the main content area with gray translucent Apple-like panels.
+- Kept the functional screens: Telegram, AI-модель, Логи, Тест-чат.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/system/guards` отдаёт `21/21` включённых guard-предохранителей;
-- в браузере открыт узел `Guard-проверки`, список предохранителей виден.
+Backup before change:
 
-## 2026-05-07 14:08 +03 - AI Control: закон паспорта и полный техпаспорт
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-reference-connect-layout-20260510-170550.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 17:34:48 +03
 
-Что сделано:
+Simplified the local `Подключение` interface after the reference pass.
 
-- закреплён закон паспорта в `AGENTS.md`;
-- обновлён раздел `Закон паспорта AI Control` в `docs/SAI_SYSTEM_AUDIT.md`;
-- в AI Control добавлен `Полный техпаспорт системы`;
-- все поля `runtimeConfig`, которые отдаёт `/config/status`, выводятся в панель;
-- редактируемые поля сохраняются через `/config`;
-- read-only диагностические поля видны отдельно;
-- секретные ключи показываются как `задан/не задан` и имеют место редактирования;
-- пустые значения показываются как `не задано`, а не молчат.
+What changed:
 
-Проверка:
+- Removed non-working decorative controls from the left rail.
+- Removed the decorative traffic dots.
+- Removed unused future/sidebar sections.
+- Tightened the layout so the interface is less scattered.
+- Kept only the working sections:
+  - `Telegram`
+  - `AI-модель`
+  - `Логи`
+  - `Тест-чат`
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локально в браузере проверено: 179 полей, 153 редактируемых, 26 read-only.
+Backup before change:
 
-## 2026-05-07 14:08 +03 - AI Control: дневник работ
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-connect-ui-simplify-20260510-172737.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 17:41:38 +03
 
-Что сделано:
+Flattened the local `Подключение` interface one more step.
 
-- добавлен файл `docs/SAI_WORKLOG.md`;
-- в `AGENTS.md` добавлено правило вести дневник после значимых правок;
-- добавлены API `GET /system/worklog` и `POST /system/worklog`;
-- в AI Control добавлен раздел `Дневник работ`;
-- из панели можно смотреть последние записи и добавлять новую запись: название, статус, что сделали/как проверили.
+What changed:
 
-Проверка:
+- Removed one visual container level from the main workspace.
+- Removed heavy shadows from the content area.
+- Made the left rail and secondary sidebar narrower.
+- Kept the same working sections and behavior.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/system/worklog` отдаёт записи;
-- локально в браузере раздел `Дневник работ` отображает записи.
+Backup before change:
 
-## 2026-05-07 14:15 +03 - Паспорт: ревизия что сделано и что надо
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-connect-ui-flat-20260510-174023.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 17:43:42 +03
 
-Что сделано:
+Removed duplicate explanatory text from the local `Подключение` panels.
 
-- добавлен файл `docs/SAI_PASSPORT_REVIEW.md`;
-- паспорт разбит на рабочую таблицу `готово / частично / надо / риск`;
-- выделен главный технический долг: узловые приборки, тесты guards, таблица размеров, prompt inspector, сервер/локально статус;
-- `AGENTS.md` теперь требует читать ревизию паспорта перед изменениями.
+What changed:
 
-Проверка:
+- Removed repeated panel titles under the main page title.
+- Removed non-functional panel descriptions.
+- Kept the working fields, actions, logs, and test chat untouched.
 
-- ревизия создана по разделам `docs/SAI_SYSTEM_AUDIT.md`;
-- следующий порядок работ зафиксирован в `docs/SAI_PASSPORT_REVIEW.md`.
+## 2026-05-10 17:49:12 +03
 
-## 2026-05-06 - Нервная система S.AI вокруг продаж
+Converted the local `Подключение` interface from section navigation to one compact page.
 
-Статус: часть была выкачена ранее, текущие паспортные изменения локально.
+What changed:
 
-Что делали:
+- Removed the second sidebar completely.
+- Removed tab switching for `Telegram`, `AI-модель`, `Логи`, and `Тест-чат`.
+- Placed the four working connection blocks on one screen.
+- Kept the left icon rail as the only global navigation.
 
-- `iwak.ru Reader`: чтение `iwak.ru/product` и `iwak.ru/cart`, товар, цена, цвет, размеры, фото;
-- `Orders`: заказник в Telegram, шаблон `НОВЫЙ ЗАКАЗ`, дедубли и исправление заполнения;
-- `Delivery`: Яндекс Доставка и Ozon бесплатные, остальные службы по тарифам;
-- `Returns`: примерка при получении, возврат/обмен, товарный вид, упаковка, комплектность;
-- `Payment`: сумма перед реквизитами, чек без финального подтверждения оплаты;
-- `Memory`: аудит фактов клиента и идея единой базы;
-- `AI Control`: начало перехода от простыни настроек к карте узлов;
-- `SAI_SYSTEM_AUDIT.md`: первый паспорт системы.
+Backup before change:
 
-Проверка:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-one-page-connect-20260510-174606.tgz`
 
-- локальные проверки и браузерные проверки по мере правок;
-- часть серверных проверок выполнялась ранее по живым данным.
+## 2026-05-10 18:55:27 +03
 
-## 08.05.2026 00:01 МСК - AI Control Passport: prompt and code constants
+Made the local `Подключение` interface responsive.
 
-Статус: локально, не выкачено на сервер.
+What changed:
 
-Что сделано:
+- Added adaptive layout rules for desktop, low-height laptop screens, tablets, and phones.
+- Desktop keeps two columns when space allows.
+- Tablets switch to one column with scroll.
+- Phones switch the left rail into a compact top bar.
+- Chat and logs now resize by viewport instead of using one fixed desktop height.
 
-- добавлен `GET /system/prompt-passport`;
-- узел `Prompt и тон` теперь показывает 19 реальных блоков `buildSystemPrompt`;
-- для каждого prompt-блока видно: включён/выключен, зачем нужен, где живёт в коде, какие поля редактируются из AI Control;
-- в Prompt-узле добавлены редактируемые поля: ядро, факты, живость, путь заказа, response guard, качество/возвраты, доверие, контакты, примеры;
-- в `Полный техпаспорт системы` добавлены `order_chat_enabled`, `order_chat_id`, `listen_wait_*`;
-- в техпаспорт добавлены read-only `code_constants`: таймауты, лимиты, батчи, память, reader, медиа, обучение, S.AI GPT и webhook.
+Verification:
 
-Проверка:
+- Checked visually at `1280x720`, `834x1112`, `390x844`, and `320x740`.
+- `node --check index.js` passed.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok на `127.0.0.1:3108`;
-- `/system/prompt-passport` отдаёт `19` блоков, `113` редактируемых полей, полный `systemPromptPreview`;
-- `/config/status` отдаёт `code_constants`, `order_chat_*` и `listen_wait_*`.
+Backup before change:
 
-## 2026-05-08 00:15 +03 - AI Control: диагностика prompt без паники
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-responsive-connect-20260510-184722.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 18:58:39 +03
 
-Что сделано:
+Reordered blocks on the local `Подключение` screen.
 
-- блок `Что требует внимания` переименован в `Диагностика настройки`;
-- предупреждения Prompt-паспорта теперь не строки, а карточки с уровнем: `инфо`, `важно`, `локально`, `критично`;
-- каждая карточка объясняет: что означает настройка, что делать, где смотреть;
-- локальная пустая Training-база теперь помечается как `локально`, чтобы не путать с сервером.
+What changed:
 
-Проверка:
+- Swapped `AI-модель` and `Тест-чат`.
+- The top row is now `Telegram` + `Тест-чат`.
+- The second row is now `AI-модель` + `Логи`.
+- No backend behavior changed.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный `/health` ok на `127.0.0.1:3108`.
+Backup before change:
 
-## 2026-05-08 00:25 +03 - AI Control Passport: Media-анализ
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-reorder-connect-blocks-20260510-185708.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 19:03:31 +03
 
-Что сделано:
+Simplified secret fields on the local `Подключение` screen.
 
-- добавлен `GET /system/media`;
-- узел `Медиа-анализ` теперь показывает цепочку обработки: Telegram -> normalizeTelegramMessage -> PDF/STT/vision -> buildMediaInspectionText -> guards;
-- выведены типы медиа: фото клиента, картинка-файл, PDF, voice, video_note, фото из iwak.ru Reader;
-- для каждого типа видно: вход, как обрабатывается, как отвечать клиенту, риск и источник в коде;
-- выведены связанные guards: media rules, receipt guard, запрет обещать доп. фото, живой ответ по фото;
-- добавлена диагностика: vision unknown / STT missing / receipt guard;
-- добавлен просмотр текста, который реально добавляется в prompt при медиа;
-- последние media-события очищены от обычных AI_REQUEST без вложений.
+What changed:
 
-Проверка:
+- `Telegram` now has one `Токен Telegram` field instead of current/new token fields.
+- `AI-модель` now has one `Ключ AI` field instead of current/new key fields.
+- Clearing the field and saving removes the saved secret.
+- Entering a new value and saving overwrites the saved secret.
+- An unchanged redacted preview is not sent back, so saving other fields does not erase the secret.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok на `127.0.0.1:3108`;
-- `/system/media` отдаёт `6` типов медиа, `4/4` guards, `2` диагностических пункта.
+Backup before change:
 
-## 2026-05-08 00:36 +03 - AI Control Passport: менеджерский перехват
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-single-secret-fields-20260510-190005.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 19:07:44 +03
 
-Что сделано:
+Removed the local screen header and connection indicator.
 
-- добавлен `GET /system/manager`;
-- узел `Менеджерский перехват` теперь показывает режимы: `AI ведёт`, `Менеджер ведёт`, `Ожидание возврата`;
-- выведена цепочка перехвата: source client/manager, отмена batch, запись role=manager, hints в память, `aiMode=passive_manager`, таймер возврата;
-- показаны текущие параметры: `manager_takeover_enabled`, `manager_return_delay_ms`, `memory_enabled`, `auto_reply_enabled`, `human_typing_mode`, pending timers/chats;
-- добавлены live-профили клиентов с последними сообщениями менеджера и state-полями `managerActiveAt`, `pendingSince`, `autoTakeoverAt`;
-- добавлены последние события перехвата из логов: `manager_takeover`, `manager_passive_wait`, `ai_auto_takeover`;
-- редактируемые поля узла расширены: `manager_node_rules_text`, `memory_node_rules_text`, `response_guard_rules_text`, `order_rules_text`;
-- диагностика показывает риск, если AI возвращается слишком быстро.
+What changed:
 
-Проверка:
+- Removed the `Подключение` header text from the interface and code.
+- Removed the top connection status pill from the interface and code.
+- Removed JS writes to the deleted status element.
+- Kept only the working blocks: `Telegram`, `Тест-чат`, `AI-модель`, `Логи`.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok на `127.0.0.1:3108`;
-- `/system/manager` отдаёт `3` режима, `5` live-профилей, `10` событий перехвата.
+Backup before change:
 
-## 2026-05-08 00:50 +03 - AI Control Passport: возвраты и примерка
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-remove-connect-header-20260510-190516.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 19:24:52 +03
 
-Что сделано:
+Rebalanced the local foundation layout around the test chat.
 
-- добавлен `GET /system/returns`;
-- узел `Возвраты` теперь показывает всю цепочку: вопрос клиента -> `getQualityGuidance` -> правила примерки/возврата -> response guard;
-- выведены правила: примерка при получении, мягкий возврат/обмен, запрет выдумывать сроки, запрет обещать лишние фото, честность про реплику;
-- добавлена таблица минимальных условий возврата по типам товара: общее правило, обувь, одежда, сумки/аксессуары;
-- отдельно показаны запрещённые фразы: `Примерки в доставке нет`, `возврат в любом состоянии`, `14 дней` без настройки, `оригинал` для реплики;
-- выведены готовые смысловые ответы для вопросов про примерку, условия возврата и оригинальность;
-- показаны реальные тексты, которые влияют на ответ: `quality_rules_text`, `quality_return_text`, `RETURN_CONDITION_RULE_TEXT`;
-- добавлены последние события по возвратам/примерке из логов.
+What changed:
 
-Проверка:
+- Moved `Логи` under `AI-модель` in the left settings column.
+- Made `Тест-чат` the large right-side working area.
+- Kept `Telegram`, `AI-модель`, and `Логи` visually aligned as one left column.
+- Kept responsive behavior for narrow screens.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok на `127.0.0.1:3108`;
-- `/system/returns` отдаёт `5/5` включённых правил, `4` группы условий, `0` рисков.
+Verification:
 
-## 2026-05-08 01:10 +03 - AI Control Passport: оплата и доставка
+- Checked desktop and low-height desktop visually.
+- Checked mobile layout visually.
+- `node --check index.js` passed.
 
-Статус: локально, не выкачено на сервер.
+Backup before change:
 
-Что сделано:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-chat-dominant-layout-20260510-191640.tgz`
 
-- усилен `GET /system/payment`: теперь показывает не только состояние оплаты, но и цепочку, правила, запреты, готовые ответы, риски настройки и все редактируемые поля узла;
-- в узле `Оплата` выведены поля: стиль, порядок сообщения, guard суммы/реквизитов/чека, пример реквизитов, ответ после чека, ответ при расхождении и правила проверки чека;
-- исправлен локальный `receipt_check_success_text` на короткий эталон `Чек получил, спасибо.`;
-- добавлена диагностика, если ответ после чека отличается от короткого эталона;
-- усилен `GET /system/delivery`: теперь показывает цепочку доставки, бесплатные службы, платные службы, правила, запреты, готовые ответы, трекинг и все редактируемые поля узла;
-- в узле `Доставка` выведены поля: бесплатные службы, платные службы, правила стоимости, стиль, порядок ответа, трекинг, пример ответа;
-- текущая логика доставки отражает правило: `Яндекс Доставка` и `Ozon` бесплатные, `CDEK/СДЭК`, `Почта России`, `WB/Wildberries` и другие ТК — по тарифам выбранной службы.
+## 2026-05-10 19:31:16 +03
 
-Проверка:
+Tuned the local layout for MacBook Air 13.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- `/system/payment` отдаёт `13` редактируемых полей, цепочку оплаты, запреты и короткий ответ после чека;
-- `/system/delivery` отдаёт `9` редактируемых полей, бесплатные/платные службы, цепочку доставки и запреты.
+What changed:
 
-## 2026-05-08 01:35 +03 - AI Control Passport: trace, заказник, память, обучение
+- Treated `1440x900` and `1280x720` as primary desktop targets.
+- Made logs fill the remaining space under `AI-модель` instead of using a fixed height.
+- Kept log action buttons visible on MacBook Air height.
+- Preserved the large right-side test chat.
 
-Статус: локально, не выкачено на сервер.
+Verification:
 
-Что сделано:
+- Checked visually at `1440x900`.
+- Checked visually at `1280x720`.
+- `node --check index.js` passed.
 
-- добавлен `GET /system/trace/:traceId`;
-- кнопка `Почему?` и trace view теперь открывают не только сырые события, а паспорт ответа: вход клиента, iwak.ru Reader, память, Training, модель, guards, отправка клиенту и заказник;
-- trace показывает: сколько событий, были ли уроки, менял ли guard ответ, были ли ошибки, запускался ли заказник;
-- `GET /system/orders` дополнен паспортом заказника: pipeline, editable fields, карта полей заказа, дедубли и причины, когда заказник не должен отправлять сообщение;
-- узел `Заказник` в карте показывает цепочку и источники каждого поля, а редактирование шаблона/правил вынесено в паспорт узла;
-- `GET /system/memory` дополнен паспортом памяти: pipeline, editable fields, схема фактов, что считается мусором, границы ремонта памяти;
-- узел `Memory` показывает не только клиентов, но и как факты пишутся/портятся/чинятся;
-- `GET /training` дополнен паспортом обучения: pipeline, лимиты, editable fields, риски, что нельзя держать только уроками;
-- Training остаётся отдельной рабочей вкладкой для списка, включения/выключения, фильтров и preview.
+Backup before change:
 
-Проверка:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-macbook-air-fit-20260510-192725.tgz`
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- `/system/orders` отдаёт pipeline, `5` editable fields и карту `9` полей заказа;
-- `/system/memory` отдаёт pipeline, `3` editable fields и схему `7` типов фактов;
-- `/training` отдаёт passport с лимитами `5 = 3 релевантных + 2 свежих`;
-- `/system/trace/:traceId` отдаёт паспорт ответа с `8` шагами цепочки.
+## 2026-05-10 19:39:51 +03
 
-## 2026-05-08 11:05 +03 - AI Control UX: карта не растягивается от паспорта
+Aligned the bottom controls of `Тест-чат` and `Логи`.
 
-Статус: локально, не выкачено на сервер.
+What changed:
 
-Что сделано:
+- Added shared control height for chat input and log action row.
+- Added shared gap between content boxes and their bottom controls.
+- Kept chat input visible on MacBook Air height.
+- Rechecked symmetry at `1440x900` and `1280x720`.
 
-- исправлен layout визуальной карты AI Control;
-- `visual-map-board` теперь имеет фиксированную адаптивную высоту на десктопе;
-- правая колонка `Диагностика ответа / Паспорт узла` получила собственный scroll;
-- клик по узлам больше не растягивает карту вместе с длинным паспортом;
-- длинные `pre`, карточки и textarea внутри диагностики ограничены по ширине/высоте, чтобы не ломать сетку;
-- на мобильном сохранён естественный поток без внутреннего scroll-контейнера.
+Verification:
 
-Проверка:
+- Checked visually at `1440x900`.
+- Checked visually at `1280x720`.
+- `node --check index.js` passed.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- в in-app browser клик по `Prompt и тон` не растягивает карту, раскрывается только правая диагностика.
+Backup before change:
 
-## 2026-05-08 11:25 +03 - AI Control UX: кликабельная цепочка ответа
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-align-chat-log-footers-20260510-193630.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 19:50:07 +03
 
-Что сделано:
+Made the lower bars of `Логи` and `Тест-чат` visually symmetrical.
 
-- нижний блок `Telegram -> Контекст -> Prompt -> Модель -> Guards -> Ответ` перестал быть декоративной схемой;
-- добавлен `GET /system/trace/latest`, который возвращает паспорт последнего AI-ответа;
-- каждый этап цепочки стал кликабельной кнопкой;
-- клик по этапу открывает справа `Цепочка ответа: ...` с данными последнего Prompt Trace;
-- `Telegram` показывает вход клиента, `Контекст` — память/reader, `Prompt` — правила и уроки, `Модель` — сырой ответ, `Guards` — сравнение до/после, `Ответ` — финальный текст;
-- выбранный этап подсвечивается, карта при этом не растягивается.
+What changed:
 
-Проверка:
+- Converted log actions into a full-width two-column bottom bar.
+- Kept the chat input row on the same control height and gap system.
+- Rechecked the layout at `1440x900` and `1280x720`.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- в in-app browser клик по `Guards` открыл правый паспорт цепочки и не сломал layout карты.
+Verification:
 
-## 2026-05-08 13:15 +03 - S.AI Штурман: помощник по карте без отдельной модели
+- Checked visually at `1440x900`.
+- Checked visually at `1280x720`.
+- `node --check index.js` passed.
 
-Статус: локально, не выкачено на сервер.
+Backup before change:
 
-Что сделано:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-symmetric-bottom-bars-20260510-194742.tgz`
 
-- раздел `S.AI GPT` переименован и переосмыслен в `S.AI Штурман`;
-- Штурман теперь использует общую главную модель из `Integrations -> AI Provider`, отдельной модели для него нет;
-- в интерфейсе показано, что Base URL, API key и модель берутся из основного AI Provider;
-- добавлен контекст открытого узла карты: если выбран `Доставка`, Штурман видит именно узел доставки;
-- справа на карте появилась кнопка `Спросить Штурмана`, которая открывает помощника с готовым вопросом по текущему узлу;
-- добавлены быстрые действия: `Разобрать последний ответ`, `Объяснить узел`, `Что сломано?`, `Предложить правку`;
-- добавлен безопасный подтверждаемый action `update_config`: Штурман может подготовить правку видимых полей AI Control, но применяет её только после подтверждения владельца;
-- `update_config` не допускает секреты, токены, ключи, реквизиты, webhook, order_chat_id и инфраструктурные поля;
-- в prompt Штурмана закреплено правило паспорта: объяснять, где рычаг, какое поле менять, и не делать скрытых правок.
+## 2026-05-10 19:55:44 +03
 
-Проверка:
+Mirrored the lower controls of `Логи` against `Тест-чат`.
 
-- `npm run check` ok;
-- `node -e "require('./index.js')..."` ok;
-- inline JS parse ok;
-- локальный сервер `127.0.0.1:3108` перезапущен;
-- в in-app browser раздел `S.AI Штурман` показывает общую модель `gemini-2.5-flash`;
-- кнопка `Предложить правку` заполняет поле ввода готовым запросом;
-- из узла `Доставка` кнопка `Спросить Штурмана` открывает Штурмана с контекстом `Доставка`.
+What changed:
 
-## 2026-05-08 13:59 +03 - Inbox: разбор AI-ответа через S.AI Штурман
+- `Логи` bottom row now uses the same structure as chat: wide light control plus compact dark action.
+- `Очистить` is now visually paired with `Отправить`.
+- `Обновить` fills the remaining width like the chat input.
 
-Статус: локально, не выкачено на сервер.
+Verification:
 
-Что сделано:
+- Checked visually in the local browser.
+- `node --check index.js` passed.
 
-- в Inbox у каждого AI-ответа оставлена кнопка `Разобрать`;
-- в шапку выбранного диалога добавлена кнопка `Разобрать последний AI-ответ`;
-- кнопка собирает клиента, traceId, последний вопрос клиента, ответ AI и ближайший контекст диалога;
-- собранный разбор открывается в `S.AI Штурман` как готовый запрос по паспорту;
-- Штурман получает правильный контекст: `S.AI Продавец -> этап Ответ -> trace ...`;
-- Inbox во вкладке теперь раскрыт сразу, чтобы диалоги и рычаги не были спрятаны под закрытым блоком.
+Backup before change:
 
-Проверка:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-mirror-log-chat-controls-20260510-195404.tgz`
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok;
-- в in-app browser кнопка `Разобрать последний AI-ответ` видна в Inbox;
-- клик открывает `S.AI Штурман` и заполняет поле разбором по паспорту.
+## 2026-05-10 19:59:55 +03
 
-## 2026-05-08 17:20 +03 - Пояснил пульс системы и контекст Штурмана
+Added minimal node status lights to the local foundation screen.
 
-Статус: локально, не выкачено на сервер.
+What changed:
 
-Что сделано:
+- Added a small status light next to `Telegram`.
+- Added a small status light next to `AI-модель`.
+- Green means the node is configured.
+- Red means the node is not configured.
+- Status updates from `/config/status` without adding a separate status panel.
 
-- верхний KPI-блок карты переименован в `Пульс системы`;
-- добавлено пояснение, что это приборная панель состояния, а не скрытые настройки;
-- каждый KPI стал кликабельным и открывает нужный узел карты: AI, Memory, Reader, Orders, Manager, Guards;
-- плашка контекста в `S.AI Штурман` теперь подписана как `Откуда Штурман взял контекст`;
-- добавлена кнопка `Сбросить контекст`, чтобы Штурман снова смотрел на общую карту, а не на старый trace.
+Verification:
 
-Проверка:
+- Checked visually in the local browser.
+- `node --check index.js` passed.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok;
-- в in-app browser видны `Пульс системы`, 6 кликабельных KPI и кнопка `Сбросить контекст`.
+Backup before change:
 
-## 2026-05-08 18:15 +03 - Самопроверка и самокоррекция по паспорту
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-node-status-indicators-20260510-195740.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 20:06:41 +03
 
-Что сделано:
+Made `Telegram` and `AI-модель` settings collapsible.
 
-- добавлен видимый узел `Самопроверка и самокоррекция` в блок `Проверка ответа`;
-- все настройки узла выведены в AI Control: включение, автоисправление низкого риска, блокировка высокого риска, черновики уроков и текст правил;
-- самопроверка работает после guards и пишет `SELF_CHECK` в trace;
-- низкий риск может исправляться до отправки: повторное приветствие, роботная фраза про фото, лишнее обещание ручного трека;
-- средний и высокий риск по умолчанию не переписывают ответ и не меняют правила сами, а показываются в диагностике;
-- `Prompt Trace паспорт` получил отдельный шаг `Самопроверка`;
-- `/system/guards` теперь показывает самопроверку как отдельный guard-узел и отдаёт её правила.
+What changed:
 
-Проверка:
+- `Telegram` settings are hidden by default and open from the node title.
+- `AI-модель` settings are hidden by default and open from the node title.
+- Status lights remain visible while settings are collapsed.
+- `Логи` now get more reading space by default.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok;
-- `/config/status` отдаёт `self_check_*` поля;
-- `/system/guards` содержит узел `selfCheck`.
+Verification:
 
-## 2026-05-08 18:55 +03 - Самопроверка вынесена в UX как отдельный скил
+- Checked collapsed state visually.
+- Checked Telegram expand behavior visually.
+- `node --check index.js` passed.
 
-Статус: локально, не выкачено на сервер.
+Backup before change:
 
-Что сделано:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-collapsible-settings-20260510-200236.tgz`
 
-- на визуальной карте добавлен отдельный узел `Самопроверка`;
-- узел показывает статус `включена/выкл` и открывает свой раздел;
-- в `Капоте настроек S.AI` добавлен отдельный раздел `Самопроверка и коррекция`;
-- настройки самопроверки больше не спрятаны внутри `Проверка ответа`;
-- у самопроверки отдельная кнопка сохранения, но сохраняется тот же прозрачный `self_check_*` конфиг.
+## 2026-05-10 20:20:22 +03
 
-Проверка:
+Upgraded the local test chat into a real session chat.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- `/health` ok;
-- в браузере виден узел `CHK Самопроверка`;
-- кнопка `Открыть узел` показывает чекбоксы и правила самопроверки.
+What changed:
 
-## 2026-05-08 22:52 +03 - Скилл мягкого удержания клиента
+- Added browser-side test session history.
+- `/api/test-chat` now accepts recent history and sends it to the AI model.
+- Test history is limited to the latest 20 messages.
+- Added `Очистить` for the test chat session.
+- Redesigned message bubbles with `Клиент` and `AI` labels.
+- Added a temporary `Печатает...` bubble while waiting for AI.
 
-Статус: локально, не выкачено на сервер.
+Important boundary:
 
-Что сделано:
+- This is test-chat session memory only.
+- It is not seller memory and does not add hidden sales behavior.
 
-- добавлен скилл `Мягкое удержание` для моментов `подумаю`, `позже`, `вечером замерю`, `сейчас не могу`;
-- настройки выведены в AI Control и редактируются без кода: включение, триггеры, правила, запрещённые фразы и примеры ответов;
-- правила попадают в `Путь заказа` и общий prompt через `getOrderPathGuidance -> buildSystemPrompt`;
-- в паспорте узла `Заказник` видны поля `Триггеры ухода на потом`, `Правила мягкого удержания`, `Запрещённые фразы удержания`, `Примеры мягкого удержания`;
-- скилл запрещает сухие ответы вроде `Хорошо, жду.` и учит продавца мягко снять барьер: дать ориентир, страховку через примерку/обмен/возврат и следующий шаг.
+Verification:
 
-Проверка:
+- Sent a name in the test chat.
+- Asked the model to recall the name in the next message.
+- The model answered using the previous test-chat context.
+- `node --check index.js` passed.
 
-- `npm run check` ok;
-- runtime config JSON ok;
-- inline JS parse ok;
-- `/health` ok;
-- `/config/status` отдаёт `soft_retention_*` поля и включает их в `ai_control_context`;
-- `/system/orders` отдаёт блок `retention` и все редактируемые поля;
-- в in-app browser паспорт `Заказник` показывает новые поля мягкого удержания.
+Backup before change:
 
-## 2026-05-08 23:53 +03 - Скилл решателя наличия и нестандартных запросов
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-test-chat-session-memory-20260510-201054.tgz`
 
-Статус: локально, не выкачено на сервер.
+## 2026-05-10 20:25:49 +03
 
-Что сделано:
+Added micro metadata to test chat messages.
 
-- добавлен скилл `Решатель наличия`: сайт не считается всем складом, поэтому AI не должен сразу отвечать `нет`, если товара/размера не видно на сайте;
-- настройки выведены в AI Control внутри `Ядро IWAK`: включение, триггеры, правила, запрещённые фразы и примеры ответов;
-- правило `Не проверять склад` переформулировано безопасно: `Не делать вид, что AI сам проверил склад без источника`;
-- скилл учит отвечать как старший менеджер-перекуп: уточнить модель/фото/размер/цвет, предложить ручную проверку или аналог;
-- сохранена граница фактов: не обещать наличие, цену, срок или бронь без подтверждения.
+What changed:
 
-Проверка:
+- Each test chat bubble now shows date and time in small text.
+- AI replies also show response latency in seconds.
+- Pending AI bubbles keep metadata while waiting.
 
-- `npm run check` ok;
-- runtime config JSON ok;
-- inline JS parse ok;
-- `/health` ok;
-- `/config/status` отдаёт `problem_solver_*` поля и включает их в `ai_control_context`;
-- в in-app browser паспорт `S.AI Продавец` показывает поля `Триггеры решателя наличия`, `Правила решателя наличия`, `Запрещённые фразы решателя`.
+Verification:
 
-## 2026-05-09 01:18 +03 - Скилл Психология продаж
+- Sent a test message.
+- Confirmed the user bubble shows time.
+- Confirmed the AI bubble shows time and seconds.
+- `node --check index.js` passed.
 
-Статус: локально, не выкачено на сервер.
+Backup before change:
 
-Что сделано:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-test-chat-message-meta-20260510-202243.tgz`
 
-- добавлен отдельный скилл `Психология продаж`;
-- скилл сфокусирован на РФ/IWAK: доверие, выгода, снятие риска, решение за клиента, мягкое закрытие и анти-манипуляции;
-- настройки выведены в AI Control отдельным разделом: включение, когда применять, принципы, приёмы, запрещённые приёмы и примеры под IWAK;
-- правила попадают в prompt через `getSalesPsychologyGuidance -> buildSystemPrompt`;
-- в `applied_controls` появился отдельный флаг `salesPsychology`;
-- в паспорте `S.AI Продавец` и `Prompt и тон` видны поля психологии продаж.
-- после проверки визуала скилл дополнительно вынесен отдельным узлом `PSY Психология продаж` на карту вокруг `S.AI Продавец`;
-- узел кликается, показывает свой паспорт и открывает раздел `Психология продаж` в капоте настроек.
+## 2026-05-10 20:36:43 +03
 
-Проверка:
+Replaced text role labels in the test chat with compact avatars.
 
-- `npm run check` ok;
-- runtime config JSON ok;
-- inline JS parse ok;
-- `/health` ok;
-- `/config/status` отдаёт `sales_psychology_*` поля и включает скилл в `ai_control_context`;
-- в in-app browser найден раздел `Психология продаж` и поле `Принципы продаж РФ / IWAK`.
+What changed:
 
-## 2026-05-09 01:40 +03 - Скилл Размеры и посадка
+- Removed visible `Клиент` and `AI` role text from message bubbles.
+- Added compact circular avatars: `К` for client messages and `AI` for model replies.
+- Kept accessible labels through `aria-label` and hover titles.
+- Preserved micro date/time metadata and AI response latency.
 
-Статус: локально, не выкачено на сервер.
+Verification:
 
-Что сделано:
+- Reloaded `http://127.0.0.1:3001/`.
+- Sent a test message in the test chat.
+- Confirmed two avatars and two metadata rows render in the chat.
 
-- добавлен отдельный управляемый скилл `Размеры и посадка`;
-- вынесена из кода таблица обуви EU -> стелька, включая `45≈29 см`;
-- добавлены правила по категориям: обувь, одежда, брюки, бельё/трусы, носки, сумки/рюкзаки, кепки/шапки, ремни;
-- добавлена проверка конфликтов размер/сантиметры и запрет просить стельку там, где она не нужна;
-- `Путь заказа` теперь ссылается на узел `Размеры и посадка`, а не держит таблицу внутри себя;
-- в AI Control добавлен отдельный раздел и отдельный узел `SIZ Размеры и посадка` на визуальной карте.
+Backup before change:
 
-Проверка:
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-test-chat-avatars-20260510-203110.tgz`
 
-- `npm run check` ok;
-- runtime config JSON ok;
-- inline JS parse ok;
-- `/health` ok;
-- `/config/status` отдаёт `size_fit_*`, `45≈29 см` и `applied_controls.sizeFit: true`;
-- в in-app browser найден узел `SIZ Размеры и посадка`, паспорт открывается, поле `Обувь: размер -> стелька` видно.
+## 2026-05-10 20:43:01 +03
 
-## 2026-05-09 02:05 +03 - Штурман: контекст заказника
+Persisted the local test chat across page reloads.
 
-Статус: локально, не выкачено на сервер.
+What changed:
 
-Что исправлено:
+- Test chat messages are now saved in browser `localStorage`.
+- Reloading `http://127.0.0.1:3001/` restores the last test chat session.
+- The `Очистить` button clears both the visible chat and the saved local session.
+- This is UI persistence for the testing polygon only, not hidden seller memory.
 
-- Штурман больше не должен отвечать про заказник из случайно выбранного блока карты вроде `Психология продаж`;
-- если вопрос владельца содержит `заказник`, `заказ в Telegram`, `как отправляется заказ`, `НОВЫЙ ЗАКАЗ`, интерфейс передаёт Штурману узел `orders`;
-- в контекст Штурмана добавлен `modules.orders`: включение заказника, chatId, триггер после чека/квитанции, шаблон, поля и дедубли;
-- добавлено системное правило: вопросы про заказник отвечать по `snapshot.modules.orders`, а не по текущему выбранному на карте узлу.
+Verification:
 
-Проверка:
+- Sent a test message.
+- Reloaded the page.
+- Confirmed the chat still had two bubbles and the client message was visible.
 
-- `npm run check` ok;
-- inline JS parse ok;
-- локальный сервер `3108` перезапущен.
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-test-chat-local-persistence-20260510-203957.tgz`
+
+## 2026-05-10 20:49:38 +03
+
+Updated the left rail branding.
+
+What changed:
+
+- Replaced the placeholder `*` logo with compact `S.AI`.
+- Replaced the home icon with a minimal connection/link icon.
+- Updated the rail button accessible label to `Соединение`.
+
+Verification:
+
+- Reloaded `http://127.0.0.1:3001/`.
+- Confirmed `S.AI` appears once and the connection button exists.
+- Visually checked the rail in the browser.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-rail-brand-connection-icon-20260510-204533.tgz`
+
+## 2026-05-10 21:00:00 +03
+
+Added the PostgreSQL database foundation for Telegram conversations.
+
+What changed:
+
+- Added PostgreSQL dependency `pg`.
+- Added local PostgreSQL cluster under `data/postgres/` on port `55432`.
+- Added `.env` with local `DATABASE_URL`.
+- Added `.gitignore` so `.env`, local database files, local PostgreSQL logs, and `node_modules/` are not tracked.
+- Added migration `db/migrations/001_foundation.sql`.
+- Added database module `db/postgres.js`.
+- Added tables: `customers`, `chats`, `messages`, `events`, `ai_turns`, `schema_migrations`.
+- Startup now connects to PostgreSQL when `DATABASE_URL` exists and applies migrations automatically.
+- Telegram webhook now records customers, chats, incoming messages, outgoing messages, technical events, and AI turns when DB is ready.
+- Added `/db/status`.
+- Added visible `База` block in the local interface.
+- Added database passport `docs/SAI_DATABASE.md`.
+- Added a safe `{}` fallback for message raw payloads so DB writes do not fail when raw Telegram data is absent.
+- Ran `npm audit fix` to clear the high-severity Axios advisory without `--force`.
+
+Boundary:
+
+- No seller prompts, products, orders, delivery, payments, or hidden AI behavior were added.
+- This is the conversation/database foundation only.
+
+Verification:
+
+- `node --check index.js` passed.
+- `require('./db/postgres')` loaded successfully.
+- Local PostgreSQL started on `127.0.0.1:55432`.
+- Database `sai` created.
+- Migration `001_foundation` applied.
+- `/health` reports `database.ready: true`.
+- `/db/status` reports all foundation tables exist.
+- Browser interface shows `База` as connected.
+- Smoke-tested customer, chat, message, and AI-turn writes, then deleted the temporary test rows.
+- `npm audit --omit=dev` reports `0` vulnerabilities.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-postgres-foundation-20260510-210133.tgz`

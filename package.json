@@ -5,12 +5,16 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js"
+    "check": "node --check index.js",
+    "db:start": "pg_ctl -D data/postgres -o \"-p 55432\" -l logs/postgres.log start",
+    "db:stop": "pg_ctl -D data/postgres stop",
+    "db:status": "pg_ctl -D data/postgres status"
   },
   "dependencies": {
     "axios": "^1.7.7",
     "better-sqlite3": "^12.9.0",
     "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.20.0"
   }
 }
