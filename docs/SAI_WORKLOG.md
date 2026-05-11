@@ -810,3 +810,21 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-reliability-20260511-100331.tgz`
+
+Server deploy:
+
+- Pushed commit `3a5df53 Harden CRM live refresh` to GitHub.
+- Backed up server `/root/sai`.
+- Pulled latest `main` on `/root/sai`.
+- Restarted PM2 app `sai`.
+
+Server verification:
+
+- Server is on commit `3a5df53`.
+- PM2 app `sai` is online.
+- `/health` reports `database.ready: true`.
+- Production `/api/crm/live` returns both `connected` and `heartbeat` through nginx.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-crm-live-reliability-20260511-1040.tgz`

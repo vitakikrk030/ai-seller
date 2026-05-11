@@ -12,6 +12,8 @@ Before every meaningful change or server deploy:
 
 ### Server
 
+- `/root/sai_backups/sai_before-crm-live-reliability-20260511-1040.tgz`
+- `/root/sai_backups/sai_before-remove-crm-refresh-button-20260511-1019.tgz`
 - `/root/sai_backups/sai_before-avatars-statuses-20260511-0949.tgz`
 - `/root/sai_backups/sai_before-crm-live-events-20260511-0143.tgz`
 - `/root/sai_backups/sai_before-dialogs-ui-20260511-0108.tgz`
