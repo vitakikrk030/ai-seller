@@ -1225,7 +1225,6 @@
             <div class="crm-head">
               <h1>Диалоги</h1>
               <span class="crm-pill live-pill" id="crmLivePill"><span class="status-dot off"></span>live</span>
-              <button class="mini-action" id="refreshCrm" type="button">Обновить</button>
             </div>
             <input class="crm-search" id="crmSearch" placeholder="Поиск по клиентам и сообщениям">
             <div class="channel-chips" id="channelChips" aria-label="Каналы">
@@ -1859,7 +1858,6 @@
     document.querySelectorAll('[data-screen]').forEach((button) => {
       button.addEventListener('click', () => switchScreen(button.dataset.screen));
     });
-    document.getElementById('refreshCrm').onclick = loadCrmChats;
     document.getElementById('crmSearch').addEventListener('input', (event) => {
       crmState.q = event.target.value.trim();
       clearTimeout(window.crmSearchTimer);

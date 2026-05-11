@@ -759,3 +759,22 @@ Server verification:
 Server backup before deploy:
 
 - `/root/sai_backups/sai_before-avatars-statuses-20260511-0949.tgz`
+
+## 2026-05-11 09:49:00 +03
+
+Removed the manual CRM refresh button from the `Диалоги` header.
+
+Reason:
+
+- CRM now receives updates through `/api/crm/live`.
+- The 30-second fallback refresh remains in code.
+- The visible manual button made the interface feel like updates require user action.
+
+Verification:
+
+- `node --check index.js` passed.
+- Browser `Диалоги` screen has no visible `Обновить` button in the CRM header.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-remove-crm-refresh-button-20260511-094734.tgz`
