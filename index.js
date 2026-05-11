@@ -422,8 +422,12 @@ app.get('/api/crm/live', (req, res) => {
     'X-Accel-Buffering': 'no',
   });
   res.write(`event: connected\ndata: ${JSON.stringify({ type: 'connected', time: new Date().toISOString(), clientId })}\n\n`);
+  const heartbeat = setInterval(() => {
+    res.write(`event: heartbeat\ndata: ${JSON.stringify({ type: 'heartbeat', time: new Date().toISOString(), clientId })}\n\n`);
+  }, 10000);
   liveClients.set(clientId, res);
   req.on('close', () => {
+    clearInterval(heartbeat);
     liveClients.delete(clientId);
   });
 });

@@ -778,3 +778,35 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-remove-crm-refresh-button-20260511-094734.tgz`
+
+## 2026-05-11 10:08:00 +03
+
+Hardened CRM live updates after production UI stayed stale while Telegram/DB had new messages.
+
+Observed:
+
+- Production webhook received the Telegram message.
+- PostgreSQL and `/api/crm/chats` showed the new messages.
+- Telegram reply was sent successfully.
+- The already-open CRM page stayed stale until reload.
+
+What changed:
+
+- `/api/crm/live` now sends an SSE `heartbeat` every 10 seconds.
+- The SSE connection already uses `X-Accel-Buffering: no` and `Cache-Control: no-cache, no-transform`.
+- CRM background refresh changed from 30 seconds to 5 seconds while `Диалоги` is open.
+- Added `refreshInFlight` guard so the 5-second fallback cannot stack overlapping requests.
+
+Boundary:
+
+- This is transport reliability only.
+- No seller prompt, product logic, delivery logic, payment logic, or hidden behavior was added.
+
+Verification:
+
+- `node --check index.js` passed.
+- Local `/api/crm/live` returns `connected` and `heartbeat`.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-reliability-20260511-100331.tgz`
