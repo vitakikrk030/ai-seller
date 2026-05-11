@@ -741,3 +741,21 @@ Verification:
 Backup before change:
 
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-avatars-statuses-20260511-015733.tgz`
+
+Server deploy:
+
+- Pushed commit `29c4f0e Add CRM avatars and message states` to GitHub.
+- Backed up server `/root/sai`.
+- Pulled latest `main` on `/root/sai`.
+- Restarted PM2 app `sai`.
+
+Server verification:
+
+- Server is on commit `29c4f0e`.
+- PM2 app `sai` is online.
+- `/health` reports `database.ready: true`.
+- `/api/crm/chats?limit=1` responds successfully and includes `customer_avatar_file_id`.
+
+Server backup before deploy:
+
+- `/root/sai_backups/sai_before-avatars-statuses-20260511-0949.tgz`
