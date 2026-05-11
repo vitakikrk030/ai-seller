@@ -705,3 +705,39 @@ Server verification:
 Server backup before deploy:
 
 - `/root/sai_backups/sai_before-crm-live-events-20260511-0143.tgz`
+
+## 2026-05-11 02:12:00 +03
+
+Added CRM avatar and factual message-status layer.
+
+What changed:
+
+- Added migration `003_customer_avatars.sql`.
+- Added `customers.avatar_file_id` and `customers.avatar_updated_at`.
+- Telegram webhook now refreshes customer avatar from Telegram in the background.
+- Added safe avatar proxy `GET /api/telegram/avatar/:fileId`; the Telegram bot token is not exposed to the browser.
+- CRM chat list, customer card, and message bubbles can render real Telegram avatars.
+- CRM message bubbles now show factual statuses:
+  - incoming: `получено`;
+  - outgoing after successful Telegram send: `отправлено`.
+- CRM selected chat shows last activity from stored timestamps.
+- CRM live stream now drives the visible `AI печатает` state while the model is working.
+
+Boundary:
+
+- Telegram Bot API does not provide real client read receipts or true client online status.
+- The UI must not fake `прочитано` or `онлайн`; it shows only known delivery state and last activity.
+- No seller prompts, product logic, delivery logic, payment logic, or hidden behavior were added.
+
+Verification:
+
+- `node --check index.js` passed.
+- `node --check db/postgres.js` passed.
+- Local DB migration through `db.init()` passed.
+- Local `/db/status` reports database ready.
+- Local `/api/crm/chats?limit=2` responds successfully.
+- Browser `Диалоги` screen loads and live connection is active.
+
+Backup before change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-avatars-statuses-20260511-015733.tgz`

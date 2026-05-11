@@ -1,6 +1,6 @@
 # S.AI Project Passport
 
-Updated: 2026-05-11 01:43:00 +03
+Updated: 2026-05-11 02:12:00 +03
 
 ## Project Rule
 
@@ -28,6 +28,9 @@ Current transport:
 - PostgreSQL records channel customers, chats, messages, events, and AI turns when `DATABASE_URL` is configured.
 - CRM API exposes conversations for the future hybrid chat/CRM interface.
 - CRM live events push chat updates to the interface through Server-Sent Events.
+- CRM can show Telegram customer avatars through a safe server proxy.
+- CRM message bubbles show factual delivery state: `получено` for incoming, `отправлено` for outgoing after Telegram accepts the send.
+- CRM shows `AI печатает` from the real AI request lifecycle and last client activity from stored chat timestamps.
 
 No business behavior is active in this foundation.
 
@@ -40,6 +43,8 @@ No business behavior is active in this foundation.
 - `.gitignore`
 - `db/postgres.js`
 - `db/migrations/001_foundation.sql`
+- `db/migrations/002_crm_api.sql`
+- `db/migrations/003_customer_avatars.sql`
 - `node_modules/`
 - `data/runtime-config.json`
 - `data/postgres/` local runtime database directory, ignored by git
@@ -79,6 +84,7 @@ Visible status:
 - `/api/crm/chats/:chatId/ai-turns`;
 - `/api/crm/chats/:chatId/events`;
 - `/api/crm/live`;
+- `/api/telegram/avatar/:fileId`;
 - `База` block in the local interface.
 
 Full database passport:

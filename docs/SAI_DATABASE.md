@@ -1,6 +1,6 @@
 # S.AI Database Foundation
 
-Updated: 2026-05-11 00:08 +03
+Updated: 2026-05-11 02:12 +03
 
 ## Decision
 
@@ -37,13 +37,15 @@ Commands:
 
 ## Schema
 
-Migration file:
+Migration files:
 
 - `db/migrations/001_foundation.sql`
+- `db/migrations/002_crm_api.sql`
+- `db/migrations/003_customer_avatars.sql`
 
 Tables:
 
-- `customers` — people who write to S.AI through any supported channel. Telegram fields exist because Telegram is the first transport.
+- `customers` — people who write to S.AI through any supported channel. Telegram fields and `avatar_file_id` exist because Telegram is the first transport.
 - `chats` — channel conversations, AI toggle per chat, status, priority, notes, last activity.
 - `messages` — incoming and outgoing message history.
 - `events` — technical event stream: webhook, AI request, send, errors.
@@ -63,6 +65,8 @@ Endpoints:
 - `GET /api/crm/chats/:chatId/ai-turns` — model turns for this chat.
 - `GET /api/crm/chats/:chatId/events` — technical events connected through the chat trace ids.
 - `PATCH /api/crm/chats/:chatId` — update visible chat controls: `status`, `ai_enabled`, `notes`, `priority`, `assigned_to`, `mark_read`.
+- `GET /api/crm/live` — live stream for UI updates.
+- `GET /api/telegram/avatar/:fileId` — safe avatar proxy; the bot token is never exposed to the browser.
 
 Current allowed chat statuses:
 
@@ -99,9 +103,17 @@ On Telegram webhook:
 
 1. Customer is upserted into `customers`.
 2. Chat is upserted into `chats`.
-3. Incoming message is recorded in `messages`.
-4. AI turn is recorded in `ai_turns`.
-5. Outgoing Telegram reply is recorded in `messages`.
-6. Technical events are mirrored into `events`.
+3. Customer avatar is refreshed from Telegram in the background when Telegram provides a profile photo.
+4. Incoming message is recorded in `messages`.
+5. AI turn is recorded in `ai_turns`.
+6. Outgoing Telegram reply is recorded in `messages`.
+7. Technical events are mirrored into `events`.
+
+Current message statuses are intentionally factual:
+
+- incoming message: `получено`;
+- outgoing message after successful Telegram `sendMessage`: `отправлено`.
+
+Telegram Bot API does not expose real client read receipts or true client online status. The UI therefore shows last activity instead of inventing `прочитано` or `онлайн`.
 
 If PostgreSQL is not configured or not ready, the transport still works and file logs remain active.

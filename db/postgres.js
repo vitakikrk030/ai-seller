@@ -207,6 +207,21 @@ async function upsertTelegramCustomer(from = {}, chat = {}) {
   return result.rows[0]?.id || null;
 }
 
+async function updateCustomerAvatar(customerId, avatarFileId) {
+  if (!ready || !customerId || !avatarFileId) return null;
+  const result = await query(`
+    update customers
+    set
+      avatar_file_id = $2,
+      avatar_updated_at = now(),
+      updated_at = now()
+    where id = $1
+      and coalesce(avatar_file_id, '') is distinct from $2
+    returning id
+  `, [customerId, avatarFileId]);
+  return result.rows[0]?.id || null;
+}
+
 async function upsertTelegramChat({ chat = {}, customerId = null, businessConnectionId = '' }) {
   if (!ready || !chat.id) return null;
   const externalChatId = String(chat.id);
@@ -412,6 +427,7 @@ async function listCrmChats(filters = {}) {
       cu.display_name as customer_display_name,
       cu.telegram_username as customer_username,
       cu.phone as customer_phone,
+      cu.avatar_file_id as customer_avatar_file_id,
       lm.text as last_message_text,
       lm.direction as last_message_direction,
       lm.role as last_message_role,
@@ -457,6 +473,8 @@ async function getCrmChat(chatId) {
       cu.last_name,
       cu.display_name,
       cu.phone,
+      cu.avatar_file_id,
+      cu.avatar_updated_at,
       cu.notes as customer_notes,
       cu.created_at as customer_created_at,
       cu.updated_at as customer_updated_at,
@@ -636,6 +654,7 @@ module.exports = {
   query,
   recordEvent,
   upsertTelegramCustomer,
+  updateCustomerAvatar,
   upsertTelegramChat,
   recordMessage,
   recordAiTurn,

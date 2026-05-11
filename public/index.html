@@ -607,6 +607,18 @@
       font-size: 12px;
       font-weight: 760;
       letter-spacing: 0;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+
+    .dialog-avatar img,
+    .crm-avatar img,
+    .crm-message-avatar img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      border-radius: inherit;
     }
 
     .dialog-main {
@@ -744,6 +756,38 @@
       word-break: break-word;
     }
 
+    .crm-message-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: rgba(20,20,20,.42);
+      font-size: 11px;
+      font-weight: 760;
+      line-height: 1;
+    }
+
+    .crm-message.out .crm-message-head {
+      justify-content: flex-end;
+    }
+
+    .crm-message-avatar {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #171717;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .crm-message-text {
+      white-space: pre-wrap;
+    }
+
     .crm-message.in {
       align-self: flex-start;
       background: rgba(255,255,255,.64);
@@ -762,6 +806,10 @@
       font-size: 10px;
       line-height: 1;
       text-align: right;
+    }
+
+    .crm-message.in .crm-message-meta {
+      text-align: left;
     }
 
     .crm-compose {
@@ -1276,6 +1324,7 @@
       live: null,
       liveRefreshTimer: null,
       backupRefreshTimer: null,
+      aiTypingChatId: '',
     };
     let currentModel = '';
 
@@ -1502,6 +1551,34 @@
       return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : text.slice(0, 2)).toUpperCase();
     }
 
+    function avatarUrl(fileId) {
+      return fileId ? `/api/telegram/avatar/${encodeURIComponent(fileId)}` : '';
+    }
+
+    function avatarMarkup(name, fileId, className = 'dialog-avatar') {
+      const label = escapeHtml(initials(name));
+      const url = avatarUrl(fileId);
+      if (url) return `<div class="${className}"><img src="${url}" alt=""></div>`;
+      return `<div class="${className}">${label}</div>`;
+    }
+
+    function setAvatarNode(id, name, fileId) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const url = avatarUrl(fileId);
+      node.innerHTML = url ? `<img src="${url}" alt="">` : escapeHtml(initials(name));
+    }
+
+    function activityText(chat = {}) {
+      const value = chat.last_message_at || chat.updated_at || chat.created_at;
+      return value ? `активность ${formatCrmDate(value, true)}` : 'активность пока неизвестна';
+    }
+
+    function messageStatus(message = {}) {
+      if (message.direction === 'in') return 'получено';
+      return message.telegram_message_id ? 'отправлено' : 'создано';
+    }
+
     function renderInfoRows(rows) {
       return rows.map(([label, value]) => `
         <div class="info-row">
@@ -1552,6 +1629,18 @@
       }, 180);
     }
 
+    function handleCrmLiveEvent(type, event = {}) {
+      if (type === 'ai.requested' && event.chatId) {
+        crmState.aiTypingChatId = event.chatId;
+        if (event.chatId === crmState.selectedChatId) renderCrmSelectedChat();
+      }
+      if (['ai.replied', 'ai.error', 'telegram.sent'].includes(type) && event.chatId === crmState.aiTypingChatId) {
+        crmState.aiTypingChatId = '';
+        if (event.chatId === crmState.selectedChatId) renderCrmSelectedChat();
+      }
+      scheduleCrmRefresh(event);
+    }
+
     function startCrmLive() {
       if (crmState.live) return;
       if (!window.EventSource) {
@@ -1566,7 +1655,7 @@
       ['message.created', 'chat.updated', 'ai.requested', 'ai.replied', 'ai.error', 'telegram.sent'].forEach((type) => {
         live.addEventListener(type, (rawEvent) => {
           try {
-            scheduleCrmRefresh(JSON.parse(rawEvent.data || '{}'));
+            handleCrmLiveEvent(type, JSON.parse(rawEvent.data || '{}'));
           } catch {
             scheduleCrmRefresh();
           }
@@ -1588,9 +1677,10 @@
         const name = chat.customer_display_name || chat.title || chat.external_chat_id || 'Клиент';
         const preview = chat.last_message_text || 'Сообщений пока нет';
         const isActive = chat.id === crmState.selectedChatId;
+        const avatarFileId = chat.customer_avatar_file_id || '';
         return `
           <button class="dialog-item${isActive ? ' active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
-            <div class="dialog-avatar">${escapeHtml(initials(name))}</div>
+            ${avatarMarkup(name, avatarFileId)}
             <div class="dialog-main">
               <div class="dialog-title">
                 <span>${escapeHtml(name)}</span>
@@ -1631,15 +1721,18 @@
       if (!chat) return;
       const name = chat.display_name || chat.title || chat.external_chat_id || 'Клиент';
       const username = chat.telegram_username ? `@${chat.telegram_username}` : '';
+      const isTyping = crmState.aiTypingChatId === chat.id;
       document.getElementById('crmChatTitle').textContent = name;
-      document.getElementById('crmChatSubtitle').textContent = `${sourceLabel(chat.source)} · ${chat.status || 'open'} · ${chat.messages_count || 0} сообщений`;
+      document.getElementById('crmChatSubtitle').textContent = isTyping
+        ? `AI печатает... · ${activityText(chat)}`
+        : `${sourceLabel(chat.source)} · ${chat.status || 'open'} · ${chat.messages_count || 0} сообщений · ${activityText(chat)}`;
       document.getElementById('crmClientName').textContent = name;
-      document.getElementById('crmClientMeta').textContent = username || sourceLabel(chat.source);
-      document.getElementById('crmClientAvatar').textContent = initials(name);
+      document.getElementById('crmClientMeta').textContent = [username || sourceLabel(chat.source), activityText(chat)].filter(Boolean).join(' · ');
+      setAvatarNode('crmClientAvatar', name, chat.avatar_file_id || '');
       document.getElementById('crmNotes').value = chat.notes || '';
 
       const aiPill = document.getElementById('crmAiPill');
-      aiPill.innerHTML = `<span class="status-dot${chat.ai_enabled ? '' : ' off'}"></span>${chat.ai_enabled ? 'AI активен' : 'AI выключен'}`;
+      aiPill.innerHTML = `<span class="status-dot${chat.ai_enabled ? '' : ' off'}"></span>${isTyping ? 'AI печатает' : chat.ai_enabled ? 'AI активен' : 'AI выключен'}`;
       const aiSwitch = document.getElementById('crmAiSwitch');
       aiSwitch.classList.toggle('on', Boolean(chat.ai_enabled));
       document.getElementById('crmAiStateText').textContent = chat.ai_enabled ? 'AI отвечает сам' : 'ручной контроль';
@@ -1649,6 +1742,7 @@
         ['Внешний ID', chat.external_chat_id],
         ['Username', username],
         ['Телефон', chat.phone],
+        ['Активность', activityText(chat)],
       ]);
 
       const lastTurn = crmState.aiTurns[0] || {};
@@ -1672,10 +1766,18 @@
       box.innerHTML = crmState.messages.map((message) => {
         const direction = message.direction === 'in' ? 'in' : 'out';
         const role = direction === 'in' ? 'Клиент' : message.role === 'operator' ? 'Оператор' : 'AI';
+        const name = crmState.selectedChat?.display_name || crmState.selectedChat?.title || 'Клиент';
+        const avatar = direction === 'in'
+          ? avatarMarkup(name, crmState.selectedChat?.avatar_file_id || '', 'crm-message-avatar')
+          : `<div class="crm-message-avatar">${escapeHtml(role === 'Оператор' ? 'ОП' : 'AI')}</div>`;
+        const head = direction === 'in'
+          ? `${avatar}<span>${escapeHtml(role)}</span>`
+          : `<span>${escapeHtml(role)}</span>${avatar}`;
         return `
           <div class="crm-message ${direction}">
-            <div>${escapeHtml(message.text)}</div>
-            <div class="crm-message-meta">${escapeHtml(role)} · ${escapeHtml(formatCrmDate(message.created_at, true))}</div>
+            <div class="crm-message-head">${head}</div>
+            <div class="crm-message-text">${escapeHtml(message.text)}</div>
+            <div class="crm-message-meta">${escapeHtml(messageStatus(message))} · ${escapeHtml(formatCrmDate(message.created_at, true))}</div>
           </div>
         `;
       }).join('');

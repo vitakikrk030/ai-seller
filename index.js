@@ -115,6 +115,38 @@ function telegramApi(method) {
   return `https://api.telegram.org/bot${runtimeConfig.telegram_token}/${method}`;
 }
 
+async function fetchTelegramAvatarFileId(userId) {
+  if (!runtimeConfig.telegram_token || !userId) return '';
+  try {
+    const response = await axios.get(telegramApi('getUserProfilePhotos'), {
+      timeout: 8000,
+      params: {
+        user_id: userId,
+        limit: 1,
+      },
+    });
+    const photoSizes = response.data?.result?.photos?.[0] || [];
+    const bestPhoto = Array.isArray(photoSizes) ? photoSizes[photoSizes.length - 1] : null;
+    return bestPhoto?.file_id || '';
+  } catch (error) {
+    logEvent('TG_AVATAR_ERROR', {
+      userId: String(userId),
+      error: error.message,
+      providerError: error.response?.data || null,
+    });
+    return '';
+  }
+}
+
+async function refreshTelegramCustomerAvatar({ customerId, userId, chatDbId, traceId }) {
+  const avatarFileId = await fetchTelegramAvatarFileId(userId);
+  if (!avatarFileId) return;
+  const updatedId = await db.updateCustomerAvatar(customerId, avatarFileId);
+  if (!updatedId) return;
+  logEvent('TG_AVATAR_UPDATED', { traceId, customerId, chatDbId });
+  emitLive('chat.updated', { traceId, chatId: chatDbId, customerId, source: 'telegram', reason: 'avatar.updated' });
+}
+
 function getTelegramMessage(update = {}) {
   const message = update.business_message || update.message || update.edited_message || null;
   const updateType = update.business_message ? 'business_message' : update.message ? 'message' : update.edited_message ? 'edited_message' : 'unknown';
@@ -457,6 +489,39 @@ app.patch('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
   crmOk(res, chat);
 }));
 
+app.get('/api/telegram/avatar/:fileId', async (req, res) => {
+  if (!runtimeConfig.telegram_token) {
+    res.sendStatus(404);
+    return;
+  }
+  try {
+    const fileResponse = await axios.get(telegramApi('getFile'), {
+      timeout: 8000,
+      params: { file_id: req.params.fileId },
+    });
+    const filePath = fileResponse.data?.result?.file_path || '';
+    if (!filePath) {
+      res.sendStatus(404);
+      return;
+    }
+    const imageResponse = await axios.get(`https://api.telegram.org/file/bot${runtimeConfig.telegram_token}/${filePath}`, {
+      timeout: 12000,
+      responseType: 'arraybuffer',
+    });
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.type(contentType).send(Buffer.from(imageResponse.data));
+  } catch (error) {
+    logEvent('TG_AVATAR_PROXY_ERROR', {
+      fileId: req.params.fileId,
+      error: error.message,
+      providerError: error.response?.data || null,
+    });
+    res.sendStatus(404);
+  }
+});
+
 app.delete('/logs', (req, res) => {
   fs.writeFileSync(LOG_FILE, '');
   res.json({ ok: true });
@@ -508,6 +573,12 @@ app.post('/api/telegram/webhook', (req, res) => {
         customerId,
         businessConnectionId,
       });
+      refreshTelegramCustomerAvatar({
+        customerId,
+        userId: message.from?.id || message.chat?.id || '',
+        chatDbId,
+        traceId,
+      }).catch(() => {});
       await db.recordMessage({
         chatId: chatDbId,
         customerId,
