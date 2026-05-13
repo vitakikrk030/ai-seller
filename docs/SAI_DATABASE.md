@@ -1,6 +1,6 @@
 # S.AI Database Foundation
 
-Updated: 2026-05-11 02:12 +03
+Updated: 2026-05-11 15:40 +03
 
 ## Decision
 
@@ -65,8 +65,11 @@ Endpoints:
 - `GET /api/crm/chats/:chatId/ai-turns` — model turns for this chat.
 - `GET /api/crm/chats/:chatId/events` — technical events connected through the chat trace ids.
 - `PATCH /api/crm/chats/:chatId` — update visible chat controls: `status`, `ai_enabled`, `notes`, `priority`, `assigned_to`, `mark_read`.
+- `POST /api/crm/chats/:chatId/send` — send a manual operator reply to Telegram and store it as an outgoing operator message.
+- `PATCH /api/crm/customers/:customerId` — update visible customer fields such as phone and notes.
 - `GET /api/crm/live` — live stream for UI updates.
 - `GET /api/telegram/avatar/:fileId` — safe avatar proxy; the bot token is never exposed to the browser.
+- `GET /api/telegram/file/:fileId` — safe Telegram media proxy for files visible in CRM; the bot token is never exposed to the browser.
 
 Current allowed chat statuses:
 
@@ -108,6 +111,13 @@ On Telegram webhook:
 5. AI turn is recorded in `ai_turns`.
 6. Outgoing Telegram reply is recorded in `messages`.
 7. Technical events are mirrored into `events`.
+
+On CRM manual reply:
+
+1. CRM sends the operator text through `/api/crm/chats/:chatId/send`.
+2. Server sends the message to Telegram.
+3. The outgoing message is recorded in `messages` with role `operator`.
+4. A CRM live update is emitted for open interfaces.
 
 Current message statuses are intentionally factual:
 

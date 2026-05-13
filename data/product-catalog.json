@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sample-1",
+    "name": "Пример товара",
+    "price": "0 ₽",
+    "sizes": [],
+    "description": "Замените на реальный товар через AI Control → Товары",
+    "in_stock": false,
+    "photo_url": ""
+  }
+]

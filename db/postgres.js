@@ -79,7 +79,7 @@ function status() {
 
 async function foundationStatus() {
   const baseStatus = status();
-  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns'];
+  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts'];
   if (!ready) {
     return {
       ...baseStatus,
@@ -305,6 +305,11 @@ async function recordAiTurn({
   latencyMs = null,
   ok = true,
   error = '',
+  compiledPrompt = null,
+  memorySummary = null,
+  inputText = null,
+  historyLength = null,
+  structuredResponse = null,
 }) {
   if (!ready) return null;
   const result = await query(`
@@ -316,9 +321,14 @@ async function recordAiTurn({
       response_text,
       latency_ms,
       ok,
-      error
+      error,
+      compiled_prompt,
+      memory_summary,
+      input_text,
+      history_length,
+      structured_response
     )
-    values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+    values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
     returning id
   `, [
     chatId,
@@ -329,6 +339,11 @@ async function recordAiTurn({
     latencyMs,
     ok,
     error || null,
+    compiledPrompt || null,
+    memorySummary || null,
+    inputText || null,
+    historyLength,
+    json(structuredResponse),
   ]);
   return result.rows[0]?.id || null;
 }
@@ -519,6 +534,7 @@ async function listCrmMessages(chatId, filters = {}) {
       text,
       telegram_message_id,
       trace_id,
+      raw,
       created_at,
       created_at as sort_at
     from messages
@@ -554,6 +570,11 @@ async function listCrmAiTurns(chatId, filters = {}) {
       latency_ms,
       ok,
       error,
+      compiled_prompt,
+      memory_summary,
+      input_text,
+      history_length,
+      structured_response,
       created_at,
       created_at as sort_at
     from ai_turns
@@ -647,6 +668,100 @@ async function updateCrmChat(chatId, changes = {}) {
   return getCrmChat(chatId);
 }
 
+async function updateCrmCustomer(customerId, changes = {}) {
+  ensureReady();
+  const sets = [];
+  const params = [];
+
+  function add(value) {
+    params.push(value);
+    return `$${params.length}`;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'phone')) {
+    sets.push(`phone = ${add(String(changes.phone || '').trim() || null)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'notes')) {
+    sets.push(`notes = ${add(String(changes.notes || ''))}`);
+  }
+  if (!sets.length) return null;
+
+  sets.push('updated_at = now()');
+  params.push(customerId);
+  const result = await query(`
+    update customers
+    set ${sets.join(', ')}
+    where id = $${params.length}
+    returning id
+  `, params);
+  return result.rows[0]?.id || null;
+}
+
+async function upsertCustomerFact(customerId, key, value, source = 'ai') {
+  if (!ready || !customerId || !key) return null;
+  const result = await query(`
+    insert into customer_facts (customer_id, key, value, source)
+    values ($1, $2, $3, $4)
+    on conflict (customer_id, key)
+    do update set
+      value = excluded.value,
+      source = excluded.source,
+      updated_at = now()
+    returning id
+  `, [customerId, key, String(value || ''), source]);
+  return result.rows[0]?.id || null;
+}
+
+async function getCustomerFacts(customerId) {
+  if (!ready || !customerId) return [];
+  const result = await query(`
+    select key, value, source, updated_at
+    from customer_facts
+    where customer_id = $1
+    order by key asc
+  `, [customerId]);
+  return result.rows;
+}
+
+async function buildMemorySummary(customerId) {
+  const facts = await getCustomerFacts(customerId);
+  if (!facts.length) return '';
+  const LABELS = {
+    name: 'Имя',
+    city: 'Город',
+    phone: 'Телефон',
+    shoe_size: 'Размер обуви',
+    foot_length: 'Длина стопы',
+    clothing_size: 'Размер одежды',
+    preferred_brands: 'Бренды',
+    preferred_colors: 'Цвета',
+    preferred_style: 'Стиль',
+    budget: 'Бюджет',
+    delivery_method: 'Доставка',
+    delivery_address: 'Адрес доставки',
+    product_interest: 'Интерес к товару',
+    previous_purchases: 'Прошлые покупки',
+    concerns: 'Опасения',
+    communication_style: 'Стиль общения',
+    funnel_stage: 'Этап',
+  };
+  return facts
+    .map((f) => `${LABELS[f.key] || f.key}: ${f.value}`)
+    .join('\n');
+}
+
+async function getChatHistory(chatId, limit = 50) {
+  if (!ready || !chatId) return [];
+  const result = await query(`
+    select role, text, created_at
+    from messages
+    where chat_id = $1
+    order by created_at desc, id desc
+    limit $2
+  `, [chatId, limit]);
+  return result.rows.reverse();
+}
+
 module.exports = {
   init,
   status,
@@ -665,4 +780,9 @@ module.exports = {
   listCrmAiTurns,
   listCrmEvents,
   updateCrmChat,
+  updateCrmCustomer,
+  upsertCustomerFact,
+  getCustomerFacts,
+  buildMemorySummary,
+  getChatHistory,
 };

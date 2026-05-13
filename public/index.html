@@ -8,10 +8,15 @@
     :root {
       color-scheme: light;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-      background: #a9aaa8;
+      background: #f6f8f9;
       color: #111;
       --control-height: 42px;
       --panel-control-gap: 12px;
+      --paper: #fbfcfd;
+      --paper-soft: #f6f8f9;
+      --paper-field: #f8fafb;
+      --paper-line: #e4e8eb;
+      --paper-muted: #eef2f4;
     }
 
     * { box-sizing: border-box; }
@@ -19,16 +24,18 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: #b4b5b2;
+      background:
+        radial-gradient(circle at 28% 0%, rgba(255,255,255,.82), transparent 34%),
+        linear-gradient(135deg, #edf1f3 0%, #f6f8f9 42%, #fbfcfd 100%);
     }
 
     .shell {
       width: 100vw;
       height: 100vh;
       display: grid;
-      grid-template-columns: clamp(52px, 4.5vw, 58px) minmax(0, 1fr);
-      gap: clamp(12px, 1.5vw, 18px);
-      padding: clamp(14px, 1.6vw, 22px);
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 4px;
+      padding: 4px;
       color: #111;
     }
 
@@ -45,43 +52,47 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
-      padding: 14px 0;
-      width: clamp(52px, 4.5vw, 58px);
-      border-radius: 18px;
-      background: #171717;
-      color: #f8f8f8;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+      gap: 8px;
+      padding: 10px 0;
+      width: 48px;
+      border-radius: 6px;
+      border: 1px solid rgba(20,20,20,.12);
+      background: linear-gradient(180deg, #e7ebee, #dce2e6);
+      color: #111;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 14px 32px rgba(26,32,37,.08);
     }
 
     .logo {
-      width: 38px;
-      height: 38px;
+      width: 34px;
+      height: 30px;
       display: grid;
       place-items: center;
-      border-radius: 10px;
-      color: #f7f7f7;
-      font-size: 11px;
+      border-radius: 9px;
+      border: 1px solid rgba(20,20,20,.11);
+      background: rgba(251,252,253,.52);
+      color: #111;
+      font-size: 9px;
       font-weight: 780;
       letter-spacing: 0;
       line-height: 1;
     }
 
     .rail-icon {
-      width: 42px;
-      height: 42px;
+      width: 34px;
+      height: 34px;
       display: grid;
       place-items: center;
-      border: 0;
+      border: 1px solid rgba(20,20,20,.12);
       border-radius: 10px;
-      background: transparent;
-      color: #f4f4f4;
-      font-size: 20px;
+      background: rgba(251,252,253,.54);
+      color: #111;
+      font-size: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.68);
     }
 
     .rail-icon svg {
-      width: 20px;
-      height: 20px;
+      width: 16px;
+      height: 16px;
       stroke: currentColor;
       stroke-width: 2;
       stroke-linecap: round;
@@ -90,8 +101,9 @@
     }
 
     .rail-icon.active {
-      background: linear-gradient(180deg, #777, #4b4b4b);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+      border-color: rgba(20,20,20,.22);
+      background: rgba(251,252,253,.88);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.86), 0 10px 22px rgba(26,32,37,.1);
     }
 
     .rail-spacer { flex: 1; }
@@ -108,6 +120,10 @@
       display: block;
     }
 
+    #connectScreen {
+      padding: clamp(18px, 2vw, 28px) clamp(20px, 2.4vw, 34px);
+    }
+
     .main {
       min-width: 0;
       min-height: 0;
@@ -116,7 +132,7 @@
       box-shadow: none;
       backdrop-filter: none;
       overflow: auto;
-      padding: clamp(18px, 2.4vw, 34px);
+      padding: 0;
     }
 
     .main.crm-open {
@@ -240,7 +256,7 @@
       margin-left: auto;
       border: 0;
       border-radius: 999px;
-      background: rgba(241, 243, 240, .72);
+      background: rgba(248, 250, 251, .78);
       color: rgba(20,20,20,.62);
       padding: 6px 10px;
       font: inherit;
@@ -267,25 +283,38 @@
     }
 
     input,
-    select {
+    select,
+    textarea {
       width: 100%;
-      height: 42px;
       min-width: 0;
-      border: 1px solid rgba(20,20,20,.12);
+      border: 1px solid var(--paper-line);
       border-radius: 12px;
-      background: rgba(238, 239, 237, .82);
+      background: rgba(248, 250, 251, .86);
       color: #111;
-      padding: 0 14px;
       font: inherit;
       font-size: 16px;
       outline: none;
       box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
     }
 
+    input,
+    select {
+      height: 42px;
+      padding: 0 14px;
+    }
+
+    textarea {
+      min-height: 160px;
+      resize: vertical;
+      padding: 12px 14px;
+      line-height: 1.42;
+    }
+
     input:focus,
-    select:focus {
+    select:focus,
+    textarea:focus {
       border-color: rgba(20,20,20,.25);
-      background: rgba(248, 249, 247, .82);
+      background: rgba(251, 252, 253, .94);
     }
 
     .readout {
@@ -293,9 +322,9 @@
       display: flex;
       align-items: center;
       padding: 0 14px;
-      border: 1px solid rgba(20,20,20,.08);
+      border: 1px solid var(--paper-line);
       border-radius: 12px;
-      background: rgba(238, 239, 237, .72);
+      background: rgba(248, 250, 251, .78);
       color: rgba(20,20,20,.72);
       font-size: 16px;
       word-break: break-word;
@@ -333,9 +362,17 @@
     }
 
     button.action.secondary {
-      background: rgba(241, 243, 240, .72);
+      background: rgba(248, 250, 251, .78);
       color: #151515;
       box-shadow: inset 0 0 0 1px rgba(20,20,20,.1);
+    }
+
+    .crm-head button.action.secondary {
+      flex: 0 0 auto;
+      min-width: 112px;
+      padding: 0 14px;
+      font-size: 13px;
+      white-space: nowrap;
     }
 
     #logs .actions {
@@ -353,9 +390,9 @@
       height: auto;
       min-height: 110px;
       overflow: auto;
-      border: 1px solid rgba(20,20,20,.08);
+      border: 1px solid var(--paper-line);
       border-radius: 14px;
-      background: rgba(238, 239, 237, .72);
+      background: rgba(248, 250, 251, .78);
       padding: 14px;
       color: rgba(20,20,20,.74);
       font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -367,9 +404,9 @@
       display: grid;
       gap: 8px;
       padding: 12px 14px;
-      border: 1px solid rgba(20,20,20,.08);
+      border: 1px solid var(--paper-line);
       border-radius: 14px;
-      background: rgba(238, 239, 237, .72);
+      background: rgba(248, 250, 251, .78);
       color: rgba(20,20,20,.72);
       font-size: 13px;
     }
@@ -404,9 +441,9 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      border: 1px solid rgba(20,20,20,.08);
+      border: 1px solid var(--paper-line);
       border-radius: 14px;
-      background: rgba(238, 239, 237, .72);
+      background: rgba(248, 250, 251, .78);
       padding: 14px;
     }
 
@@ -492,8 +529,12 @@
       height: 100%;
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(240px, 300px) minmax(380px, 1fr) minmax(260px, 330px);
-      gap: clamp(16px, 1.7vw, 24px);
+      grid-template-columns: minmax(250px, .78fr) minmax(420px, 1.48fr) minmax(300px, .98fr);
+      gap: 4px;
+    }
+
+    .mobile-crm-tabs {
+      display: none;
     }
 
     .crm-column {
@@ -501,24 +542,36 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
+      border: 1px solid rgba(228,232,235,.88);
+      border-radius: 8px;
+      background: rgba(251,252,253,.82);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.58),
+        0 18px 45px rgba(30,30,30,.08);
+      backdrop-filter: blur(22px);
+      padding: 24px 18px;
+    }
+
+    .crm-side {
+      padding-inline: 20px;
     }
 
     .crm-head {
-      min-height: 42px;
+      min-height: 38px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 18px;
     }
 
     .crm-head h1,
     .crm-head h2 {
       margin: 0;
-      font-size: clamp(22px, 2vw, 30px);
+      font-size: clamp(22px, 1.8vw, 28px);
       line-height: 1;
       letter-spacing: 0;
-      font-weight: 760;
+      font-weight: 780;
     }
 
     .crm-head h2 {
@@ -526,62 +579,73 @@
     }
 
     .crm-search {
-      margin-bottom: 10px;
+      margin-bottom: 18px;
+      height: 38px;
+      border-radius: 8px;
+      background: rgba(248,250,251,.78);
+      padding-left: 38px;
+      font-size: 14px;
     }
 
     .channel-chips {
       display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: 10px;
+      margin-bottom: 18px;
       overflow-x: auto;
       scrollbar-width: none;
     }
 
     .chip {
-      min-height: 30px;
-      border: 0;
+      min-height: 32px;
+      border: 1px solid rgba(20,20,20,.14);
       border-radius: 999px;
       padding: 0 12px;
-      background: rgba(238, 239, 237, .6);
-      color: rgba(20,20,20,.58);
+      background: rgba(248,250,251,.74);
+      color: rgba(20,20,20,.72);
       font: inherit;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 680;
       cursor: pointer;
-      box-shadow: inset 0 0 0 1px rgba(20,20,20,.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
     }
 
     .chip.active {
-      background: #171717;
-      color: #fff;
-      box-shadow: 0 10px 18px rgba(0,0,0,.14);
+      background: rgba(251,252,253,.86);
+      color: #111;
+      border-color: rgba(20,20,20,.38);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 8px 18px rgba(0,0,0,.06);
     }
 
     .dialog-list,
     .crm-card,
     .crm-chat-box {
-      border: 1px solid rgba(20,20,20,.08);
-      border-radius: 18px;
-      background: rgba(238, 239, 237, .64);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+      border: 1px solid var(--paper-line);
+      border-radius: 12px;
+      background: rgba(251,252,253,.68);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.48);
     }
 
     .dialog-list {
       flex: 1;
       min-height: 0;
       overflow: auto;
-      padding: 8px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .dialog-item {
       width: 100%;
       display: grid;
-      grid-template-columns: 38px minmax(0, 1fr) auto;
-      gap: 10px;
+      grid-template-columns: 48px minmax(0, 1fr) 72px;
+      gap: 13px;
       align-items: center;
-      border: 0;
-      border-radius: 14px;
-      padding: 10px;
+      border: 1px solid transparent;
+      border-bottom-color: rgba(20,20,20,.08);
+      border-radius: 0;
+      padding: 13px 8px;
       background: transparent;
       color: #111;
       font: inherit;
@@ -591,20 +655,22 @@
 
     .dialog-item:hover,
     .dialog-item.active {
-      background: rgba(255,255,255,.44);
-      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+      border-color: rgba(20,20,20,.26);
+      border-radius: 9px;
+      background: rgba(251,252,253,.82);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 10px 24px rgba(0,0,0,.055);
     }
 
     .dialog-avatar,
     .crm-avatar {
-      width: 38px;
-      height: 38px;
+      width: 48px;
+      height: 48px;
       display: grid;
       place-items: center;
-      border-radius: 12px;
-      background: #171717;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #777b80, #9b9ea2);
       color: #fff;
-      font-size: 12px;
+      font-size: 15px;
       font-weight: 760;
       letter-spacing: 0;
       overflow: hidden;
@@ -624,13 +690,13 @@
     .dialog-main {
       min-width: 0;
       display: grid;
-      gap: 3px;
+      gap: 4px;
     }
 
     .dialog-title {
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 8px;
       min-width: 0;
       font-size: 14px;
       font-weight: 760;
@@ -644,13 +710,17 @@
 
     .source-badge {
       flex: 0 0 auto;
-      padding: 2px 6px;
+      min-width: 22px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid rgba(20,20,20,.1);
       border-radius: 999px;
-      background: rgba(20,20,20,.08);
-      color: rgba(20,20,20,.52);
-      font-size: 10px;
+      background: rgba(248,250,251,.8);
+      color: rgba(20,20,20,.58);
+      font-size: 9px;
       font-weight: 720;
-      text-transform: uppercase;
+      line-height: 1;
     }
 
     .dialog-preview {
@@ -665,7 +735,8 @@
     .dialog-side {
       display: grid;
       justify-items: end;
-      gap: 8px;
+      align-content: center;
+      gap: 12px;
       color: rgba(20,20,20,.42);
       font-size: 11px;
       white-space: nowrap;
@@ -688,8 +759,16 @@
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
       gap: 12px;
+    }
+
+    .chat-control-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 0;
     }
 
     .chat-title-block {
@@ -705,10 +784,79 @@
       min-width: 0;
     }
 
+    .chat-control-head .crm-pill {
+      justify-self: center;
+    }
+
     .chat-subtitle {
       color: rgba(20,20,20,.48);
       font-size: 12px;
       font-weight: 620;
+    }
+
+    .chat-contact-row {
+      display: grid;
+      grid-template-columns: 50px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      min-height: 58px;
+    }
+
+    .chat-contact-avatar {
+      width: 50px;
+      height: 50px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #777b80, #9b9ea2);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 760;
+    }
+
+    .chat-contact-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .chat-contact-main {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+
+    .chat-contact-name {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #111;
+      font-size: 15px;
+      font-weight: 760;
+      line-height: 1.2;
+    }
+
+    .chat-contact-name span:first-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-contact-source {
+      min-width: 24px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid rgba(20,20,20,.1);
+      border-radius: 999px;
+      background: rgba(248,250,251,.8);
+      color: rgba(20,20,20,.58);
+      font-size: 9px;
+      font-weight: 720;
+      line-height: 1;
     }
 
     .crm-pill {
@@ -718,12 +866,19 @@
       min-height: 30px;
       padding: 0 11px;
       border-radius: 999px;
-      background: rgba(238, 239, 237, .7);
+      background: rgba(248,250,251,.78);
       color: rgba(20,20,20,.62);
       font-size: 12px;
       font-weight: 700;
       box-shadow: inset 0 0 0 1px rgba(20,20,20,.08);
       white-space: nowrap;
+    }
+
+    .pill-arrow {
+      margin-left: 2px;
+      color: rgba(20,20,20,.46);
+      font-size: 13px;
+      line-height: 1;
     }
 
     .live-pill {
@@ -737,23 +892,62 @@
     .crm-chat-box {
       min-height: 0;
       overflow: auto;
-      padding: 16px;
+      padding: 20px 0 18px;
       display: flex;
-      flex-direction: column-reverse;
-      gap: 12px;
+      flex-direction: column;
+      gap: 18px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .crm-date-separator {
+      align-self: center;
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      width: min(100%, 640px);
+      color: rgba(20,20,20,.42);
+      font-size: 11px;
+      font-weight: 680;
+      text-align: center;
+    }
+
+    .crm-date-separator::before,
+    .crm-date-separator::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: rgba(20,20,20,.08);
     }
 
     .crm-message {
       width: fit-content;
-      max-width: min(78%, 620px);
+      max-width: min(62%, 520px);
       display: grid;
-      gap: 6px;
-      padding: 10px 12px;
-      border-radius: 16px;
+      gap: 8px;
+      padding: 13px 16px 10px;
+      border-radius: 10px;
       font-size: 14px;
-      line-height: 1.4;
+      line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .crm-message-wrap {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .crm-message-wrap.in {
+      align-items: flex-start;
+    }
+
+    .crm-message-wrap.out {
+      align-items: flex-end;
+      padding-left: 0;
     }
 
     .crm-message-head {
@@ -771,13 +965,13 @@
     }
 
     .crm-message-avatar {
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       display: grid;
       place-items: center;
       overflow: hidden;
-      border-radius: 8px;
-      background: #171717;
+      border-radius: 50%;
+      background: #232323;
       color: #fff;
       font-size: 9px;
       font-weight: 780;
@@ -789,44 +983,584 @@
     }
 
     .crm-message.in {
-      align-self: flex-start;
-      background: rgba(255,255,255,.64);
-      border-bottom-left-radius: 5px;
-      box-shadow: inset 0 0 0 1px rgba(20,20,20,.08);
+      background: rgba(251,252,253,.76);
+      border-bottom-left-radius: 4px;
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.09), 0 8px 24px rgba(0,0,0,.04);
     }
 
     .crm-message.out {
-      align-self: flex-end;
-      background: rgba(224, 238, 229, .88);
-      border-bottom-right-radius: 5px;
+      background: rgba(251,252,253,.72);
+      border-bottom-right-radius: 4px;
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.08), 0 8px 24px rgba(0,0,0,.04);
     }
 
     .crm-message-meta {
-      color: rgba(20,20,20,.36);
-      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      color: rgba(20,20,20,.42);
+      font-size: 11px;
       line-height: 1;
       text-align: right;
     }
 
     .crm-message.in .crm-message-meta {
+      justify-content: flex-end;
+    }
+
+    .receipt {
+      font-size: 14px;
+      line-height: 1;
+      letter-spacing: -2px;
+      color: rgba(20,20,20,.34);
+    }
+
+    .receipt.created {
+      letter-spacing: 0;
+    }
+
+    .receipt.read {
+      color: #289be9;
+    }
+
+    .ai-latency {
+      width: fit-content;
+      margin-top: 8px;
+      margin-left: 18px;
+      color: rgba(20,20,20,.46);
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 1;
+    }
+
+    .ai-inspect-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+      margin-left: auto;
+    }
+    .inspect-btn {
+      all: unset;
+      cursor: pointer;
+      font-size: 12px;
+      color: rgba(20,20,20,.38);
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: background .15s, color .15s;
+    }
+    .inspect-btn:hover {
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.7);
+    }
+
+    .inspector-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      background: rgba(0,0,0,.18);
+      backdrop-filter: blur(3px);
+    }
+    .inspector-overlay.open {
+      display: block;
+    }
+    .inspector-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(520px, 90vw);
+      z-index: 901;
+      background: rgba(246,248,250,.97);
+      border-left: 1px solid rgba(20,20,20,.08);
+      box-shadow: -12px 0 48px rgba(0,0,0,.08);
+      overflow-y: auto;
+      padding: 28px 24px 32px;
+      transform: translateX(100%);
+      transition: transform .26s cubic-bezier(.32,.72,.24,1);
+    }
+    .inspector-overlay.open .inspector-panel {
+      transform: translateX(0);
+    }
+    .inspector-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .inspector-header h2 {
+      font-size: 18px;
+      font-weight: 780;
+      margin: 0;
+    }
+    .inspector-close {
+      all: unset;
+      cursor: pointer;
+      font-size: 22px;
+      color: rgba(20,20,20,.5);
+      padding: 4px 8px;
+      border-radius: 8px;
+    }
+    .inspector-close:hover {
+      background: rgba(20,20,20,.06);
+    }
+    .inspector-section {
+      margin-bottom: 18px;
+    }
+    .inspector-section-title {
+      font-size: 11px;
+      font-weight: 720;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: rgba(20,20,20,.42);
+      margin-bottom: 6px;
+    }
+    .inspector-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .inspector-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 680;
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.72);
+    }
+    .inspector-badge.reply { background: rgba(52,199,89,.12); color: #1e8a3f; }
+    .inspector-badge.skip { background: rgba(142,142,147,.12); color: #636366; }
+    .inspector-badge.wait { background: rgba(255,149,0,.12); color: #c45d00; }
+    .inspector-badge.escalate { background: rgba(255,59,48,.12); color: #c0392b; }
+    .inspector-badge.ok { background: rgba(52,199,89,.1); color: #1e8a3f; }
+    .inspector-badge.error { background: rgba(255,59,48,.1); color: #c0392b; }
+    .inspector-pre {
+      padding: 12px 14px;
+      border: 1px solid rgba(20,20,20,.06);
+      border-radius: 10px;
+      background: rgba(255,255,255,.72);
+      font-family: 'SF Mono', ui-monospace, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+      color: rgba(20,20,20,.78);
+    }
+    .inspector-pre.compact {
+      max-height: 120px;
+    }
+    .inspector-facts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .inspector-facts-table td {
+      padding: 4px 8px;
+      border-bottom: 1px solid rgba(20,20,20,.05);
+    }
+    .inspector-facts-table td:first-child {
+      font-weight: 660;
+      color: rgba(20,20,20,.55);
+      white-space: nowrap;
+      width: 110px;
+    }
+    .inspector-toggle-prompt {
+      all: unset;
+      cursor: pointer;
+      font-size: 12px;
+      color: rgba(20,20,20,.45);
+      margin-top: 6px;
+      display: inline-block;
+    }
+    .inspector-toggle-prompt:hover {
+      color: rgba(20,20,20,.7);
+    }
+
+    .product-table-wrap {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(20,20,20,.1);
+      background: rgba(255,255,255,.7);
+    }
+    .product-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .product-table th {
+      padding: 10px 12px;
       text-align: left;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: rgba(20,20,20,.5);
+      background: rgba(20,20,20,.03);
+      border-bottom: 1px solid rgba(20,20,20,.08);
+      white-space: nowrap;
+    }
+    .product-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(20,20,20,.06);
+      vertical-align: middle;
+    }
+    .product-table tr:last-child td {
+      border-bottom: none;
+    }
+    .product-table tr:hover td {
+      background: rgba(20,20,20,.02);
+    }
+    .product-table input[type="text"],
+    .product-table input[type="number"] {
+      width: 100%;
+      min-width: 60px;
+      padding: 5px 8px;
+      border: 1px solid rgba(20,20,20,.12);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+      transition: border-color .15s;
+    }
+    .product-table input[type="text"]:focus {
+      border-color: rgba(20,20,20,.3);
+      outline: none;
+    }
+    .product-table .product-name-input { min-width: 120px; }
+    .product-table .product-price-input { min-width: 80px; }
+    .product-table .product-sizes-input { min-width: 100px; }
+    .product-table .product-desc-input { min-width: 140px; }
+    .product-table .product-photo-input { min-width: 100px; }
+    .product-stock-toggle {
+      width: 18px;
+      height: 18px;
+      accent-color: #34c759;
+      cursor: pointer;
+    }
+    .product-delete-btn {
+      padding: 4px 10px;
+      border: 1px solid rgba(200,50,50,.2);
+      border-radius: 8px;
+      background: rgba(200,50,50,.06);
+      color: #c44;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .product-delete-btn:hover {
+      background: rgba(200,50,50,.14);
+      border-color: rgba(200,50,50,.3);
+    }
+
+    .polygon-editor {
+      margin-bottom: 18px;
+    }
+    .polygon-editor textarea {
+      width: 100%;
+      min-height: 140px;
+      padding: 12px 14px;
+      border: 1px solid rgba(20,20,20,.1);
+      border-radius: 12px;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: vertical;
+      background: rgba(255,255,255,.8);
+    }
+    .polygon-editor textarea:focus {
+      border-color: rgba(20,20,20,.25);
+      outline: none;
+    }
+    .polygon-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .polygon-status {
+      font-size: 12px;
+      color: rgba(20,20,20,.5);
+    }
+    .polygon-results {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .polygon-result-card {
+      border: 1px solid rgba(20,20,20,.08);
+      border-radius: 14px;
+      background: rgba(255,255,255,.72);
+      overflow: hidden;
+      transition: box-shadow .18s ease;
+    }
+    .polygon-result-card:hover {
+      box-shadow: 0 4px 16px rgba(26,32,37,.05);
+    }
+    .polygon-result-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: rgba(245,246,248,.6);
+      border-bottom: 1px solid rgba(20,20,20,.04);
+    }
+    .polygon-result-phrase {
+      font-weight: 680;
+      font-size: 14px;
+      flex: 1;
+    }
+    .polygon-result-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 680;
+    }
+    .polygon-result-status.pending {
+      background: rgba(142,142,147,.12);
+      color: #636366;
+    }
+    .polygon-result-status.running {
+      background: rgba(0,122,255,.1);
+      color: #007aff;
+    }
+    .polygon-result-status.ok {
+      background: rgba(52,199,89,.1);
+      color: #1e8a3f;
+    }
+    .polygon-result-status.error {
+      background: rgba(255,59,48,.1);
+      color: #c0392b;
+    }
+    .polygon-result-body {
+      padding: 12px 16px;
+    }
+    .polygon-reply-bubble {
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: rgba(245,246,248,.7);
+      border: 1px solid rgba(20,20,20,.05);
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .polygon-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .action.secondary {
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.72);
+    }
+    .action.secondary:hover {
+      background: rgba(20,20,20,.1);
     }
 
     .crm-compose {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 10px;
       align-items: center;
+      min-height: 64px;
+      padding: 10px 12px;
+      border: 1px solid var(--paper-line);
+      border-radius: 12px;
+      background: rgba(251,252,253,.7);
+      position: relative;
+    }
+
+    .send-button {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: rgba(20,20,20,.58);
+      font: inherit;
+      font-size: 20px;
+    }
+
+    .send-button {
+      width: auto;
+      min-width: 86px;
+      padding: 0 12px;
+      background: rgba(248,250,251,.82);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.08);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .send-button:disabled {
+      color: rgba(20,20,20,.34);
+      cursor: not-allowed;
+    }
+
+    .emoji-button {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: rgba(20,20,20,.58);
+      font: inherit;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .emoji-panel {
+      position: absolute;
+      right: 110px;
+      bottom: 58px;
+      z-index: 20;
+      display: none;
+      grid-template-columns: repeat(8, 30px);
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--paper-line);
+      border-radius: 12px;
+      background: rgba(251,252,253,.96);
+      box-shadow: 0 18px 42px rgba(26,32,37,.12), inset 0 1px 0 rgba(255,255,255,.76);
+    }
+
+    .emoji-panel.open {
+      display: grid;
+    }
+
+    .emoji-panel button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .emoji-panel button:hover {
+      background: rgba(20,20,20,.06);
+    }
+
+    .send-group {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .send-group .send-button {
+      border-radius: 9px;
+    }
+
+    .crm-compose input {
+      height: 34px;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      padding: 0 4px;
+      font-size: 14px;
+    }
+
+    .message-media {
+      display: grid;
+      gap: 8px;
+      min-width: min(260px, 100%);
+    }
+
+    .message-media img,
+    .message-media video {
+      width: 100%;
+      max-height: 320px;
+      object-fit: cover;
+      border-radius: 9px;
+      border: 1px solid rgba(20,20,20,.08);
+      background: rgba(20,20,20,.04);
+    }
+
+    .message-media audio {
+      width: 100%;
+      min-width: 220px;
+    }
+
+    .message-file {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(20,20,20,.78);
+      text-decoration: none;
+      font-weight: 680;
     }
 
     .crm-side {
-      gap: 12px;
+      gap: 14px;
       overflow: auto;
-      padding-right: 2px;
     }
 
     .crm-card {
       padding: 14px;
+      background: rgba(251,252,253,.68);
+    }
+
+    .client-card {
+      padding: 16px 18px 14px;
+    }
+
+    .crm-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .crm-card-title {
+      font-size: 15px;
+      line-height: 1.1;
+      font-weight: 780;
+    }
+
+    .crm-card-subtitle {
+      margin-top: 4px;
+      color: rgba(20,20,20,.48);
+      font-size: 11px;
+      line-height: 1.25;
+      font-weight: 560;
+    }
+
+    .crm-icon-button {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: rgba(20,20,20,.52);
+      font: inherit;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .crm-icon-button:hover {
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.75);
     }
 
     .client-top {
@@ -836,8 +1570,18 @@
       margin-bottom: 12px;
     }
 
+    .crm-card-head .client-top {
+      margin-bottom: 0;
+    }
+
     .client-name {
       font-size: 15px;
+      font-weight: 760;
+    }
+
+    .client-card .client-name {
+      font-size: 16px;
+      line-height: 1.15;
       font-weight: 760;
     }
 
@@ -845,6 +1589,189 @@
       color: rgba(20,20,20,.45);
       font-size: 12px;
       margin-top: 2px;
+    }
+
+    .client-profile-top {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) 24px;
+      gap: 13px;
+      align-items: start;
+    }
+
+    .client-card .crm-avatar {
+      width: 58px;
+      height: 58px;
+      font-size: 20px;
+    }
+
+    .client-profile-main {
+      min-width: 0;
+      display: grid;
+      gap: 7px;
+    }
+
+    .client-inline-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: rgba(20,20,20,.62);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .client-inline-line span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-inline-line strong {
+      color: rgba(20,20,20,.72);
+      font-weight: 650;
+    }
+
+    .client-profile-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 13px;
+      border-top: 1px solid rgba(20,20,20,.08);
+    }
+
+    .profile-line {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      min-height: 22px;
+      color: rgba(20,20,20,.58);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .profile-line strong {
+      color: rgba(20,20,20,.76);
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .profile-line button {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: rgba(20,20,20,.44);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .profile-line button:hover:not(:disabled) {
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.72);
+    }
+
+    .profile-line button:disabled {
+      opacity: .32;
+      cursor: default;
+    }
+
+    .profile-line .muted-value {
+      color: rgba(20,20,20,.36);
+      font-weight: 600;
+    }
+
+    .profile-action {
+      margin-top: 12px;
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid var(--paper-line);
+      border-radius: 9px;
+      background: rgba(251,252,253,.72);
+      color: rgba(20,20,20,.78);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 680;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.48);
+    }
+
+    .copy-mini {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: rgba(20,20,20,.5);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .copy-mini:hover:not(:disabled) {
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.72);
+    }
+
+    .copy-mini:disabled {
+      opacity: .35;
+      cursor: default;
+    }
+
+    .channel-line {
+      display: grid;
+      grid-template-columns: minmax(64px, .7fr) minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      color: rgba(20,20,20,.5);
+      font-size: 13px;
+    }
+
+    .channel-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      color: rgba(20,20,20,.72);
+      font-weight: 650;
+    }
+
+    .channel-icon {
+      min-width: 24px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid rgba(20,20,20,.1);
+      border-radius: 999px;
+      background: rgba(248,250,251,.8);
+      color: rgba(20,20,20,.58);
+      font-size: 9px;
+      font-weight: 720;
+    }
+
+    .profile-action:disabled {
+      cursor: default;
+      opacity: .48;
+    }
+
+    .deal-badge {
+      min-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 8px;
+      background: rgba(58,166,90,.12);
+      color: #2f8f4d;
+      font-size: 11px;
+      font-weight: 720;
     }
 
     .info-list {
@@ -855,8 +1782,10 @@
 
     .info-row {
       display: grid;
-      grid-template-columns: 96px minmax(0, 1fr);
+      grid-template-columns: minmax(86px, .8fr) minmax(0, 1fr);
       gap: 8px;
+      min-height: 20px;
+      align-items: center;
     }
 
     .info-label {
@@ -868,13 +1797,6 @@
       color: rgba(20,20,20,.76);
       font-weight: 650;
       overflow-wrap: anywhere;
-    }
-
-    .ai-control-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
     }
 
     .switch {
@@ -912,11 +1834,18 @@
       resize: vertical;
       border: 1px solid rgba(20,20,20,.1);
       border-radius: 14px;
-      background: rgba(238, 239, 237, .72);
+      background: rgba(248,250,251,.78);
       color: #111;
       padding: 12px;
       font: inherit;
       outline: none;
+    }
+
+    .note-foot {
+      margin-top: 7px;
+      color: rgba(20,20,20,.38);
+      font-size: 11px;
+      font-weight: 560;
     }
 
     .timeline {
@@ -952,6 +1881,559 @@
       font-size: 14px;
     }
 
+    #aiSellerScreen {
+      padding: clamp(18px, 2vw, 28px) clamp(20px, 2.4vw, 34px);
+    }
+
+    .seller-shell {
+      width: min(1240px, 100%);
+      min-height: 100%;
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(300px, 380px);
+      gap: clamp(16px, 1.8vw, 24px);
+      align-items: start;
+    }
+
+    .seller-column {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .seller-title {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .seller-title h1 {
+      margin: 0;
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .seller-title p {
+      margin: 0;
+      max-width: 720px;
+      color: rgba(20,20,20,.55);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .seller-card {
+      display: grid;
+      gap: 12px;
+      border: 1px solid rgba(20,20,20,.09);
+      border-radius: 8px;
+      background: rgba(251,252,253,.68);
+      padding: 14px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.72);
+    }
+
+    .seller-card h2,
+    .seller-card h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .seller-card p {
+      margin: 0;
+      color: rgba(20,20,20,.58);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .seller-status-row,
+    .seller-rule-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .seller-pill {
+      width: max-content;
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgba(238,242,244,.82);
+      color: rgba(20,20,20,.62);
+      font-size: 12px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .seller-pill.off .status-dot {
+      background: #b84a4a;
+    }
+
+    .seller-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .seller-list li {
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+      color: rgba(20,20,20,.68);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .seller-list li::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: rgba(20,20,20,.32);
+    }
+
+    .seller-rule-row {
+      min-height: 38px;
+      padding: 10px 0;
+      border-top: 1px solid rgba(20,20,20,.08);
+    }
+
+    .seller-rule-row:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .seller-toggle {
+      width: 42px;
+      height: 24px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(20,20,20,.16);
+      cursor: pointer;
+      position: relative;
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+    }
+
+    .seller-toggle::after {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      top: 3px;
+      left: 3px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 7px rgba(20,20,20,.18);
+    }
+
+    .seller-toggle.on {
+      background: rgba(58,166,90,.7);
+    }
+
+    .seller-toggle.on::after {
+      transform: translateX(18px);
+    }
+
+    .seller-inspector {
+      min-height: 220px;
+      overflow: auto;
+      border: 1px solid rgba(20,20,20,.08);
+      border-radius: 8px;
+      background: rgba(248,250,251,.82);
+      padding: 12px;
+      color: rgba(20,20,20,.66);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .seller-editor-shell {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .seller-editor-panel-title {
+      display: grid;
+      gap: 4px;
+      padding: 2px 0 0;
+    }
+
+    .seller-editor-panel-title h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .seller-editor-panel-title p {
+      margin: 0;
+      color: rgba(20,20,20,.55);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .seller-editor-card {
+      display: grid;
+      gap: 10px;
+    }
+
+    .seller-editor-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .seller-editor-title {
+      height: 38px;
+      font-size: 15px;
+      font-weight: 720;
+    }
+
+    .seller-editor-card textarea {
+      min-height: 150px;
+    }
+
+    .seller-save-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .seller-save-status {
+      color: rgba(20,20,20,.48);
+      font-size: 13px;
+    }
+
+    .seller-control {
+      width: min(1320px, 100%);
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .seller-control-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .seller-control-title {
+      display: grid;
+      gap: 8px;
+    }
+
+    .seller-control-title h1 {
+      margin: 0;
+      font-size: clamp(28px, 3.4vw, 42px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .seller-control-title p {
+      margin: 0;
+      max-width: 820px;
+      color: rgba(20,20,20,.56);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .seller-top-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .seller-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .seller-tab {
+      min-height: 36px;
+      border: 1px solid rgba(20,20,20,.09);
+      border-radius: 8px;
+      background: rgba(251,252,253,.62);
+      color: rgba(20,20,20,.62);
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 720;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .seller-tab.active {
+      background: #171717;
+      color: #fff;
+      border-color: #171717;
+      box-shadow: 0 12px 24px rgba(0,0,0,.12);
+    }
+
+    .seller-workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(340px, 460px) minmax(0, 1fr) minmax(300px, 360px);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .seller-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      border: 1px solid rgba(20,20,20,.09);
+      border-radius: 8px;
+      background: rgba(251,252,253,.66);
+      padding: 14px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.72);
+    }
+
+    .seller-panel-head {
+      display: grid;
+      gap: 4px;
+    }
+
+    .seller-panel-head h2 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .seller-panel-head p {
+      margin: 0;
+      color: rgba(20,20,20,.55);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .funnel-map {
+      display: grid;
+      gap: 8px;
+    }
+
+    .funnel-stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid rgba(20,20,20,.08);
+      border-radius: 8px;
+      background: rgba(248,250,251,.72);
+      padding: 11px 12px;
+      text-align: left;
+      color: #111;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .funnel-stage.active {
+      border-color: rgba(20,20,20,.24);
+      background: rgba(255,255,255,.92);
+      box-shadow: 0 12px 28px rgba(26,32,37,.08);
+    }
+
+    .funnel-stage-title {
+      font-size: 14px;
+      font-weight: 780;
+      line-height: 1.15;
+    }
+
+    .funnel-stage-meta {
+      margin-top: 4px;
+      color: rgba(20,20,20,.46);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .stage-editor {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stage-editor textarea {
+      min-height: 104px;
+      font-size: 14px;
+    }
+
+    .stage-editor label {
+      display: grid;
+      gap: 7px;
+      color: rgba(20,20,20,.58);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .stage-editor .examples-field textarea {
+      min-height: 150px;
+    }
+
+    .seller-block-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .seller-block-list textarea {
+      min-height: 132px;
+      font-size: 14px;
+    }
+
+    .seller-side-stack {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .seller-compact-list {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: rgba(20,20,20,.62);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .seller-compact-list li {
+      display: grid;
+      grid-template-columns: 7px minmax(0, 1fr);
+      gap: 8px;
+    }
+
+    .seller-compact-list li::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: rgba(20,20,20,.28);
+    }
+
+    .agent-settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .setting-card {
+      padding: 16px 18px;
+      border: 1px solid rgba(20,20,20,.08);
+      border-radius: 14px;
+      background: rgba(255,255,255,.72);
+      transition: box-shadow .18s ease;
+    }
+    .setting-card:hover {
+      box-shadow: 0 4px 16px rgba(26,32,37,.06);
+    }
+    .setting-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .setting-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: #111;
+    }
+    .setting-desc {
+      font-size: 12.5px;
+      color: rgba(20,20,20,.52);
+      margin: 0 0 10px;
+      line-height: 1.45;
+    }
+    .setting-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .setting-field label {
+      font-size: 12px;
+      color: rgba(20,20,20,.5);
+      font-weight: 600;
+      min-width: 40px;
+    }
+    .setting-field input {
+      padding: 6px 10px;
+      border: 1px solid rgba(20,20,20,.12);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 14px;
+      background: rgba(255,255,255,.9);
+    }
+    .setting-field input:focus {
+      border-color: rgba(20,20,20,.28);
+      outline: none;
+    }
+    .setting-hint {
+      font-size: 12px;
+      color: rgba(20,20,20,.4);
+      white-space: nowrap;
+    }
+    .setting-switch {
+      position: relative;
+      display: inline-block;
+      cursor: pointer;
+    }
+    .setting-switch input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .switch-track {
+      display: inline-block;
+      width: 42px;
+      height: 24px;
+      border-radius: 12px;
+      background: rgba(20,20,20,.16);
+      position: relative;
+      transition: background .22s ease;
+    }
+    .switch-track::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.16);
+      transition: transform .22s ease;
+    }
+    .setting-switch input:checked + .switch-track {
+      background: #34c759;
+    }
+    .setting-switch input:checked + .switch-track::after {
+      transform: translateX(18px);
+    }
+
+    .seller-tab-pane {
+      display: none;
+    }
+
+    .seller-tab-pane.active {
+      display: grid;
+    }
+
     @media (max-width: 980px) {
       body { overflow: auto; }
       .shell {
@@ -979,7 +2461,7 @@
       }
       .dialogs-layout {
         height: auto;
-        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
         grid-template-areas:
           "list chat"
           "side side";
@@ -987,6 +2469,42 @@
       .dialogs-list-column { grid-area: list; }
       .dialogs-chat-column { grid-area: chat; min-height: 620px; }
       .crm-side { grid-area: side; grid-template-columns: repeat(2, minmax(0, 1fr)); display: grid; overflow: visible; }
+      .seller-shell {
+        grid-template-columns: 1fr;
+      }
+      .seller-editor-shell {
+        grid-column: auto;
+      }
+      .seller-control-head,
+      .seller-workspace {
+        grid-template-columns: 1fr;
+      }
+      .seller-top-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (min-width: 981px) and (max-width: 1220px) {
+      .seller-shell {
+        grid-template-columns: minmax(260px, 320px) minmax(420px, 1fr);
+      }
+      .seller-shell > .seller-column:last-child {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .seller-shell > .seller-column:last-child .seller-card:first-child {
+        grid-column: 1 / -1;
+      }
+      .seller-workspace {
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      }
+      .seller-side-stack {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .seller-side-stack .seller-panel:first-child {
+        grid-column: 1 / -1;
+      }
     }
 
     @media (min-width: 981px) and (max-height: 760px) {
@@ -1041,8 +2559,8 @@
         min-height: 100vh;
         grid-template-columns: 1fr;
         grid-template-rows: auto 1fr;
-        gap: 14px;
-        padding: 12px;
+        gap: 8px;
+        padding: 8px;
       }
       .rail {
         position: sticky;
@@ -1051,20 +2569,34 @@
       }
       .rail-inner {
         width: 100%;
-        height: 54px;
+        height: 50px;
         flex-direction: row;
         justify-content: flex-start;
         padding: 0 10px;
-        border-radius: 16px;
+        border-radius: 12px;
       }
       .rail-spacer { display: none; }
       .main {
         overflow: visible;
-        padding: 8px 2px 24px;
+        padding: 0;
+      }
+      #connectScreen {
+        padding: 6px 0 0;
+      }
+      #aiSellerScreen {
+        padding: 6px 0 0;
       }
       .connect-grid {
         width: 100%;
         gap: 24px;
+      }
+      .seller-shell {
+        width: 100%;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+      .seller-title h1 {
+        font-size: 26px;
       }
       .model-row,
       .test-row {
@@ -1089,16 +2621,151 @@
         grid-template-rows: 260px auto;
       }
       .dialogs-layout {
+        height: calc(100vh - 74px);
+        min-height: 620px;
         grid-template-columns: 1fr;
         grid-template-areas:
           "list"
           "chat"
           "side";
       }
-      .dialogs-chat-column { min-height: 560px; }
-      .crm-side { grid-template-columns: 1fr; }
-      .crm-compose {
+      .mobile-crm-tabs {
+        position: sticky;
+        top: 58px;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        margin: 0 0 8px;
+        padding: 5px;
+        border: 1px solid rgba(20,20,20,.1);
+        border-radius: 13px;
+        background: rgba(231,235,238,.86);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.72);
+        backdrop-filter: blur(16px);
+      }
+      .mobile-crm-tab {
+        min-height: 36px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: transparent;
+        color: rgba(20,20,20,.62);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 760;
+      }
+      .mobile-crm-tab.active {
+        border-color: rgba(20,20,20,.12);
+        background: rgba(251,252,253,.88);
+        color: #111;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 8px 18px rgba(26,32,37,.08);
+      }
+      .crm-column {
+        padding: 16px 14px;
+        border-radius: 8px;
+      }
+      .dialogs-list-column,
+      .dialogs-chat-column,
+      .crm-side {
+        display: none;
+      }
+      .dialogs-layout[data-mobile-view="list"] .dialogs-list-column,
+      .dialogs-layout[data-mobile-view="chat"] .dialogs-chat-column,
+      .dialogs-layout[data-mobile-view="client"] .crm-side {
+        display: flex;
+      }
+      .dialogs-list-column {
+        grid-area: list;
+        min-height: 0;
+      }
+      .dialogs-chat-column {
+        grid-area: chat;
+        min-height: 0;
+      }
+      .crm-side {
+        grid-area: side;
         grid-template-columns: 1fr;
+        overflow: auto;
+      }
+      .crm-head {
+        min-height: 34px;
+        margin-bottom: 12px;
+      }
+      .crm-head h1 {
+        font-size: 24px;
+      }
+      .crm-head h2 {
+        font-size: 21px;
+      }
+      .channel-chips {
+        margin-bottom: 12px;
+      }
+      .dialog-item {
+        grid-template-columns: 46px minmax(0, 1fr) 58px;
+        padding: 12px 8px;
+      }
+      .dialog-avatar,
+      .crm-avatar {
+        width: 46px;
+        height: 46px;
+      }
+      .crm-chat-panel {
+        height: 100%;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        gap: 10px;
+      }
+      .chat-control-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+      .chat-control-head h1 {
+        grid-column: 1;
+      }
+      .chat-control-head .crm-pill {
+        justify-self: start;
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .chat-contact-row {
+        grid-template-columns: 44px minmax(0, 1fr);
+        min-height: 50px;
+      }
+      .chat-contact-avatar {
+        width: 44px;
+        height: 44px;
+      }
+      .crm-chat-box {
+        padding: 12px 0;
+        gap: 14px;
+      }
+      .crm-message {
+        max-width: min(82%, 360px);
+        padding: 11px 12px 9px;
+        font-size: 14px;
+      }
+      .crm-message-wrap.out {
+        padding-left: 0;
+      }
+      .crm-compose {
+        grid-template-columns: 1fr auto auto;
+        min-height: 58px;
+        padding: 8px;
+        gap: 8px;
+      }
+      .crm-compose input {
+        font-size: 13px;
+      }
+      .emoji-panel {
+        right: 8px;
+        bottom: 56px;
+        grid-template-columns: repeat(6, 30px);
+      }
+      .client-profile-top {
+        grid-template-columns: 54px minmax(0, 1fr) 24px;
+      }
+      .client-card .crm-avatar {
+        width: 54px;
+        height: 54px;
       }
     }
 
@@ -1130,6 +2797,13 @@
             <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
             <path d="M8 9h8"></path>
             <path d="M8 13h5"></path>
+          </svg>
+        </button>
+        <button class="rail-icon" type="button" aria-label="AI продавец" title="AI продавец" data-screen="seller">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 4 7l8 4 8-4-8-4z"></path>
+            <path d="M4 11l8 4 8-4"></path>
+            <path d="M4 15l8 4 8-4"></path>
           </svg>
         </button>
         <div class="rail-spacer"></div>
@@ -1220,7 +2894,12 @@
       </section>
 
       <section class="screen" id="dialogsScreen">
-        <div class="dialogs-layout">
+        <div class="mobile-crm-tabs" aria-label="Разделы CRM">
+          <button class="mobile-crm-tab active" type="button" data-mobile-crm-view="list">Диалоги</button>
+          <button class="mobile-crm-tab" type="button" data-mobile-crm-view="chat">Чат</button>
+          <button class="mobile-crm-tab" type="button" data-mobile-crm-view="client">Клиент</button>
+        </div>
+        <div class="dialogs-layout" id="dialogsLayout" data-mobile-view="list">
           <section class="crm-column dialogs-list-column">
             <div class="crm-head">
               <h1>Диалоги</h1>
@@ -1240,11 +2919,16 @@
 
           <section class="crm-column dialogs-chat-column">
             <div class="crm-chat-panel">
-              <div class="crm-head">
-                <div class="chat-title-block">
-                  <div class="chat-title-row">
-                    <h1 id="crmChatTitle">Чат</h1>
-                    <span class="crm-pill" id="crmAiPill"><span class="status-dot"></span>AI активен</span>
+              <div class="crm-head chat-control-head">
+                <h1>Чат</h1>
+                <span class="crm-pill" id="crmAiPill"><span class="status-dot"></span>AI активен<span class="pill-arrow">⌄</span></span>
+              </div>
+              <div class="chat-contact-row">
+                <div class="chat-contact-avatar" id="crmChatAvatar">S</div>
+                <div class="chat-contact-main">
+                  <div class="chat-contact-name">
+                    <span id="crmChatContactName">Клиент</span>
+                    <span class="chat-contact-source" id="crmChatSourceIcon">TG</span>
                   </div>
                   <div class="chat-subtitle" id="crmChatSubtitle">Выберите диалог слева</div>
                 </div>
@@ -1253,64 +2937,346 @@
                 <div class="crm-empty">Пока диалог не выбран.</div>
               </div>
               <div class="crm-compose">
-                <input id="crmReplyInput" placeholder="Ручной ответ появится следующим этапом" disabled>
-                <button class="action" id="takeOverChat" type="button">Взять на себя</button>
+                <input id="crmReplyInput" placeholder="Выберите диалог">
+                <button class="emoji-button" id="emojiToggle" type="button" aria-label="Эмоджи">☺</button>
+                <div class="emoji-panel" id="emojiPanel" aria-label="Быстрые эмоджи"></div>
+                <div class="send-group">
+                  <button class="send-button" id="crmSendReply" type="button" disabled>Отправить</button>
+                </div>
               </div>
             </div>
           </section>
 
           <section class="crm-column crm-side">
-            <div class="crm-card">
-              <div class="client-top">
+            <div class="crm-head">
+              <h2>Клиент</h2>
+            </div>
+            <div class="crm-card client-card">
+              <div class="client-profile-top">
                 <div class="crm-avatar" id="crmClientAvatar">S</div>
-                <div>
+                <div class="client-profile-main">
                   <div class="client-name" id="crmClientName">Клиент</div>
-                  <div class="client-muted" id="crmClientMeta">нет выбранного диалога</div>
+                  <div class="client-inline-line">
+                    <span>ID клиента: <strong id="crmClientIdValue">—</strong></span>
+                    <button class="copy-mini" id="copyCrmClientId" type="button" aria-label="Скопировать ID" disabled>⧉</button>
+                  </div>
+                  <div class="client-inline-line">
+                    <span id="crmUsernameValue">—</span>
+                    <button class="copy-mini" id="copyCrmUsername" type="button" aria-label="Скопировать username" disabled>⧉</button>
+                  </div>
+                  <div class="client-inline-line">
+                    <span id="crmPhoneValue">+7 (___) ___-__-__</span>
+                    <button class="copy-mini" id="editCrmPhone" type="button" aria-label="Редактировать телефон" disabled>✎</button>
+                  </div>
                 </div>
               </div>
-              <div class="info-list" id="crmClientInfo"></div>
+              <div class="client-profile-grid" id="crmClientInfo"></div>
+              <button class="profile-action" id="openCrmProfile" type="button" disabled>Открыть профиль</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen" id="aiSellerScreen">
+        <div class="seller-control">
+          <div class="seller-control-head">
+            <div class="seller-control-title">
+              <h1>AI продавец</h1>
+              <p>AI Control строится по классической воронке продаж: этап клиента, цель этапа, действия агента, запреты, примеры и передача человеку. Код может брать поведение только отсюда.</p>
+            </div>
+            <div class="seller-top-actions">
+              <span class="seller-pill off"><span class="status-dot off"></span>агент выключен</span>
+              <button class="action" id="saveSellerControl" type="button">Сохранить AI Control</button>
+            </div>
+          </div>
+
+          <nav class="seller-tabs" aria-label="Разделы AI Control">
+            <button class="seller-tab active" type="button" data-seller-tab="funnel">Воронка</button>
+            <button class="seller-tab" type="button" data-seller-tab="foundation">Основа агента</button>
+            <button class="seller-tab" type="button" data-seller-tab="memory">Память</button>
+            <button class="seller-tab" type="button" data-seller-tab="objections">Возражения</button>
+            <button class="seller-tab" type="button" data-seller-tab="products">Товары</button>
+            <button class="seller-tab" type="button" data-seller-tab="settings">Настройки</button>
+            <button class="seller-tab" type="button" data-seller-tab="inspector">Инспектор</button>
+            <button class="seller-tab" type="button" data-seller-tab="polygon">Полигон</button>
+          </nav>
+
+          <div class="seller-save-row">
+            <span class="seller-save-status" id="sellerSaveStatus">Загрузка AI Control...</span>
+          </div>
+
+          <section class="seller-workspace seller-tab-pane active" data-seller-pane="funnel">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Воронка продаж</h2>
+                <p>Выберите этап клиента. Справа редактируются правила именно этого этапа.</p>
+              </div>
+              <div class="funnel-map" id="sellerFunnelMap"></div>
             </div>
 
-            <div class="crm-card">
-              <div class="ai-control-row">
-                <div>
-                  <div class="client-name">AI контроль</div>
-                  <div class="client-muted" id="crmAiStateText">ожидает выбора диалога</div>
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2 id="sellerStageTitle">Настройки этапа</h2>
+                <p>Цель, действия, вопросы, запреты, примеры и условия передачи человеку.</p>
+              </div>
+              <div class="stage-editor" id="sellerStageEditor"></div>
+            </div>
+
+            <aside class="seller-side-stack">
+              <div class="seller-panel">
+                <div class="seller-panel-head">
+                  <h2>Инспектор запроса</h2>
+                  <p>Показывает, что будет иметь право попасть в compiler.</p>
                 </div>
-                <button class="switch" id="crmAiSwitch" type="button" aria-label="AI активен"></button>
+                <div class="seller-inspector" id="sellerInspector">Загрузка...</div>
               </div>
-            </div>
 
-            <div class="crm-card">
-              <div class="client-name">Сделка</div>
-              <div class="info-list" id="crmDealInfo"></div>
-            </div>
-
-            <div class="crm-card">
-              <div class="client-name">Заметки</div>
-              <textarea id="crmNotes" placeholder="Заметка по диалогу"></textarea>
-              <div class="actions">
-                <button class="action secondary" id="saveCrmNotes" type="button">Сохранить</button>
+              <div class="seller-panel">
+                <div class="seller-panel-head">
+                  <h2>Граница</h2>
+                  <p>Любое поведение сначала должно быть видимым правилом AI Control.</p>
+                </div>
+                <ul class="seller-compact-list">
+                  <li>Источник: data/ai-seller-control.json</li>
+                  <li>Compiler обязан читать только AI Control</li>
+                  <li>Код не хранит скрытые промты</li>
+                </ul>
               </div>
-            </div>
+            </aside>
+          </section>
 
-            <div class="crm-card">
-              <div class="client-name">События</div>
-              <div class="timeline" id="crmTimeline">
-                <div class="client-muted">Событий пока нет</div>
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="foundation">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Основа агента</h2>
+                <p>Постоянные правила, которые действуют на всех этапах воронки.</p>
+              </div>
+              <div class="seller-block-list" id="sellerFoundationEditor"></div>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="memory">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Память клиента</h2>
+                <p>Что AI может запоминать и что inspector обязан показать.</p>
+              </div>
+              <div class="seller-block-list" id="sellerMemoryEditor"></div>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="objections">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Возражения</h2>
+                <p>Общие возражения клиента и правила работы с ними.</p>
+              </div>
+              <div class="seller-block-list" id="sellerObjectionsEditor"></div>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="inspector">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Инспектор</h2>
+                <p>Здесь будет точный запрос модели. Сейчас показывает видимые источники и выбранный этап.</p>
+              </div>
+              <div class="seller-inspector" id="sellerInspectorFull">Загрузка...</div>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="products">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Каталог товаров</h2>
+                <p>Товары, которые AI-агент знает и может предлагать клиентам. Каталог автоматически инжектируется в system prompt.</p>
+              </div>
+              <div class="product-actions" style="margin-bottom: 16px; display: flex; gap: 10px;">
+                <button class="action" id="addProductBtn" type="button">+ Добавить товар</button>
+                <button class="action secondary" id="saveProductsBtn" type="button">Сохранить каталог</button>
+                <span class="seller-save-status" id="productSaveStatus"></span>
+              </div>
+              <div class="product-table-wrap">
+                <table class="product-table" id="productTable">
+                  <thead>
+                    <tr>
+                      <th>Название</th>
+                      <th>Цена</th>
+                      <th>Размеры</th>
+                      <th>Описание</th>
+                      <th>Фото URL</th>
+                      <th>В наличии</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="productTableBody"></tbody>
+                </table>
+              </div>
+              <p class="setting-desc" style="margin-top: 12px;">Товары в наличии будут автоматически добавлены в промпт. AI будет знать цены, размеры и наличие.</p>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="polygon">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Полигон</h2>
+                <p>Тестовые фразы для проверки поведения AI-продавца. Каждая строка — отдельный тест. Нажмите «Запустить все» чтобы прогнать фразы через текущую воронку.</p>
+              </div>
+              <div class="polygon-editor">
+                <textarea id="polygonPhrases" rows="10" placeholder="Это оригинал?&#10;Почему предоплата?&#10;Ты бот?&#10;Какой размер взять?&#10;На WB дешевле"></textarea>
+                <div class="polygon-actions">
+                  <button class="action" id="polygonRunAll" type="button">▶ Запустить все</button>
+                  <button class="action secondary" id="polygonAddPhrase" type="button">+ Добавить фразу</button>
+                  <span class="polygon-status" id="polygonStatus"></span>
+                </div>
+              </div>
+              <div id="polygonResults" class="polygon-results"></div>
+            </div>
+          </section>
+
+          <section class="seller-workspace seller-tab-pane" data-seller-pane="settings">
+            <div class="seller-panel">
+              <div class="seller-panel-head">
+                <h2>Настройки поведения агента</h2>
+                <p>Все параметры влияют на поведение AI-агента в реальном времени. Изменения применяются сразу после сохранения.</p>
+              </div>
+              <div class="agent-settings-grid" id="agentSettingsGrid">
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Автоответ AI</span>
+                    <label class="setting-switch"><input type="checkbox" id="setting_auto_reply_enabled" checked><span class="switch-track"></span></label>
+                  </div>
+                  <p class="setting-desc">Глобальный выключатель — AI отвечает клиентам автоматически</p>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Реакция на сообщение</span>
+                    <label class="setting-switch"><input type="checkbox" id="setting_reaction_enabled" checked><span class="switch-track"></span></label>
+                  </div>
+                  <p class="setting-desc">Ставить эмодзи-реакцию на сообщение клиента перед ответом (👀)</p>
+                  <div class="setting-field">
+                    <label>Эмодзи</label>
+                    <input type="text" id="setting_reaction_emoji" value="👀" maxlength="4" style="width: 60px; text-align: center; font-size: 20px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Не здороваться дважды</span>
+                    <label class="setting-switch"><input type="checkbox" id="setting_greeting_dedup_enabled" checked><span class="switch-track"></span></label>
+                  </div>
+                  <p class="setting-desc">Не начинать с приветствия если клиент писал недавно</p>
+                  <div class="setting-field">
+                    <label>Окно (часы)</label>
+                    <input type="number" id="setting_greeting_dedup_hours" value="4" min="1" max="24" step="1" style="width: 70px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Ночной режим</span>
+                    <label class="setting-switch"><input type="checkbox" id="setting_night_mode_enabled" checked><span class="switch-track"></span></label>
+                  </div>
+                  <p class="setting-desc">00:00–07:00 МСК: задержки x1.5–3, промпт «ответь коротко, предложи утром»</p>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Таймаут менеджера</span>
+                  </div>
+                  <p class="setting-desc">Через сколько секунд тишины менеджера AI снова начинает отвечать</p>
+                  <div class="setting-field">
+                    <label>Секунды</label>
+                    <input type="number" id="setting_manager_passive_seconds" value="120" min="10" max="600" step="10" style="width: 90px;">
+                    <span class="setting-hint" id="passiveHint">= 2 мин</span>
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Пауза перед ответом</span>
+                  </div>
+                  <p class="setting-desc">Задержка «прочитал» перед тем как начать печатать (мс)</p>
+                  <div class="setting-field">
+                    <label>мс</label>
+                    <input type="number" id="setting_read_delay_ms" value="1500" min="300" max="5000" step="100" style="width: 90px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Скорость набора</span>
+                  </div>
+                  <p class="setting-desc">Символов в секунду — чем меньше, тем медленнее «печатает»</p>
+                  <div class="setting-field">
+                    <label>сим/сек</label>
+                    <input type="number" id="setting_typing_speed_cps" value="30" min="5" max="100" step="5" style="width: 80px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Пауза между сообщениями</span>
+                  </div>
+                  <p class="setting-desc">Задержка между сообщениями в multi-reply (мс)</p>
+                  <div class="setting-field">
+                    <label>мс</label>
+                    <input type="number" id="setting_between_messages_delay_ms" value="2000" min="500" max="8000" step="100" style="width: 90px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Debounce (склейка сообщений)</span>
+                  </div>
+                  <p class="setting-desc">Сколько мс ждать тишины перед обработкой (склейка 2-3 сообщений в один запрос)</p>
+                  <div class="setting-field">
+                    <label>мс</label>
+                    <input type="number" id="setting_debounce_ms" value="3000" min="500" max="10000" step="500" style="width: 90px;">
+                  </div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="setting-header">
+                    <span class="setting-title">Vision (AI видит фото)</span>
+                    <label class="setting-switch"><input type="checkbox" id="setting_vision_enabled" checked><span class="switch-track"></span></label>
+                  </div>
+                  <p class="setting-desc">Когда клиент присылает фото, AI видит его содержимое через мультимодальный API (требует модель с поддержкой Vision: GPT-4o, Claude 3, Gemini Pro)</p>
+                </div>
+
+              </div>
+              <div class="actions" style="margin-top: 16px;">
+                <button class="action" id="saveAgentSettings" type="button">Сохранить настройки</button>
+                <span class="seller-save-status" id="agentSettingsSaveStatus"></span>
               </div>
             </div>
           </section>
         </div>
       </section>
     </section>
+  <!-- Inspector Panel -->
+  <div class="inspector-overlay" id="inspectorOverlay">
+    <div class="inspector-panel" id="inspectorPanel">
+      <div class="inspector-header">
+        <h2>🔍 Инспектор</h2>
+        <button class="inspector-close" id="inspectorClose" type="button" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="inspectorContent">Загрузка...</div>
+    </div>
+  </div>
   </main>
 
   <script>
     const chatBox = document.getElementById('chatBox');
     const secretFields = ['telegram_token', 'ai_key'];
     const testChatStorageKey = 'sai:test-chat:v1';
+    const quickEmojis = ['👍', '👌', '🙏', '✅', '🔥', '❤️', '🙂', '😉', '😊', '🤝', '💬', '📦', '🚚', '💳', '⭐', '✨'];
     const testHistory = [];
+    let aiSellerControl = null;
+    let sellerActiveStageId = '';
+    let sellerActiveTab = 'funnel';
     const crmState = {
       source: '',
       q: '',
@@ -1325,6 +3291,10 @@
       backupRefreshTimer: null,
       refreshInFlight: false,
       aiTypingChatId: '',
+      chatListSignature: '',
+      selectedChatSignature: '',
+      messagesSignature: '',
+      stickToBottomOnce: false,
     };
     let currentModel = '';
 
@@ -1516,17 +3486,271 @@
       chatBox.innerHTML = '<div class="empty-chat" id="emptyChat">Введите сообщение ниже, чтобы проверить ответ модели.</div>';
     }
 
+    function setSellerStatus(text, tone = '') {
+      const node = document.getElementById('sellerSaveStatus');
+      if (!node) return;
+      node.textContent = text;
+      node.dataset.tone = tone;
+    }
+
+    function updateSellerInspector(data = aiSellerControl) {
+      const nodes = [document.getElementById('sellerInspector'), document.getElementById('sellerInspectorFull')].filter(Boolean);
+      if (!nodes.length) return;
+      if (!data) {
+        nodes.forEach((node) => { node.textContent = 'Настройки еще не загружены.'; });
+        return;
+      }
+      const activeStage = getActiveSellerStage(data);
+      const text = [
+        'source: data/ai-seller-control.json',
+        'api: /api/ai-seller/control',
+        'agent_runtime: not connected',
+        'compiler: must read only AI Control',
+        `updated_at: ${data.updated_at || 'unknown'}`,
+        '',
+        `active_tab: ${sellerActiveTab}`,
+        `active_stage: ${activeStage ? `${activeStage.id}: ${activeStage.title}` : 'none'}`,
+        '',
+        'enabled_funnel:',
+        (data.funnel || []).filter((stage) => stage.enabled !== false).length
+          ? (data.funnel || []).filter((stage) => stage.enabled !== false).map((stage) => `- ${stage.id}: ${stage.title}`).join('\n')
+          : '- none',
+        '',
+        'visible_groups:',
+        `- foundation: ${(data.foundation || []).length}`,
+        `- memory: ${(data.memory || []).length}`,
+        `- objections: ${(data.objections || []).length}`,
+        `- polygon: ${(data.polygon || []).length}`,
+      ].join('\n');
+      nodes.forEach((node) => { node.textContent = text; });
+    }
+
+    function getActiveSellerStage(data = aiSellerControl) {
+      const funnel = Array.isArray(data?.funnel) ? data.funnel : [];
+      return funnel.find((stage) => stage.id === sellerActiveStageId) || funnel[0] || null;
+    }
+
+    function switchSellerTab(tabName) {
+      sellerActiveTab = tabName || 'funnel';
+      document.querySelectorAll('[data-seller-tab]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.sellerTab === sellerActiveTab);
+      });
+      document.querySelectorAll('[data-seller-pane]').forEach((pane) => {
+        pane.classList.toggle('active', pane.dataset.sellerPane === sellerActiveTab);
+      });
+      updateSellerInspector(collectSellerControl());
+    }
+
+    function renderSellerControl() {
+      if (!sellerActiveStageId) sellerActiveStageId = aiSellerControl?.funnel?.[0]?.id || '';
+      renderSellerFunnel();
+      renderSellerStageEditor();
+      renderSellerBlockEditor('foundation', 'sellerFoundationEditor');
+      renderSellerBlockEditor('memory', 'sellerMemoryEditor');
+      renderSellerBlockEditor('objections', 'sellerObjectionsEditor');
+      // Polygon: load phrases into textarea
+      const polygonPhrases = (aiSellerControl?.polygon || [])
+        .filter((b) => b.enabled && b.body)
+        .flatMap((b) => b.body.split('\n').map((l) => l.trim()).filter(Boolean));
+      const polygonTextarea = document.getElementById('polygonPhrases');
+      if (polygonTextarea && polygonPhrases.length) {
+        polygonTextarea.value = polygonPhrases.join('\n');
+      }
+      updateSellerInspector();
+    }
+
+    function renderSellerFunnel() {
+      const map = document.getElementById('sellerFunnelMap');
+      if (!map) return;
+      const funnel = Array.isArray(aiSellerControl?.funnel) ? aiSellerControl.funnel : [];
+      if (!funnel.length) {
+        map.innerHTML = '<div class="seller-panel-head"><p>Этапы воронки пока не заданы.</p></div>';
+        return;
+      }
+      map.innerHTML = funnel.map((stage) => `
+        <button class="funnel-stage ${stage.id === sellerActiveStageId ? 'active' : ''}" type="button" data-stage-id="${escapeHtml(stage.id)}">
+          <span>
+            <span class="funnel-stage-title">${escapeHtml(stage.title)}</span>
+            <span class="funnel-stage-meta">${stage.enabled === false ? 'выключен' : 'активен'} · цель, действия, вопросы, запреты</span>
+          </span>
+          <span class="seller-toggle ${stage.enabled === false ? '' : 'on'}" aria-hidden="true"></span>
+        </button>
+      `).join('');
+      map.querySelectorAll('[data-stage-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+          sellerActiveStageId = button.dataset.stageId || '';
+          renderSellerFunnel();
+          renderSellerStageEditor();
+          updateSellerInspector(collectSellerControl());
+        });
+      });
+    }
+
+    function renderSellerStageEditor() {
+      const editor = document.getElementById('sellerStageEditor');
+      const title = document.getElementById('sellerStageTitle');
+      if (!editor) return;
+      const stage = getActiveSellerStage();
+      if (!stage) {
+        editor.innerHTML = '<p>Выберите этап воронки.</p>';
+        return;
+      }
+      if (title) title.textContent = stage.title;
+      editor.innerHTML = `
+        <div class="seller-editor-head">
+          <input class="seller-editor-title" value="${escapeHtml(stage.title || '')}" data-stage-field="title" aria-label="Название этапа">
+          <button class="seller-toggle ${stage.enabled === false ? '' : 'on'}" type="button" data-stage-enabled aria-label="Включить или выключить этап"></button>
+        </div>
+        ${stageTextarea('goal', 'Цель этапа', stage.goal)}
+        ${stageTextarea('actions', 'Что AI должен сделать', stage.actions)}
+        ${stageTextarea('questions', 'Что спросить у клиента', stage.questions)}
+        ${stageTextarea('objections', 'Какие сомнения закрывать', stage.objections)}
+        ${stageTextarea('forbidden', 'Что нельзя говорить', stage.forbidden)}
+        ${stageTextarea('examples', 'Примеры ответов', stage.examples, 'examples-field')}
+        ${stageTextarea('handoff', 'Когда звать человека', stage.handoff)}
+      `;
+      editor.querySelector('[data-stage-enabled]')?.addEventListener('click', (event) => {
+        event.currentTarget.classList.toggle('on');
+        syncActiveStageFromEditor();
+      });
+      editor.querySelectorAll('[data-stage-field]').forEach((field) => {
+        field.addEventListener('input', syncActiveStageFromEditor);
+      });
+    }
+
+    function stageTextarea(field, label, value, className = '') {
+      return `
+        <label class="${className}">
+          ${escapeHtml(label)}
+          <textarea data-stage-field="${escapeHtml(field)}">${escapeHtml(value || '')}</textarea>
+        </label>
+      `;
+    }
+
+    function syncActiveStageFromEditor() {
+      const editor = document.getElementById('sellerStageEditor');
+      const stage = getActiveSellerStage();
+      if (!editor || !stage) return;
+      editor.querySelectorAll('[data-stage-field]').forEach((field) => {
+        stage[field.dataset.stageField] = field.value.trim();
+      });
+      stage.enabled = editor.querySelector('[data-stage-enabled]')?.classList.contains('on') !== false;
+      renderSellerFunnel();
+      updateSellerInspector(collectSellerControl());
+    }
+
+    function renderSellerBlockEditor(group, elementId) {
+      const editor = document.getElementById(elementId);
+      if (!editor) return;
+      const blocks = Array.isArray(aiSellerControl?.[group]) ? aiSellerControl[group] : [];
+      if (!blocks.length) {
+        editor.innerHTML = '<div class="seller-card"><p>Блоки пока не заданы.</p></div>';
+        return;
+      }
+      editor.innerHTML = blocks.map((block, index) => `
+        <div class="seller-card seller-editor-card" data-seller-group="${escapeHtml(group)}" data-seller-index="${index}">
+          <div class="seller-editor-head">
+            <input class="seller-editor-title" value="${escapeHtml(block.title || '')}" data-block-title aria-label="Название блока">
+            <button class="seller-toggle ${block.enabled === false ? '' : 'on'}" type="button" data-block-enabled aria-label="Включить или выключить блок"></button>
+          </div>
+          <textarea data-block-body aria-label="Текст блока">${escapeHtml(block.body || '')}</textarea>
+        </div>
+      `).join('');
+      editor.querySelectorAll('[data-block-enabled]').forEach((button) => {
+        button.addEventListener('click', () => {
+          button.classList.toggle('on');
+          updateSellerInspector(collectSellerControl());
+        });
+      });
+      editor.querySelectorAll('[data-block-title], [data-block-body]').forEach((field) => {
+        field.addEventListener('input', () => updateSellerInspector(collectSellerControl()));
+      });
+    }
+
+    function collectSellerControl() {
+      const collectBlocks = (group) => Array.from(document.querySelectorAll(`[data-seller-group="${group}"]`)).map((card, index) => {
+        const saved = aiSellerControl?.[group]?.[index] || {};
+        return {
+          id: saved.id || `${group}_${index + 1}`,
+          title: card.querySelector('[data-block-title]')?.value.trim() || saved.title || `Блок ${index + 1}`,
+          enabled: card.querySelector('[data-block-enabled]')?.classList.contains('on') !== false,
+          body: card.querySelector('[data-block-body]')?.value.trim() || '',
+        };
+      });
+      return {
+        version: aiSellerControl?.version || 2,
+        production_enabled: false,
+        updated_at: aiSellerControl?.updated_at || new Date().toISOString(),
+        foundation: collectBlocks('foundation').length ? collectBlocks('foundation') : (aiSellerControl?.foundation || []),
+        funnel: aiSellerControl?.funnel || [],
+        memory: collectBlocks('memory').length ? collectBlocks('memory') : (aiSellerControl?.memory || []),
+        objections: collectBlocks('objections').length ? collectBlocks('objections') : (aiSellerControl?.objections || []),
+        polygon: [{
+          id: 'test_cases',
+          title: 'Тестовые фразы',
+          enabled: true,
+          body: (document.getElementById('polygonPhrases')?.value || '').trim(),
+        }],
+      };
+    }
+
+    async function loadSellerControl() {
+      setSellerStatus('Загрузка настроек...');
+      try {
+        const response = await fetch('/api/ai-seller/control');
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось загрузить настройки');
+        aiSellerControl = data.data;
+        renderSellerControl();
+        setSellerStatus('Правила загружены. Изменения сохраняются только кнопкой.');
+      } catch (error) {
+        setSellerStatus(error.message || 'Не удалось загрузить настройки', 'error');
+        const editor = document.getElementById('sellerEditor');
+        if (editor) editor.innerHTML = `<div class="seller-card"><h2>Ошибка</h2><p>${escapeHtml(error.message || 'Не удалось загрузить настройки')}</p></div>`;
+      }
+    }
+
+    async function saveSellerControl() {
+      const nextControl = collectSellerControl();
+      setSellerStatus('Сохраняю видимые правила...');
+      try {
+        const response = await fetch('/api/ai-seller/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nextControl),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось сохранить правила');
+        aiSellerControl = data.data;
+        renderSellerControl();
+        setSellerStatus('Сохранено. AI Control — единственный источник будущего поведения агента.');
+      } catch (error) {
+        setSellerStatus(error.message || 'Не удалось сохранить правила', 'error');
+      }
+    }
+
     function switchScreen(screen) {
       document.querySelectorAll('[data-screen]').forEach((button) => {
         button.classList.toggle('active', button.dataset.screen === screen);
       });
       document.getElementById('connectScreen').classList.toggle('active', screen === 'connect');
       document.getElementById('dialogsScreen').classList.toggle('active', screen === 'dialogs');
+      document.getElementById('aiSellerScreen').classList.toggle('active', screen === 'seller');
       document.getElementById('mainArea').classList.toggle('crm-open', screen === 'dialogs');
       if (screen === 'dialogs') {
         startCrmLive();
         loadCrmChats();
       }
+      if (screen === 'seller') loadSellerControl();
+    }
+
+    function setMobileCrmView(view) {
+      const nextView = ['list', 'chat', 'client'].includes(view) ? view : 'list';
+      const layout = document.getElementById('dialogsLayout');
+      if (layout) layout.dataset.mobileView = nextView;
+      document.querySelectorAll('[data-mobile-crm-view]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.mobileCrmView === nextView);
+      });
     }
 
     function formatCrmDate(value, withSeconds = false) {
@@ -1540,9 +3764,24 @@
       }).format(new Date(value));
     }
 
+    function formatCrmTime(value) {
+      if (!value) return '';
+      return new Intl.DateTimeFormat('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(value));
+    }
+
     function sourceLabel(source) {
       const labels = { telegram: 'Telegram', vk: 'VK', max: 'MAX' };
       return labels[source] || source || 'Канал';
+    }
+
+    function sourceIcon(source) {
+      if (source === 'telegram') return 'TG';
+      if (source === 'vk') return 'VK';
+      if (source === 'max') return 'MAX';
+      return '•';
     }
 
     function initials(name) {
@@ -1579,6 +3818,118 @@
       return message.telegram_message_id ? 'отправлено' : 'создано';
     }
 
+    function receiptMarkup(message = {}) {
+      if (message.direction === 'in') return '';
+      if (message.read_at || message.readAt || message.status === 'read') {
+        return '<span class="receipt read" title="Прочитано">✓✓</span>';
+      }
+      if (message.telegram_message_id || message.status === 'sent') {
+        return '<span class="receipt sent" title="Отправлено">✓✓</span>';
+      }
+      return '<span class="receipt created" title="Создано">✓</span>';
+    }
+
+    function aiLatencyForMessage(message = {}) {
+      if (message.direction !== 'out' || message.role === 'operator') return '';
+      const messageTime = new Date(message.created_at || 0).getTime();
+      if (!messageTime) return '';
+      const turn = crmState.aiTurns.find((item) => {
+        const turnTime = new Date(item.created_at || item.updated_at || 0).getTime();
+        return item.latency_ms && Math.abs(turnTime - messageTime) < 120000;
+      });
+      return turn?.latency_ms ? `${(turn.latency_ms / 1000).toFixed(1).replace('.', ',')} сек` : '';
+    }
+
+    function signature(value) {
+      return JSON.stringify(value || null);
+    }
+
+    function chatListSignature(chats = []) {
+      return signature(chats.map((chat) => [
+        chat.id,
+        chat.updated_at,
+        chat.last_message_created_at,
+        chat.last_message_text,
+        chat.ai_enabled,
+        chat.status,
+        chat.customer_avatar_file_id,
+      ]));
+    }
+
+    function selectedChatSignature(chat = null, aiTypingChatId = '') {
+      if (!chat) return '';
+      return signature({
+        id: chat.id,
+        updated_at: chat.updated_at,
+        status: chat.status,
+        ai_enabled: chat.ai_enabled,
+        notes: chat.notes,
+        avatar_file_id: chat.avatar_file_id,
+        phone: chat.phone,
+        telegram_username: chat.telegram_username,
+        messages_count: chat.messages_count,
+        aiTyping: aiTypingChatId === chat.id,
+      });
+    }
+
+    function messagesSignature(messages = []) {
+      return signature(messages.map((message) => [
+        message.id,
+        message.direction,
+        message.role,
+        message.text,
+        message.created_at,
+        message.telegram_message_id,
+        message.raw,
+      ]));
+    }
+
+    function bestTelegramPhoto(raw = {}) {
+      const photos = Array.isArray(raw.photo) ? raw.photo : [];
+      return photos[photos.length - 1]?.file_id || '';
+    }
+
+    function telegramMedia(message = {}) {
+      const raw = message.raw || {};
+      const photoId = bestTelegramPhoto(raw);
+      if (photoId) return { type: 'photo', fileId: photoId, label: 'Фото' };
+      if (raw.video?.file_id) return { type: 'video', fileId: raw.video.file_id, label: 'Видео' };
+      if (raw.video_note?.file_id) return { type: 'video', fileId: raw.video_note.file_id, label: 'Кружок' };
+      if (raw.animation?.file_id) return { type: 'video', fileId: raw.animation.file_id, label: 'GIF' };
+      if (raw.voice?.file_id) return { type: 'audio', fileId: raw.voice.file_id, label: 'Голосовое' };
+      if (raw.audio?.file_id) return { type: 'audio', fileId: raw.audio.file_id, label: raw.audio.file_name || 'Аудио' };
+      if (raw.sticker?.file_id) return { type: 'sticker', fileId: raw.sticker.file_id, label: raw.sticker.emoji || 'Стикер' };
+      if (raw.document?.file_id) return { type: 'document', fileId: raw.document.file_id, label: raw.document.file_name || 'Файл' };
+      return null;
+    }
+
+    function isGeneratedMediaText(text = '') {
+      return /^\[(photo|фото|video|voice|document|audio|sticker|animation)\]/i.test(String(text || '').trim());
+    }
+
+    function renderTelegramMedia(message = {}) {
+      const media = telegramMedia(message);
+      if (!media) return '';
+      const url = `/api/telegram/file/${encodeURIComponent(media.fileId)}`;
+      if (media.type === 'photo' || media.type === 'sticker') {
+        return `<div class="message-media"><img src="${url}" alt="${escapeHtml(media.label)}" loading="lazy"></div>`;
+      }
+      if (media.type === 'video') {
+        return `<div class="message-media"><video src="${url}" controls playsinline></video></div>`;
+      }
+      if (media.type === 'audio') {
+        return `<div class="message-media"><audio src="${url}" controls></audio></div>`;
+      }
+      return `<div class="message-media"><a class="message-file" href="${url}" target="_blank" rel="noopener">⌁ ${escapeHtml(media.label)}</a></div>`;
+    }
+
+    function renderMessageBody(message = {}) {
+      const media = renderTelegramMedia(message);
+      const text = String(message.text || '').trim();
+      const shouldShowText = text && !(media && isGeneratedMediaText(text));
+      return `${media}${shouldShowText ? `<div class="crm-message-text">${escapeHtml(text)}</div>` : ''}`;
+    }
+
     function renderInfoRows(rows) {
       return rows.map(([label, value]) => `
         <div class="info-row">
@@ -1586,6 +3937,47 @@
           <div class="info-value">${escapeHtml(value || '—')}</div>
         </div>
       `).join('');
+    }
+
+    function profileLine(icon, value, copyValue = '') {
+      return `
+        <div class="profile-line">
+          <span>${escapeHtml(icon)}</span>
+          <strong>${escapeHtml(value || '—')}</strong>
+        </div>
+      `;
+    }
+
+    function channelProfileLine(source) {
+      return `
+        <div class="channel-line">
+          <span>Канал</span>
+          <strong class="channel-value"><span class="channel-icon">${escapeHtml(sourceIcon(source))}</span>${escapeHtml(sourceLabel(source))}</strong>
+        </div>
+      `;
+    }
+
+    function humanChatStatus(status = '') {
+      const labels = {
+        open: 'Открыт',
+        needs_human: 'Нужен человек',
+        closed: 'Закрыт',
+      };
+      return labels[status] || status || 'Открыт';
+    }
+
+    async function copyCrmValue(value) {
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        const input = document.createElement('input');
+        input.value = value;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        input.remove();
+      }
     }
 
     function setCrmLiveState(isOn, text = 'live') {
@@ -1602,7 +3994,8 @@
       return data;
     }
 
-    async function loadCrmChats() {
+    async function loadCrmChats(options = {}) {
+      const { refreshSelected = true } = options;
       if (crmState.refreshInFlight) return;
       crmState.refreshInFlight = true;
       const list = document.getElementById('crmChatList');
@@ -1612,10 +4005,14 @@
       if (crmState.q) params.set('q', crmState.q);
       try {
         const data = await crmFetch(`/api/crm/chats?${params.toString()}`);
-        crmState.chats = data.data || [];
+        const nextChats = data.data || [];
+        const nextSignature = chatListSignature(nextChats);
+        const changed = nextSignature !== crmState.chatListSignature;
+        crmState.chats = nextChats;
+        crmState.chatListSignature = nextSignature;
         if (!crmState.selectedChatId && crmState.chats[0]) crmState.selectedChatId = crmState.chats[0].id;
-        renderCrmChatList();
-        if (crmState.selectedChatId) await loadCrmChat(crmState.selectedChatId);
+        if (changed) renderCrmChatList();
+        if (refreshSelected && crmState.selectedChatId) await loadCrmChat(crmState.selectedChatId);
       } catch (error) {
         list.innerHTML = `<div class="crm-empty">${escapeHtml(error.message)}</div>`;
       } finally {
@@ -1626,9 +4023,9 @@
     function scheduleCrmRefresh(event = {}) {
       clearTimeout(crmState.liveRefreshTimer);
       crmState.liveRefreshTimer = setTimeout(async () => {
-        await loadCrmChats();
+        await loadCrmChats({ refreshSelected: false });
         if (crmState.selectedChatId && (!event.chatId || event.chatId === crmState.selectedChatId)) {
-          await loadCrmChat(crmState.selectedChatId);
+          await loadCrmChat(crmState.selectedChatId, { updateList: false });
         }
       }, 180);
     }
@@ -1667,7 +4064,10 @@
       });
       clearInterval(crmState.backupRefreshTimer);
       crmState.backupRefreshTimer = setInterval(() => {
-        if (document.getElementById('dialogsScreen').classList.contains('active')) loadCrmChats();
+        if (document.getElementById('dialogsScreen').classList.contains('active')) {
+          loadCrmChats({ refreshSelected: false });
+          if (crmState.selectedChatId) loadCrmChat(crmState.selectedChatId, { updateList: false });
+        }
       }, 5000);
     }
 
@@ -1688,7 +4088,7 @@
             <div class="dialog-main">
               <div class="dialog-title">
                 <span>${escapeHtml(name)}</span>
-                <span class="source-badge">${escapeHtml(sourceLabel(chat.source))}</span>
+                <span class="source-badge" title="${escapeHtml(sourceLabel(chat.source))}">${escapeHtml(sourceIcon(chat.source))}</span>
               </div>
               <div class="dialog-preview">${escapeHtml(preview)}</div>
             </div>
@@ -1700,13 +4100,44 @@
         `;
       }).join('');
       list.querySelectorAll('[data-chat-id]').forEach((button) => {
-        button.addEventListener('click', () => loadCrmChat(button.dataset.chatId));
+        button.addEventListener('click', () => {
+          setMobileCrmView('chat');
+          loadCrmChat(button.dataset.chatId, { updateList: true, forceRender: true });
+        });
       });
     }
 
-    async function loadCrmChat(chatId) {
+    function updateManualReplyState() {
+      const input = document.getElementById('crmReplyInput');
+      const button = document.getElementById('crmSendReply');
+      const canUseChat = Boolean(crmState.selectedChatId && crmState.selectedChat);
+      const canSend = Boolean(canUseChat && input.value.trim());
+      input.disabled = !canUseChat;
+      input.placeholder = canUseChat ? 'Введите сообщение...' : 'Выберите диалог';
+      button.disabled = !canSend;
+    }
+
+    function scrollCrmMessagesToBottom() {
+      const box = document.getElementById('crmMessages');
+      if (!box) return;
+      box.scrollTop = box.scrollHeight;
+      requestAnimationFrame(() => {
+        box.scrollTop = box.scrollHeight;
+      });
+      setTimeout(() => {
+        box.scrollTop = box.scrollHeight;
+      }, 80);
+    }
+
+    async function loadCrmChat(chatId, options = {}) {
+      const { updateList = true, forceRender = false } = options;
+      const isDifferentChat = crmState.selectedChatId !== chatId;
       crmState.selectedChatId = chatId;
-      renderCrmChatList();
+      if (isDifferentChat) {
+        crmState.selectedChatSignature = '';
+        crmState.messagesSignature = '';
+      }
+      if (updateList) renderCrmChatList();
       const [chat, messages, aiTurns, events] = await Promise.all([
         crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}`),
         crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/messages?limit=80`),
@@ -1717,91 +4148,127 @@
       crmState.messages = messages.data || [];
       crmState.aiTurns = aiTurns.data || [];
       crmState.events = events.data || [];
-      renderCrmSelectedChat();
+      renderCrmSelectedChat({ forceRender });
+      updateManualReplyState();
     }
 
-    function renderCrmSelectedChat() {
+    function renderCrmSelectedChat(options = {}) {
+      const { forceRender = false } = options;
       const chat = crmState.selectedChat;
       if (!chat) return;
+      const nextSelectedSignature = selectedChatSignature(chat, crmState.aiTypingChatId);
+      const selectedChanged = forceRender || nextSelectedSignature !== crmState.selectedChatSignature;
+      crmState.selectedChatSignature = nextSelectedSignature;
       const name = chat.display_name || chat.title || chat.external_chat_id || 'Клиент';
-      const username = chat.telegram_username ? `@${chat.telegram_username}` : '';
+      const rawUsername = chat.telegram_username || '';
+      const username = rawUsername ? `@${rawUsername}` : '';
+      const internalCustomerId = chat.customer_id || '';
+      const visibleCustomerId = chat.telegram_user_id || chat.external_chat_id || '';
       const isTyping = crmState.aiTypingChatId === chat.id;
-      document.getElementById('crmChatTitle').textContent = name;
-      document.getElementById('crmChatSubtitle').textContent = isTyping
-        ? `AI печатает... · ${activityText(chat)}`
-        : `${sourceLabel(chat.source)} · ${chat.status || 'open'} · ${chat.messages_count || 0} сообщений · ${activityText(chat)}`;
-      document.getElementById('crmClientName').textContent = name;
-      document.getElementById('crmClientMeta').textContent = [username || sourceLabel(chat.source), activityText(chat)].filter(Boolean).join(' · ');
-      setAvatarNode('crmClientAvatar', name, chat.avatar_file_id || '');
-      document.getElementById('crmNotes').value = chat.notes || '';
+      if (selectedChanged) {
+        document.getElementById('crmChatContactName').textContent = name;
+        document.getElementById('crmChatSubtitle').textContent = isTyping
+          ? `AI печатает... · ${activityText(chat)}`
+          : `${activityText(chat).replace('активность ', 'был(а) ')}`;
+        setAvatarNode('crmChatAvatar', name, chat.avatar_file_id || '');
+        document.getElementById('crmChatSourceIcon').textContent = sourceIcon(chat.source);
+        document.getElementById('crmClientName').textContent = name;
+        document.getElementById('crmClientIdValue').textContent = visibleCustomerId || '—';
+        document.getElementById('crmUsernameValue').textContent = username || '@username';
+        document.getElementById('crmPhoneValue').textContent = chat.phone || '+7 (___) ___-__-__';
+        setAvatarNode('crmClientAvatar', name, chat.avatar_file_id || '');
+      }
+
+      const copyIdButton = document.getElementById('copyCrmClientId');
+      copyIdButton.disabled = !visibleCustomerId;
+      copyIdButton.onclick = () => copyCrmValue(String(visibleCustomerId || ''));
+      const copyUsernameButton = document.getElementById('copyCrmUsername');
+      copyUsernameButton.disabled = !username;
+      copyUsernameButton.onclick = () => copyCrmValue(username);
+      const editPhoneButton = document.getElementById('editCrmPhone');
+      editPhoneButton.disabled = !internalCustomerId;
+      editPhoneButton.onclick = () => editCustomerPhone(internalCustomerId, chat.phone || '');
 
       const aiPill = document.getElementById('crmAiPill');
-      aiPill.innerHTML = `<span class="status-dot${chat.ai_enabled ? '' : ' off'}"></span>${isTyping ? 'AI печатает' : chat.ai_enabled ? 'AI активен' : 'AI выключен'}`;
-      const aiSwitch = document.getElementById('crmAiSwitch');
-      aiSwitch.classList.toggle('on', Boolean(chat.ai_enabled));
-      document.getElementById('crmAiStateText').textContent = chat.ai_enabled ? 'AI отвечает сам' : 'ручной контроль';
+      aiPill.innerHTML = `<span class="status-dot${chat.ai_enabled ? '' : ' off'}"></span>${isTyping ? 'AI печатает' : chat.ai_enabled ? 'AI активен' : 'AI выключен'}<span class="pill-arrow">⌄</span>`;
 
-      document.getElementById('crmClientInfo').innerHTML = renderInfoRows([
-        ['Канал', sourceLabel(chat.source)],
-        ['Внешний ID', chat.external_chat_id],
-        ['Username', username],
-        ['Телефон', chat.phone],
-        ['Активность', activityText(chat)],
-      ]);
+      if (selectedChanged) {
+        document.getElementById('crmClientInfo').innerHTML = [
+          profileLine('◷', `Локальное время: ${formatCrmDate(new Date(), true)}`),
+          profileLine('◴', `Первый диалог: ${formatCrmDate(chat.created_at)}`),
+          channelProfileLine(chat.source),
+        ].join('');
+      }
 
-      const lastTurn = crmState.aiTurns[0] || {};
-      document.getElementById('crmDealInfo').innerHTML = renderInfoRows([
-        ['Статус', chat.status],
-        ['Приоритет', String(chat.priority || 0)],
-        ['AI ходов', String(chat.ai_turns_count || 0)],
-        ['Задержка AI', lastTurn.latency_ms ? `${(lastTurn.latency_ms / 1000).toFixed(1).replace('.', ',')} сек` : '—'],
-      ]);
+      const profileButton = document.getElementById('openCrmProfile');
+      profileButton.disabled = !rawUsername;
+      profileButton.onclick = () => {
+        if (rawUsername) window.open(`https://t.me/${rawUsername}`, '_blank', 'noopener');
+      };
 
       renderCrmMessages();
-      renderCrmTimeline();
+    }
+
+    async function editCustomerPhone(customerId, currentPhone = '') {
+      if (!customerId) return;
+      const phone = window.prompt('Телефон клиента', currentPhone || '');
+      if (phone === null) return;
+      const response = await fetch(`/api/crm/customers/${encodeURIComponent(customerId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        alert(data.error || 'Не удалось сохранить телефон');
+        return;
+      }
+      if (crmState.selectedChatId) await loadCrmChat(crmState.selectedChatId, { updateList: true, forceRender: true });
     }
 
     function renderCrmMessages() {
       const box = document.getElementById('crmMessages');
       if (!crmState.messages.length) {
+        crmState.messagesSignature = '';
         box.innerHTML = '<div class="crm-empty">Сообщений пока нет.</div>';
         return;
       }
-      box.innerHTML = crmState.messages.map((message) => {
+      const nextMessagesSignature = messagesSignature(crmState.messages);
+      const messagesChanged = nextMessagesSignature !== crmState.messagesSignature;
+      if (!messagesChanged) return;
+      crmState.messagesSignature = nextMessagesSignature;
+      const shouldStickToBottom = crmState.stickToBottomOnce;
+      crmState.stickToBottomOnce = false;
+      const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      const boxTop = box.getBoundingClientRect().top;
+      const anchor = Array.from(box.querySelectorAll('[data-message-id]')).find((node) => (
+        node.getBoundingClientRect().bottom >= boxTop
+      ));
+      const anchorId = anchor?.dataset.messageId || '';
+      const anchorOffset = anchor ? anchor.getBoundingClientRect().top - boxTop : 0;
+      const messagesHtml = [...crmState.messages].reverse().map((message) => {
         const direction = message.direction === 'in' ? 'in' : 'out';
-        const role = direction === 'in' ? 'Клиент' : message.role === 'operator' ? 'Оператор' : 'AI';
-        const name = crmState.selectedChat?.display_name || crmState.selectedChat?.title || 'Клиент';
-        const avatar = direction === 'in'
-          ? avatarMarkup(name, crmState.selectedChat?.avatar_file_id || '', 'crm-message-avatar')
-          : `<div class="crm-message-avatar">${escapeHtml(role === 'Оператор' ? 'ОП' : 'AI')}</div>`;
-        const head = direction === 'in'
-          ? `${avatar}<span>${escapeHtml(role)}</span>`
-          : `<span>${escapeHtml(role)}</span>${avatar}`;
+        const latency = aiLatencyForMessage(message);
         return `
-          <div class="crm-message ${direction}">
-            <div class="crm-message-head">${head}</div>
-            <div class="crm-message-text">${escapeHtml(message.text)}</div>
-            <div class="crm-message-meta">${escapeHtml(messageStatus(message))} · ${escapeHtml(formatCrmDate(message.created_at, true))}</div>
+          <div class="crm-message-wrap ${direction}" data-message-id="${escapeHtml(message.id)}">
+            <div class="crm-message ${direction}">
+              ${renderMessageBody(message)}
+              <div class="crm-message-meta">
+                <span>${escapeHtml(formatCrmTime(message.created_at))}</span>
+                ${receiptMarkup(message)}
+              </div>
+            </div>
+            ${latency ? `<div class="ai-inspect-row"><span class="ai-latency" style="margin:0">⌁ ${escapeHtml(latency)}</span><button class="inspect-btn" type="button" data-inspect-trace="${escapeHtml(message.trace_id || '')}" title="Инспектор AI">🔍</button></div>` : ''}
           </div>
         `;
       }).join('');
-    }
-
-    function renderCrmTimeline() {
-      const timeline = document.getElementById('crmTimeline');
-      const events = crmState.events.slice(0, 8);
-      if (!events.length) {
-        timeline.innerHTML = '<div class="client-muted">Событий пока нет</div>';
-        return;
+      box.innerHTML = `<div class="crm-date-separator">Сегодня</div>${messagesHtml}`;
+      if (shouldStickToBottom || wasNearBottom) {
+        scrollCrmMessagesToBottom();
+      } else if (anchorId) {
+        const nextAnchor = box.querySelector(`[data-message-id="${CSS.escape(anchorId)}"]`);
+        if (nextAnchor) box.scrollTop += nextAnchor.getBoundingClientRect().top - boxTop - anchorOffset;
       }
-      timeline.innerHTML = events.map((event) => `
-        <div class="timeline-item">
-          <div>
-            <strong>${escapeHtml(event.event_type)}</strong><br>
-            ${escapeHtml(formatCrmDate(event.created_at, true))}
-          </div>
-        </div>
-      `).join('');
     }
 
     async function updateSelectedChat(changes) {
@@ -1815,6 +4282,59 @@
       crmState.chats = crmState.chats.map((chat) => chat.id === data.data.id ? { ...chat, ...data.data } : chat);
       renderCrmChatList();
       renderCrmSelectedChat();
+    }
+
+    async function sendCrmReply() {
+      const input = document.getElementById('crmReplyInput');
+      const button = document.getElementById('crmSendReply');
+      const text = input.value.trim();
+      if (!crmState.selectedChatId || !text || button.disabled) return;
+      const originalText = input.value;
+      input.value = '';
+      button.disabled = true;
+      crmState.stickToBottomOnce = true;
+      try {
+        await crmFetch(`/api/crm/chats/${encodeURIComponent(crmState.selectedChatId)}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        await loadCrmChat(crmState.selectedChatId, { updateList: false, forceRender: false });
+        scrollCrmMessagesToBottom();
+      } catch (error) {
+        crmState.stickToBottomOnce = false;
+        input.value = originalText;
+        alert(error.message || 'Не удалось отправить сообщение');
+      } finally {
+        updateManualReplyState();
+      }
+    }
+
+    function initEmojiPanel() {
+      const panel = document.getElementById('emojiPanel');
+      const input = document.getElementById('crmReplyInput');
+      panel.innerHTML = quickEmojis.map((emoji) => (
+        `<button type="button" data-emoji="${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>`
+      )).join('');
+      panel.querySelectorAll('[data-emoji]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const emoji = button.dataset.emoji || '';
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? input.value.length;
+          input.value = `${input.value.slice(0, start)}${emoji}${input.value.slice(end)}`;
+          input.focus();
+          const nextCaret = start + emoji.length;
+          input.setSelectionRange(nextCaret, nextCaret);
+          panel.classList.remove('open');
+          updateManualReplyState();
+        });
+      });
+      document.getElementById('emojiToggle').addEventListener('click', () => {
+        panel.classList.toggle('open');
+      });
+      document.addEventListener('click', (event) => {
+        if (!panel.contains(event.target) && event.target.id !== 'emojiToggle') panel.classList.remove('open');
+      });
     }
 
     async function sendTest() {
@@ -1860,8 +4380,23 @@
     };
     document.getElementById('sendTest').onclick = sendTest;
     document.getElementById('clearTestChat').onclick = resetTestChat;
+    document.getElementById('saveSellerControl').onclick = saveSellerControl;
+    document.querySelectorAll('[data-seller-tab]').forEach((button) => {
+      button.addEventListener('click', () => switchSellerTab(button.dataset.sellerTab));
+    });
+    document.getElementById('crmSendReply').onclick = sendCrmReply;
+    document.getElementById('crmReplyInput').addEventListener('input', updateManualReplyState);
+    document.getElementById('crmReplyInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendCrmReply();
+      }
+    });
     document.querySelectorAll('[data-screen]').forEach((button) => {
       button.addEventListener('click', () => switchScreen(button.dataset.screen));
+    });
+    document.querySelectorAll('[data-mobile-crm-view]').forEach((button) => {
+      button.addEventListener('click', () => setMobileCrmView(button.dataset.mobileCrmView));
     });
     document.getElementById('crmSearch').addEventListener('input', (event) => {
       crmState.q = event.target.value.trim();
@@ -1876,12 +4411,6 @@
         loadCrmChats();
       });
     });
-    document.getElementById('crmAiSwitch').onclick = () => {
-      if (!crmState.selectedChat) return;
-      updateSelectedChat({ ai_enabled: !crmState.selectedChat.ai_enabled });
-    };
-    document.getElementById('takeOverChat').onclick = () => updateSelectedChat({ ai_enabled: false, status: 'needs_human' });
-    document.getElementById('saveCrmNotes').onclick = () => updateSelectedChat({ notes: document.getElementById('crmNotes').value });
     document.getElementById('testInput').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') sendTest();
     });
@@ -1898,6 +4427,386 @@
     loadLogs();
     loadDatabaseStatus();
     restoreTestChat();
+    initEmojiPanel();
+    updateManualReplyState();
+
+    // Inspector panel
+    function findAiTurnByTrace(traceId) {
+      if (!traceId) return null;
+      return crmState.aiTurns.find((t) => t.trace_id === traceId) || null;
+    }
+
+    function openInspector(traceId) {
+      const turn = findAiTurnByTrace(traceId);
+      const overlay = document.getElementById('inspectorOverlay');
+      const content = document.getElementById('inspectorContent');
+      if (!turn) {
+        content.innerHTML = '<p style="color:rgba(20,20,20,.5)">Данные инспектора для этого хода не найдены.</p>';
+      } else {
+        content.innerHTML = renderInspectorContent(turn);
+      }
+      overlay.classList.add('open');
+    }
+
+    function closeInspector() {
+      document.getElementById('inspectorOverlay').classList.remove('open');
+    }
+
+    document.getElementById('inspectorClose').addEventListener('click', closeInspector);
+    document.getElementById('inspectorOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeInspector();
+    });
+
+    // Delegated click on inspect buttons inside CRM messages
+    document.getElementById('crmMessages')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-inspect-trace]');
+      if (btn) openInspector(btn.dataset.inspectTrace);
+    });
+
+    function renderInspectorContent(turn) {
+      const sr = turn.structured_response || {};
+      const decision = sr.decision || '—';
+      const stage = sr.stage || '—';
+      const needsHuman = sr.needsHuman;
+      const needsHumanReason = sr.needsHumanReason || '';
+      const facts = sr.facts || {};
+      const reply = sr.reply || [];
+      const okBadge = turn.ok
+        ? '<span class="inspector-badge ok">✓ OK</span>'
+        : `<span class="inspector-badge error">✕ Ошибка</span>`;
+      const decisionBadge = `<span class="inspector-badge ${escapeHtml(decision)}">${escapeHtml(decision)}</span>`;
+      const stageBadge = stage !== '—' ? `<span class="inspector-badge">${escapeHtml(stage)}</span>` : '';
+      const humanBadge = needsHuman ? `<span class="inspector-badge escalate">🤚 Нужен менеджер</span>` : '';
+      const latencyText = turn.latency_ms ? `${(turn.latency_ms / 1000).toFixed(1)} сек` : '—';
+
+      const factsEntries = Object.entries(facts).filter(([,v]) => v);
+      const factsHtml = factsEntries.length
+        ? `<table class="inspector-facts-table">${factsEntries.map(([k,v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`).join('')}</table>`
+        : '<span style="color:rgba(20,20,20,.4);font-size:13px">Новых фактов нет</span>';
+
+      const replyHtml = reply.length
+        ? reply.map((r) => `<div style="padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.7);border:1px solid rgba(20,20,20,.06);margin-bottom:4px;font-size:13px">${escapeHtml(r)}</div>`).join('')
+        : '<span style="color:rgba(20,20,20,.4);font-size:13px">Нет ответа</span>';
+
+      const promptPreview = turn.compiled_prompt || '';
+      const promptId = 'inspector-prompt-' + Date.now();
+
+      return `
+        <div class="inspector-section">
+          <div class="inspector-section-title">Решение</div>
+          <div class="inspector-badges">${okBadge} ${decisionBadge} ${stageBadge} ${humanBadge}</div>
+          ${needsHumanReason ? `<div style="margin-top:6px;font-size:12px;color:rgba(20,20,20,.5)">Причина: ${escapeHtml(needsHumanReason)}</div>` : ''}
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Модель / Latency</div>
+          <div class="inspector-badges">
+            <span class="inspector-badge">${escapeHtml(turn.model || '—')}</span>
+            <span class="inspector-badge">${escapeHtml(latencyText)}</span>
+            <span class="inspector-badge">${escapeHtml(turn.history_length || 0)} сообщ.</span>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Ввод клиента</div>
+          <div class="inspector-pre compact">${escapeHtml(turn.input_text || '—')}</div>
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Память клиента</div>
+          <div class="inspector-pre compact">${escapeHtml(turn.memory_summary || 'Нет данных')}</div>
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Извлечённые факты</div>
+          ${factsHtml}
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Ответ AI</div>
+          ${replyHtml}
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Compiled Prompt</div>
+          <div class="inspector-pre" id="${promptId}" style="max-height:120px">${escapeHtml(promptPreview.slice(0, 500))}${promptPreview.length > 500 ? '…' : ''}</div>
+          ${promptPreview.length > 500 ? `<button class="inspector-toggle-prompt" onclick="
+            const el = document.getElementById('${promptId}');
+            if (el.dataset.expanded === '1') {
+              el.textContent = ${JSON.stringify(escapeHtml(promptPreview.slice(0, 500)))} + '…';
+              el.style.maxHeight = '120px';
+              el.dataset.expanded = '';
+              this.textContent = 'Показать полностью';
+            } else {
+              el.textContent = ${JSON.stringify(escapeHtml(promptPreview))};
+              el.style.maxHeight = 'none';
+              el.dataset.expanded = '1';
+              this.textContent = 'Свернуть';
+            }
+          ">Показать полностью</button>` : ''}
+        </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Trace ID</div>
+          <div style="font-size:12px;color:rgba(20,20,20,.45);font-family:monospace">${escapeHtml(turn.trace_id || '—')}</div>
+        </div>
+        ${turn.error ? `<div class="inspector-section"><div class="inspector-section-title">Ошибка</div><div class="inspector-pre compact" style="color:#c0392b">${escapeHtml(turn.error)}</div></div>` : ''}
+      `;
+    }
+
+    // Polygon test runner
+    document.getElementById('polygonRunAll')?.addEventListener('click', async () => {
+      const textarea = document.getElementById('polygonPhrases');
+      const resultsContainer = document.getElementById('polygonResults');
+      const statusEl = document.getElementById('polygonStatus');
+      const btn = document.getElementById('polygonRunAll');
+      const phrases = (textarea?.value || '').split('\n').map((l) => l.trim()).filter(Boolean);
+      if (!phrases.length) {
+        if (statusEl) statusEl.textContent = 'Введите хотя бы одну фразу';
+        return;
+      }
+      btn.disabled = true;
+      resultsContainer.innerHTML = phrases.map((phrase, i) => `
+        <div class="polygon-result-card" id="polygonResult${i}">
+          <div class="polygon-result-header">
+            <span class="polygon-result-phrase">${escapeHtml(phrase)}</span>
+            <span class="polygon-result-status pending" id="polygonStatus${i}">⏳ Ожидание</span>
+          </div>
+          <div class="polygon-result-body" id="polygonBody${i}" style="display:none"></div>
+        </div>
+      `).join('');
+      let passed = 0;
+      let failed = 0;
+      for (let i = 0; i < phrases.length; i++) {
+        const statusBadge = document.getElementById(`polygonStatus${i}`);
+        const bodyEl = document.getElementById(`polygonBody${i}`);
+        if (statusBadge) {
+          statusBadge.className = 'polygon-result-status running';
+          statusBadge.textContent = '⚡ Запрос...';
+        }
+        if (statusEl) statusEl.textContent = `Тест ${i + 1} из ${phrases.length}...`;
+        try {
+          const response = await fetch('/api/test-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: phrases[i] }),
+          });
+          const data = await response.json();
+          if (!data.ok) throw new Error(data.error || 'Ошибка AI');
+          const s = data.structured || {};
+          const decision = s.decision || 'reply';
+          const stage = s.stage || '—';
+          const replyParts = s.reply || [];
+          const facts = s.facts || {};
+          const latency = data.latencyMs ? `${(data.latencyMs / 1000).toFixed(1)} сек` : '—';
+          const factsEntries = Object.entries(facts).filter(([,v]) => v);
+          if (statusBadge) {
+            statusBadge.className = 'polygon-result-status ok';
+            statusBadge.textContent = `✓ ${decision} · ${latency}`;
+          }
+          if (bodyEl) {
+            bodyEl.style.display = '';
+            bodyEl.innerHTML = `
+              ${replyParts.map((r) => `<div class="polygon-reply-bubble">${escapeHtml(r)}</div>`).join('')}
+              <div class="polygon-meta">
+                <span class="inspector-badge ${escapeHtml(decision)}">${escapeHtml(decision)}</span>
+                <span class="inspector-badge">${escapeHtml(stage)}</span>
+                ${factsEntries.map(([k,v]) => `<span class="inspector-badge">${escapeHtml(k)}: ${escapeHtml(v)}</span>`).join('')}
+              </div>
+            `;
+          }
+          passed++;
+        } catch (err) {
+          if (statusBadge) {
+            statusBadge.className = 'polygon-result-status error';
+            statusBadge.textContent = `✕ Ошибка`;
+          }
+          if (bodyEl) {
+            bodyEl.style.display = '';
+            bodyEl.innerHTML = `<div style="color:#c0392b;font-size:13px">${escapeHtml(err.message)}</div>`;
+          }
+          failed++;
+        }
+      }
+      btn.disabled = false;
+      if (statusEl) statusEl.textContent = `Готово: ${passed} ✓ ${failed ? `, ${failed} ✕` : ''}`;
+    });
+
+    document.getElementById('polygonAddPhrase')?.addEventListener('click', () => {
+      const textarea = document.getElementById('polygonPhrases');
+      if (!textarea) return;
+      const phrase = prompt('Введите тестовую фразу клиента:');
+      if (phrase?.trim()) {
+        textarea.value = (textarea.value ? textarea.value + '\n' : '') + phrase.trim();
+      }
+    });
+
+    // Product catalog management
+    let productCatalog = [];
+
+    async function loadProducts() {
+      try {
+        const res = await fetch('/api/products');
+        const data = await res.json();
+        productCatalog = data.items || [];
+        renderProductTable();
+      } catch (e) {
+        console.error('Failed to load products:', e);
+      }
+    }
+
+    function renderProductTable() {
+      const tbody = document.getElementById('productTableBody');
+      if (!tbody) return;
+      if (productCatalog.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: rgba(20,20,20,.4);">Каталог пуст. Нажмите «+ Добавить товар»</td></tr>';
+        return;
+      }
+      tbody.innerHTML = productCatalog.map((p, i) => `
+        <tr data-product-index="${i}">
+          <td><input type="text" class="product-name-input" value="${escapeHtml(p.name || '')}" data-field="name"></td>
+          <td><input type="text" class="product-price-input" value="${escapeHtml(p.price || '')}" data-field="price" placeholder="0 ₽"></td>
+          <td><input type="text" class="product-sizes-input" value="${escapeHtml((p.sizes || []).join(', '))}" data-field="sizes" placeholder="40, 41, 42"></td>
+          <td><input type="text" class="product-desc-input" value="${escapeHtml(p.description || '')}" data-field="description"></td>
+          <td><input type="text" class="product-photo-input" value="${escapeHtml(p.photo_url || '')}" data-field="photo_url" placeholder="https://..."></td>
+          <td><input type="checkbox" class="product-stock-toggle" data-field="in_stock" ${p.in_stock ? 'checked' : ''}></td>
+          <td><button class="product-delete-btn" type="button" data-delete="${i}">✕</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function collectProductsFromTable() {
+      const rows = document.querySelectorAll('#productTableBody tr[data-product-index]');
+      return Array.from(rows).map((row, i) => {
+        const get = (field) => {
+          const el = row.querySelector(`[data-field="${field}"]`);
+          if (!el) return '';
+          if (el.type === 'checkbox') return el.checked;
+          return el.value.trim();
+        };
+        const sizesStr = get('sizes');
+        return {
+          id: productCatalog[i]?.id || `p${Date.now()}-${i}`,
+          name: get('name'),
+          price: get('price'),
+          sizes: sizesStr ? sizesStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+          description: get('description'),
+          photo_url: get('photo_url'),
+          in_stock: get('in_stock'),
+        };
+      });
+    }
+
+    document.getElementById('addProductBtn')?.addEventListener('click', () => {
+      productCatalog.push({
+        id: `p${Date.now()}`,
+        name: '',
+        price: '',
+        sizes: [],
+        description: '',
+        in_stock: true,
+        photo_url: '',
+      });
+      renderProductTable();
+    });
+
+    document.getElementById('productTableBody')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-delete]');
+      if (!btn) return;
+      const idx = Number(btn.dataset.delete);
+      productCatalog = collectProductsFromTable();
+      productCatalog.splice(idx, 1);
+      renderProductTable();
+    });
+
+    document.getElementById('saveProductsBtn')?.addEventListener('click', async () => {
+      const items = collectProductsFromTable();
+      const statusEl = document.getElementById('productSaveStatus');
+      try {
+        const res = await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items }),
+        });
+        const data = await res.json();
+        productCatalog = data.items || items;
+        renderProductTable();
+        if (statusEl) { statusEl.textContent = '✓ Сохранено'; setTimeout(() => statusEl.textContent = '', 3000); }
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = '✗ Ошибка'; setTimeout(() => statusEl.textContent = '', 3000); }
+      }
+    });
+
+    loadProducts();
+
+    // Agent settings tab
+    async function loadAgentSettings() {
+      try {
+        const res = await fetch('/config/status');
+        const data = await res.json();
+        const cfg = data.config || {};
+        const setCheck = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val !== false; };
+        const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+        setCheck('setting_auto_reply_enabled', cfg.auto_reply_enabled);
+        setCheck('setting_reaction_enabled', cfg.reaction_enabled);
+        setVal('setting_reaction_emoji', cfg.reaction_emoji || '👀');
+        setCheck('setting_greeting_dedup_enabled', cfg.greeting_dedup_enabled);
+        setVal('setting_greeting_dedup_hours', cfg.greeting_dedup_hours || 4);
+        setCheck('setting_night_mode_enabled', cfg.night_mode_enabled);
+        setVal('setting_manager_passive_seconds', cfg.manager_passive_seconds || 120);
+        setVal('setting_read_delay_ms', cfg.read_delay_ms || 1500);
+        setVal('setting_typing_speed_cps', cfg.typing_speed_cps || 30);
+        setVal('setting_between_messages_delay_ms', cfg.between_messages_delay_ms || 2000);
+        setVal('setting_debounce_ms', cfg.debounce_ms || 3000);
+        setCheck('setting_vision_enabled', cfg.vision_enabled);
+        updatePassiveHint();
+      } catch {}
+    }
+
+    function updatePassiveHint() {
+      const sec = Number(document.getElementById('setting_manager_passive_seconds')?.value || 120);
+      const hint = document.getElementById('passiveHint');
+      if (hint) {
+        if (sec >= 60) {
+          const min = Math.floor(sec / 60);
+          const rem = sec % 60;
+          hint.textContent = rem ? `= ${min} мин ${rem} сек` : `= ${min} мин`;
+        } else {
+          hint.textContent = `= ${sec} сек`;
+        }
+      }
+    }
+
+    const passiveInput = document.getElementById('setting_manager_passive_seconds');
+    if (passiveInput) passiveInput.addEventListener('input', updatePassiveHint);
+
+    document.getElementById('saveAgentSettings')?.addEventListener('click', async () => {
+      const status = document.getElementById('agentSettingsSaveStatus');
+      const getCheck = (id) => document.getElementById(id)?.checked !== false;
+      const getNum = (id) => Number(document.getElementById(id)?.value || 0);
+      const getStr = (id) => String(document.getElementById(id)?.value || '');
+      const payload = {
+        auto_reply_enabled: getCheck('setting_auto_reply_enabled'),
+        reaction_enabled: getCheck('setting_reaction_enabled'),
+        reaction_emoji: getStr('setting_reaction_emoji') || '👀',
+        greeting_dedup_enabled: getCheck('setting_greeting_dedup_enabled'),
+        greeting_dedup_hours: getNum('setting_greeting_dedup_hours') || 4,
+        night_mode_enabled: getCheck('setting_night_mode_enabled'),
+        manager_passive_seconds: getNum('setting_manager_passive_seconds') || 120,
+        read_delay_ms: getNum('setting_read_delay_ms') || 1500,
+        typing_speed_cps: getNum('setting_typing_speed_cps') || 30,
+        between_messages_delay_ms: getNum('setting_between_messages_delay_ms') || 2000,
+        debounce_ms: getNum('setting_debounce_ms') || 3000,
+        vision_enabled: getCheck('setting_vision_enabled'),
+      };
+      if (status) { status.textContent = 'Сохранение...'; status.dataset.tone = ''; }
+      try {
+        await fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (status) { status.textContent = 'Сохранено ✓'; status.dataset.tone = 'ok'; }
+        setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+      } catch (err) {
+        if (status) { status.textContent = 'Ошибка: ' + err.message; status.dataset.tone = 'error'; }
+      }
+    });
+
+    loadAgentSettings();
   </script>
 </body>
 </html>

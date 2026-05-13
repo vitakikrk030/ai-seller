@@ -828,3 +828,461 @@ Server verification:
 Server backup before deploy:
 
 - `/root/sai_backups/sai_before-crm-live-reliability-20260511-1040.tgz`
+
+## 2026-05-11 14:30:00 +03
+
+Strengthened the project passport with the supreme AI Control rule.
+
+Decision:
+
+- AI seller behavior must never be hardcoded.
+- The only allowed source of AI seller behavior is the visible control interface and the database/config records managed by that interface.
+- Code may only transport, store, validate, assemble, and execute visible settings.
+- If a behavior rule is not visible in AI Control, it must not affect production replies.
+
+Scope covered:
+
+- prompts;
+- role/persona;
+- tone;
+- sales psychology;
+- memory and context;
+- product/order handling;
+- size, delivery, payment, return, trust, and objection rules;
+- examples;
+- forbidden phrases;
+- fallback behavior;
+- guards and rewrite rules;
+- future channel-specific behavior.
+
+Files updated:
+
+- `docs/SAI_PASSPORT.md`
+
+Boundary:
+
+- Documentation only.
+- No runtime code changed.
+
+## 2026-05-11 15:40:00 +03
+
+Prepared documentation state before AI seller implementation.
+
+What changed:
+
+- Updated `docs/SAI_PASSPORT.md` to match the current CRM/transport foundation.
+- Updated `docs/SAI_DATABASE.md` with manual CRM reply, customer update, and Telegram file proxy endpoints.
+- Added `docs/SAI_AI_READINESS.md` as the pre-AI implementation readiness document.
+- Updated `docs/BACKUPS.md` with the fresh local backup created before documentation changes.
+
+Current project status:
+
+- The foundation is ready for the next stage.
+- The AI seller itself is not implemented yet.
+- CRM remains a monitoring and manual-reply surface.
+- AI behavior must be built only through the future `AI продавец` / AI Control section.
+
+Fresh local backup before this documentation preparation:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-prep-docs-20260511-143000.tgz`
+
+Boundary:
+
+- Documentation only.
+- No AI behavior, prompt, rule, sales logic, or hidden code was added.
+
+## 2026-05-12 12:28:10 +03
+
+Created the first S.AI seller brain design document.
+
+What changed:
+
+- Added `docs/SAI_SELLER_BRAIN.md`.
+- Defined the future seller as an AI agent for a personal manager, not as a bot.
+- Adapted the research from `/Users/alishereshbekov/Desktop/1.docx` to the real store model:
+  - blogger-led Telegram/MAX commerce;
+  - website storefront;
+  - factory replicas;
+  - 100% prepayment;
+  - published products treated as available;
+  - return and refund if the customer does not like the product;
+  - categories such as sneakers, fragrances, accessories, and electronics.
+- Captured visible future AI Control blocks for live-manager style, memory, replica honesty, prepayment, returns, categories, objections, order flow, inspector, and polygon.
+- Recorded that the document is design only and must not affect production until implemented as visible AI Control settings.
+
+Fresh local backup before this documentation change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-seller-brain-doc-20260512-122810.tgz`
+
+Boundary:
+
+- Documentation only.
+- No AI behavior, prompt, rule, memory logic, sales logic, or hidden code was added.
+
+## 2026-05-12 12:35:00 +03
+
+Added the first visible `AI продавец` sidebar section.
+
+What changed:
+
+- Added a new `AI продавец` rail item in `public/index.html`.
+- Added a visible design-only AI seller screen.
+- The screen shows the future personal-manager agent shell:
+  - store profile for the blogger-led Telegram/MAX replica model;
+  - live private-manager style principles;
+  - future visible customer memory categories;
+  - replica honesty, 100% prepayment, return, category, objection, inspector, and polygon placeholders.
+- The screen explicitly shows that production AI seller behavior is off.
+- Updated passport/readiness docs to record that only the visible shell exists.
+
+Fresh local backup before this UI change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-seller-shell-20260512-123500.tgz`
+
+Boundary:
+
+- No AI seller settings are saved yet.
+- No prompt compiler was added.
+- No memory injection was added.
+- No guardrail, fallback, sales logic, or hidden behavior was added.
+- Runtime AI replies are unchanged.
+
+## 2026-05-12 12:45:00 +03
+
+Made the first `AI продавец` rules editable without code changes.
+
+What changed:
+
+- Added visible seller-agent settings in `data/ai-seller-control.json`.
+- Added `/api/ai-seller/control` GET/POST endpoints.
+- Updated `public/index.html` so `AI продавец` loads, edits, toggles, previews, and saves visible rule blocks.
+- Added inspector text showing the saved source, active sections, and that production effect is false.
+
+Fresh local backup before this UI/control change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-editable-ai-seller-control-20260512-124500.tgz`
+
+Boundary:
+
+- No prompt compiler was connected.
+- No seller rule was injected into runtime AI replies.
+- No hidden prompt, guard, fallback, memory, or sales behavior was added in code.
+
+## 2026-05-12 13:55:00 +03
+
+Clarified the AI Control source-of-truth rule.
+
+What changed:
+
+- Updated `docs/SAI_PASSPORT.md` to state that `AI продавец` / AI Control is the source of truth for AI seller behavior.
+- Clarified that saved rules are not controlling replies only because the AI seller runtime/compiler is not connected yet.
+- Clarified that after the runtime/compiler is connected, behavior-changing settings must come only from AI Control.
+- Updated the `AI продавец` screen wording to remove ambiguity.
+- Added a clear `Промты и правила` heading and widened the editor layout on medium screens so editable rule fields are obvious.
+
+Fresh local backup before this wording change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-control-wording-20260512-135500.tgz`
+
+Boundary:
+
+- Wording and documentation only.
+- No hidden prompt, rule, guard, fallback, memory, or sales behavior was added in code.
+
+## 2026-05-12 14:10:00 +03
+
+Redesigned `AI продавец` as a sales-funnel AI Control interface.
+
+What changed:
+
+- Converted `data/ai-seller-control.json` to version 2.
+- Replaced flat `sections` with structured visible groups:
+  - `foundation`;
+  - `funnel`;
+  - `memory`;
+  - `objections`;
+  - `polygon`.
+- Added seven editable funnel stages:
+  - first touch;
+  - interest;
+  - trust;
+  - decision;
+  - checkout;
+  - post-payment support;
+  - return/conflict.
+- Each stage now has visible fields for goal, AI actions, client questions, objections, forbidden behavior, examples, and human handoff.
+- Rebuilt the `AI продавец` UI around tabs: `Воронка`, `Основа агента`, `Память`, `Возражения`, `Инспектор`, `Полигон`.
+- Updated `/api/ai-seller/control` normalization to preserve the funnel structure.
+
+Fresh local backup before this UI/control redesign:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-control-funnel-ui-20260512-141000.tgz`
+
+Boundary:
+
+- AI runtime/compiler is still not connected.
+- No hidden prompt, guard, fallback, memory, or sales behavior was added in code.
+- The new structure is visible and editable AI Control data only.
+
+## 2026-05-13 00:05:00 +03
+
+Implemented Phase 1: AI agent with prompt compiler, structured response, memory, and humanized sending.
+
+What changed:
+
+- Added `db/migrations/004_customer_facts.sql` — new table for storing extracted customer facts.
+- Updated `db/postgres.js`:
+  - Added `upsertCustomerFact()` — save/update a customer fact.
+  - Added `getCustomerFacts()` — retrieve all facts for a customer.
+  - Added `buildMemorySummary()` — build readable text summary for AI prompt.
+  - Added `getChatHistory()` — load last N messages from PostgreSQL.
+  - Added `customer_facts` to foundation status table check.
+- Updated `index.js`:
+  - Added `getMskTime()` — Moscow time with greeting selection (Доброе утро/Добрый день/Добрый вечер).
+  - Added `compileSystemPrompt()` — reads AI Control settings (foundation, funnel, objections) and assembles system prompt with time context and structured response format instruction.
+  - Added `compileAiRequest()` — combines system prompt + customer memory summary + chat history (50 messages) + user input into a full AI request.
+  - Added `parseStructuredResponse()` — parses model JSON response (reply[], facts, stage, decision, needs_human) with fallback to plain text.
+  - Updated `requestAi()` — now accepts compiled messages, returns structured response, temperature set to 0.75.
+  - Added `sendHumanizedReply()` — sends reply messages one by one with read delay, typing simulation (proportional to text length), and pauses between messages.
+  - Updated `POST /api/telegram/webhook` — uses compiler, handles decision (reply/wait/skip/escalate), saves extracted facts, sends via humanized reply.
+  - Updated `POST /api/test-chat` — uses the same `compileSystemPrompt()` as production, returns structured response and compiled prompt preview.
+
+AI agent behavior source:
+
+- System prompt is compiled ONLY from visible AI Control settings in `data/ai-seller-control.json`.
+- No hidden prompts, rules, or behavior was added in code.
+- The only hardcoded text is the structured response format instruction (JSON schema) and the greeting logic based on Moscow time.
+- Greeting is deterministic and visible (based on hour of day in Europe/Moscow timezone).
+
+Structured response contract:
+
+- `reply` — array of short messages (multiple Telegram messages).
+- `facts` — extracted customer facts (saved to customer_facts table).
+- `stage` — funnel stage id.
+- `decision` — reply / wait / skip / escalate.
+- `needs_human` — boolean for manager handoff.
+
+Fresh local backup before this change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-agent-phase1-20260512.tgz`
+
+Verification:
+
+- `node --check index.js` passed.
+- `node --check db/postgres.js` passed.
+- Server started on port 3001.
+- PostgreSQL connected, `customer_facts` table created via migration.
+- Test chat returned structured response with correct greeting, funnel stage, and parsed JSON.
+- Compiled prompt preview shows AI Control blocks loaded correctly.
+
+## 2026-05-13 00:40:00 +03
+
+Added batch debounce and AI cancellation on new message.
+
+What changed:
+
+- Added `DEBOUNCE_MS = 3000` constant.
+- Added `debounceBuffers` Map — buffers incoming messages per chat for 3 seconds.
+- Added `aiProcessing` Map — tracks active AI processing per chat with cancellation flag.
+- Added `processBatchedMessages()` — processes batched messages with cancellation checks at 3 points (after compile, after AI, before send).
+- Updated `POST /api/telegram/webhook`:
+  - Incoming messages are buffered per chat (3 second debounce).
+  - Each new message resets the debounce timer.
+  - If AI is already processing for this chat, the pending response is marked as cancelled.
+  - After debounce expires, all buffered texts are joined with newlines and sent as one request.
+
+New log events:
+
+- `BATCH_BUFFERED` — message added to existing buffer.
+- `BATCH_PROCESS` — debounce expired, processing N messages.
+- `AI_CANCEL_REQUESTED` — new message arrived, cancelling pending AI.
+- `AI_CANCELLED` — AI response discarded (with reason).
+
+Boundary:
+
+- This is transport reliability only.
+- No AI behavior, prompt, rule, or hidden logic was added.
+- Debounce timing is a constant (3 seconds), not AI behavior.
+
+Fresh local backup before this change:
+
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-batch-debounce-20260513.tgz`
+
+Verification:
+
+- `node --check index.js` passed.
+- Server started on port 3001.
+
+## 2026-05-13 00:50:00 +03
+
+Added manager takeover with passive mode and context preservation.
+
+What changed:
+
+- Manager detection: `from.id != chat.id` in business messages.
+- Manager messages saved as `role: operator`, `direction: out`.
+- Passive mode activates for 30 minutes when manager writes.
+- During passive mode AI does not respond.
+- After 30 min silence, AI resumes with full context (50 messages including manager replies).
+- Manager takeover cancels pending AI processing and debounce buffers.
+
+Boundary:
+
+- Transport reliability only. No AI behavior added.
+
+## 2026-05-13 10:00:00 +03
+
+Added livefeel features for humanized AI agent behavior.
+
+What changed:
+
+- Added `sendTelegramReaction()` — puts 👀 reaction on last client message before starting to type. Silently ignored if API not available.
+- Added `shouldSkipGreeting()` — checks if last message in chat was <4 hours ago. If yes, compiler tells the model NOT to greet again.
+- Added night mode — `isNight` flag (00:00-07:00 MSK). Night mode:
+  - Multiplies all response delays by 1.5-3x (random).
+  - Adds instruction to the prompt: answer briefly, offer to continue in the morning.
+- Added speed variability — all typing/read/between-message delays now vary by ±30% randomly. No two responses feel identical.
+- Added re-typing action between multi-message replies — status "typing" refreshes between each message bubble.
+- Added `pausedChats` guard in `processBatchedMessages()` — if chat was manually paused during debounce wait, batch is skipped.
+- Added `escalatedChats` persistence in `processBatchedMessages()` — when AI returns `decision: escalate`, the escalation is saved to the Map with reason, traceId, and timestamp so CRM shows it.
+- Buffer now tracks `lastMessageId` for reaction targeting.
+- `sendHumanizedReply()` now accepts `lastMessageId` and uses it for reaction.
+
+Behavioral impact:
+
+- Greeting dedup and night mode instructions are prompt-level (visible in AI Control compiler, not hardcoded behavior rules).
+- Reactions, speed variability, and delays are transport-level (how messages are delivered, not what they say).
+
+Fresh local backup before this change:
+
+- Created via `backups/before-livefeel-*.tgz`
+
+Verification:
+
+- `node --check index.js` passed.
+- Server started on port 3001.
+- Test chat returns correct structured response with greeting logic.
+- Health endpoint reports all systems OK.
+
+---
+
+## Phase 3: Agent Settings Tab + Inspector UI (2026-05-13)
+
+### Agent Settings Tab
+
+All agent behavior parameters moved from hardcode to AI Control → Настройки tab:
+
+| Setting | Config Key | Default | Control |
+|---|---|---|---|
+| Auto-reply | `auto_reply_enabled` | true | Toggle |
+| Reaction on message | `reaction_enabled` | true | Toggle + emoji picker |
+| Reaction emoji | `reaction_emoji` | 👀 | Text input |
+| Greeting dedup | `greeting_dedup_enabled` | true | Toggle |
+| Greeting dedup window | `greeting_dedup_hours` | 4 | Number (1-24 hours) |
+| Night mode | `night_mode_enabled` | true | Toggle |
+| Manager passive timeout | `manager_passive_seconds` | 120 | Number (10-600 sec) |
+| Read delay | `read_delay_ms` | 1500 | Number (300-5000 ms) |
+| Typing speed | `typing_speed_cps` | 30 | Number (5-100 chars/sec) |
+| Between messages delay | `between_messages_delay_ms` | 2000 | Number (500-8000 ms) |
+| Debounce | `debounce_ms` | 3000 | Number (500-10000 ms) |
+
+Architecture: All settings saved in `runtime-config.json`, exposed via `/config/status`,
+editable via `POST /config`. `DEBOUNCE_MS` constant replaced with `getDebounceMs()` function.
+
+### Inspector UI
+
+Full AI decision trace now stored in `ai_turns` table via migration `005_ai_turns_trace.sql`:
+
+New columns:
+- `compiled_prompt` — full system prompt sent to AI
+- `memory_summary` — customer memory at time of request
+- `input_text` — combined customer text from batch
+- `history_length` — number of messages in context
+- `structured_response` — full JSON: decision, stage, facts, reply, needsHuman
+
+Inspector panel in CRM:
+- Slide-out panel from right side (520px max)
+- Triggered by 🔍 button on AI messages in CRM chat
+- Shows: decision badge (reply/skip/wait/escalate), model, latency, history length,
+  customer input, memory, extracted facts table, AI reply preview,
+  compiled prompt (expandable), trace ID, error if any
+- Opens with smooth CSS animation, closes on overlay click or ✕ button
+
+Files modified:
+- `db/migrations/005_ai_turns_trace.sql` — new migration
+- `db/postgres.js` — extended recordAiTurn() and listCrmAiTurns()
+- `index.js` — trace context passed to requestAi() from both processBatchedMessages() and test-chat
+- `public/index.html` — CSS for inspector panel + badges, HTML overlay, JS for open/close/render
+
+Verification:
+- `node --check index.js` + `node --check db/postgres.js` passed
+- Migration 005 applied automatically on server start
+- Test chat AI turn stored with compiled_prompt (3403 chars), input_text (36 chars),
+  decision: reply, stage: interest in PostgreSQL
+- Health check: all systems OK
+- Inspector panel CSS and JS verified in browser
+
+## Phase 4: Product Context — Vision, Catalog, Photo Sending (2026-05-13)
+
+### Vision — AI видит фото клиента
+
+When a client sends a photo, the AI agent now **sees** the image content via the multimodal Vision API.
+
+How it works:
+1. `extractTelegramMedia(message)` — extracts `file_id` from photo/document/sticker
+2. `downloadTelegramFileBase64(fileId)` — downloads file from Telegram API → base64 data URI
+3. `compileAiRequest()` — builds OpenAI-compatible multimodal content: `[{ type: "text" }, { type: "image_url" }]`
+4. The AI model receives the actual image alongside the text message
+
+Config: `vision_enabled` toggle in AI Control → Настройки (default: on).
+If disabled or model doesn't support Vision, falls back to `[photo] Клиент прислал фото.` text.
+
+Files: `index.js` — new functions `extractTelegramMedia()`, `downloadTelegramFileBase64()`, updated `compileAiRequest()`, webhook buffer.
+
+### Каталог товаров — AI знает ассортимент
+
+Product catalog managed through AI Control → Товары tab.
+
+Architecture:
+- `data/product-catalog.json` — array of products
+- `GET /api/products` — load catalog
+- `POST /api/products` — save catalog
+- `compileSystemPrompt()` — auto-injects `### Каталог товаров` section with in-stock items (name, price, sizes, description)
+- AI agent uses catalog data to answer questions about prices, availability, sizes
+
+UI: New «Товары» tab with inline-editing table (name, price, sizes, description, photo URL, in_stock toggle, delete button).
+
+### Отправка фото товаров
+
+AI can now send product photos to clients.
+
+How it works:
+1. Prompt includes `send_photo` field in structured response format (only when catalog has photo URLs)
+2. `parseStructuredResponse()` extracts `send_photo` product ID
+3. `sendHumanizedReply()` looks up product in catalog, sends photo via `sendTelegramPhoto()` before text reply
+4. Photo message is recorded in chat history
+
+New function: `sendTelegramPhoto({ chatId, photoSource, caption, businessConnectionId })`
+
+### Settings added
+
+| Setting | Config Key | Default | Control |
+|---|---|---|---|
+| Vision | `vision_enabled` | true | Toggle in Настройки |
+
+### Files modified
+
+- `index.js` — Vision functions, catalog functions, photo sending, updated compile/parse/webhook
+- `public/index.html` — Товары tab (HTML + CSS + JS), Vision toggle
+- `data/product-catalog.json` — new file (empty template)
+
+### Verification
+
+- `node --check index.js` — SYNTAX OK
+- Server started on port 3001, health OK
+- `GET /api/products` returns catalog
+- Products tab renders in AI Control with table, buttons
+- Vision toggle visible in Настройки
+
+Backup before change:
+- Created via `backups/before-product-ctx-*.tgz`

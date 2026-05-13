@@ -28,6 +28,12 @@ Before every meaningful change or server deploy:
 
 ### Local
 
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-seller-shell-20260512-123500.tgz`
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-seller-brain-doc-20260512-122810.tgz`
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-control-funnel-ui-20260512-141000.tgz`
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-control-wording-20260512-135500.tgz`
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-editable-ai-seller-control-20260512-124500.tgz`
+- `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-ai-prep-docs-20260511-143000.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-crm-live-reliability-20260511-100331.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-remove-crm-refresh-button-20260511-094734.tgz`
 - `/Users/alishereshbekov/Desktop/Новая папка 10/Новая папка 5/backups/before-avatars-statuses-20260511-015733.tgz`
