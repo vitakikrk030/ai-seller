@@ -1762,6 +1762,17 @@
       opacity: .48;
     }
 
+    .profile-action.danger {
+      background: transparent;
+      border: 1px solid #e5e5e7;
+      color: #c44;
+    }
+
+    .profile-action.danger:hover {
+      background: #fef3f4;
+      border-color: #d99;
+    }
+
     .deal-badge {
       min-height: 22px;
       display: inline-flex;
@@ -2972,6 +2983,7 @@
               </div>
               <div class="client-profile-grid" id="crmClientInfo"></div>
               <button class="profile-action" id="openCrmProfile" type="button" disabled>Открыть профиль</button>
+              <button class="profile-action danger" id="resetChatHistory" type="button" disabled>Сбросить историю диалога</button>
             </div>
           </section>
         </div>
@@ -4204,6 +4216,21 @@
       profileButton.disabled = !rawUsername;
       profileButton.onclick = () => {
         if (rawUsername) window.open(`https://t.me/${rawUsername}`, '_blank', 'noopener');
+      };
+
+      const resetHistoryButton = document.getElementById('resetChatHistory');
+      resetHistoryButton.disabled = !chatId;
+      resetHistoryButton.onclick = async () => {
+        if (!chatId) return;
+        if (!window.confirm('Вы уверены, что хотите сбросить историю диалога? Это действие необратимо удалит все сообщения из БД и интерфейса.')) return;
+        const response = await fetch(`/api/crm/chats/${encodeURIComponent(chatId)}/reset-history`, { method: 'POST' });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          alert(err.error || 'Ошибка при сбросе истории');
+          return;
+        }
+        // Перезагружаем страницу чтобы интерфейс полностью очистился
+        window.location.reload();
       };
 
       renderCrmMessages();

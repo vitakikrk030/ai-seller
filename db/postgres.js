@@ -762,6 +762,53 @@ async function getChatHistory(chatId, limit = 50) {
   return result.rows.reverse();
 }
 
+async function resetChatHistory(chatId) {
+  ensureReady();
+
+  await query('begin');
+  try {
+    // Find customer_id for this chat
+    const chat = await query('select customer_id from chats where id = $1', [chatId]);
+    const customerId = chat.rows[0]?.customer_id || null;
+
+    // Delete events FIRST (before messages/ai_turns, so trace_id subqueries still match)
+    await query(`
+      delete from events
+      where
+        trace_id in (select trace_id from messages where chat_id = $1 and trace_id is not null
+                     union
+                     select trace_id from ai_turns where chat_id = $1 and trace_id is not null)
+        or payload->>'chatDbId' = $1::text
+    `, [chatId]);
+
+    // Delete all messages
+    await query('delete from messages where chat_id = $1', [chatId]);
+
+    // Delete all ai_turns
+    await query('delete from ai_turns where chat_id = $1', [chatId]);
+
+    // Delete customer_facts for this customer
+    if (customerId) {
+      await query('delete from customer_facts where customer_id = $1', [customerId]);
+    }
+
+    // Reset chat metadata
+    await query(`
+      update chats
+      set last_message_at = null,
+          status = 'open',
+          updated_at = now()
+      where id = $1
+    `, [chatId]);
+
+    await query('commit');
+    return { ok: true };
+  } catch (error) {
+    await query('rollback');
+    throw error;
+  }
+}
+
 module.exports = {
   init,
   status,
@@ -785,4 +832,5 @@ module.exports = {
   getCustomerFacts,
   buildMemorySummary,
   getChatHistory,
+  resetChatHistory,
 };

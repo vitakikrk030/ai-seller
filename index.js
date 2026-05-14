@@ -1322,6 +1322,24 @@ app.post('/api/crm/chats/:chatId/ai-resume', crmHandler(async (req, res) => {
   crmOk(res, getChatAiStatus(chat.external_chat_id));
 }));
 
+app.post('/api/crm/chats/:chatId/reset-history', crmHandler(async (req, res) => {
+  const chat = await db.getCrmChat(req.params.chatId);
+  if (!chat) {
+    res.status(404).json({ ok: false, error: 'Chat not found' });
+    return;
+  }
+  // Cancel any pending AI processing for this chat
+  const chatKey = String(chat.external_chat_id);
+  const pending = aiProcessing.get(chatKey);
+  if (pending) pending.cancelled = true;
+  const buf = debounceBuffers.get(chatKey);
+  if (buf) { clearTimeout(buf.timer); debounceBuffers.delete(chatKey); }
+  await db.resetChatHistory(req.params.chatId);
+  logEvent('CRM_CHAT_HISTORY_RESET', { chatId: chat.external_chat_id, chatDbId: chat.id });
+  emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'history.reset' });
+  crmOk(res, { ok: true });
+}));
+
 app.get('/api/crm/escalations', crmHandler(async (req, res) => {
   const list = [];
   for (const [chatId, esc] of escalatedChats.entries()) {
