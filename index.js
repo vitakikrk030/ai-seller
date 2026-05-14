@@ -3,6 +3,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const dns = require('node:dns').promises;
+const net = require('node:net');
 const express = require('express');
 const axios = require('axios');
 const db = require('./db/postgres');
@@ -39,6 +41,8 @@ const pausedChats = new Map();
 const escalatedChats = new Map();
 // Reactions cooldown: chatId -> last reaction timestamp
 const recentReactions = new Map();
+// Iwak page cache: url -> { expiresAt, data }
+const iwakPageCache = new Map();
 
 function getChatAiStatus(chatId) {
   const key = String(chatId);
@@ -397,6 +401,299 @@ function normalizeMessages(messages) {
     }))
     .filter((item) => item.content)
     .slice(-20);
+}
+
+function extractUrls(text = '') {
+  const matches = String(text || '').match(/https?:\/\/[^\s<>"')]+/gi);
+  return matches ? Array.from(new Set(matches.map((item) => item.trim()))) : [];
+}
+
+function normalizeIwakUrl(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || '').trim());
+    if (url.protocol !== 'https:') return null;
+    const host = url.hostname.toLowerCase();
+    if (host !== 'iwak.ru' && host !== 'www.iwak.ru') return null;
+    if (url.username || url.password || url.port) return null;
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractIwakProductIdFromUrl(urlString = '') {
+  try {
+    const url = new URL(urlString);
+    const pathMatch = url.pathname.match(/-(\d+)(?:\/)?$/);
+    return pathMatch?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+function isPrivateIp(ip = '') {
+  const type = net.isIP(ip);
+  if (!type) return true;
+  if (type === 4) {
+    if (ip.startsWith('10.')) return true;
+    if (ip.startsWith('127.')) return true;
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('169.254.')) return true;
+    const parts = ip.split('.').map(Number);
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    return false;
+  }
+  const normalized = ip.toLowerCase();
+  return normalized === '::1'
+    || normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+    || normalized.startsWith('fe80:')
+    || normalized.startsWith('::ffff:127.')
+    || normalized.startsWith('::ffff:10.')
+    || normalized.startsWith('::ffff:192.168.')
+    || /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(normalized);
+}
+
+async function assertSafeIwakHost(urlString) {
+  const url = new URL(urlString);
+  const host = url.hostname.toLowerCase();
+  if (host !== 'iwak.ru' && host !== 'www.iwak.ru') {
+    throw new Error('Only iwak.ru is allowed');
+  }
+  const answers = await dns.lookup(host, { all: true, verbatim: true });
+  if (!answers.length) throw new Error('Host resolution failed');
+  for (const answer of answers) {
+    if (isPrivateIp(answer.address)) {
+      throw new Error('Resolved address is not allowed');
+    }
+  }
+}
+
+function extractMetaContent(html, attrName, attrValue) {
+  const escaped = String(attrValue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`<meta[^>]+${attrName}=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>|<meta[^>]+content=["']([^"']+)["'][^>]+${attrName}=["']${escaped}["'][^>]*>`, 'i');
+  const match = html.match(pattern);
+  return (match && (match[1] || match[2]) || '').trim();
+}
+
+function extractJsonLdObjects(html) {
+  const matches = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const out = [];
+  for (const match of matches) {
+    const raw = String(match[1] || '').trim();
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) out.push(...parsed);
+      else out.push(parsed);
+    } catch {}
+  }
+  return out;
+}
+
+function stripHtmlToText(html = '') {
+  return String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseIwakProductPage(html, finalUrl) {
+  const text = stripHtmlToText(html);
+  const jsonLd = extractJsonLdObjects(html);
+  const productJson = jsonLd.find((item) => {
+    const type = item?.['@type'];
+    return type === 'Product' || (Array.isArray(type) && type.includes('Product'));
+  }) || {};
+  const offerJson = Array.isArray(productJson.offers) ? productJson.offers[0] : (productJson.offers || {});
+
+  const ogTitle = extractMetaContent(html, 'property', 'og:title') || extractMetaContent(html, 'name', 'twitter:title');
+  const ogDescription = extractMetaContent(html, 'property', 'og:description') || extractMetaContent(html, 'name', 'description');
+  const ogImage = extractMetaContent(html, 'property', 'og:image') || extractMetaContent(html, 'name', 'twitter:image');
+  const canonical = (() => {
+    const match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i);
+    return (match?.[1] || finalUrl || '').trim();
+  })();
+
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = (productJson.name || ogTitle || titleMatch?.[1] || '').replace(/\s+/g, ' ').trim();
+  const priceMeta = extractMetaContent(html, 'property', 'product:price:amount')
+    || extractMetaContent(html, 'name', 'price')
+    || String(offerJson.price || '').trim();
+  const currency = extractMetaContent(html, 'property', 'product:price:currency')
+    || String(offerJson.priceCurrency || 'RUB').trim();
+  const price = priceMeta ? `${priceMeta}${currency === 'RUB' ? ' ₽' : ` ${currency}`}` : '';
+
+  const oldPriceMatch = text.match(/(\d[\d\s]{2,})\s*₽\s*(\d[\d\s]{2,})\s*₽/);
+  const oldPrice = oldPriceMatch ? `${oldPriceMatch[1].replace(/\s+/g, '')} ₽` : '';
+
+  const sizeSet = new Set();
+  for (const match of text.matchAll(/\b(3[5-9]|4\d|5[0-9])\b/g)) {
+    const value = match[1];
+    if (Number(value) >= 35 && Number(value) <= 50) sizeSet.add(value);
+  }
+  const availability = /в наличии/i.test(text)
+    ? 'В наличии'
+    : /нет в наличии|отсутствует/i.test(text)
+      ? 'Нет в наличии'
+      : '';
+
+  const regionMatch = text.match(/(Россия\s*\/\s*Беларусь|Россия|Беларусь)/i);
+  const productIdMatch = finalUrl.match(/-(\d+)(?:\/)?$/) || text.match(/\bID[:\s#]*([0-9]{2,})\b/i);
+
+  return {
+    source: 'iwak.ru',
+    canonical_url: canonical || finalUrl,
+    title,
+    description: productJson.description || ogDescription || '',
+    price,
+    old_price: oldPrice,
+    currency,
+    sizes: Array.from(sizeSet).sort((a, b) => Number(a) - Number(b)),
+    availability,
+    region: regionMatch?.[1] || '',
+    product_id: productIdMatch?.[1] || '',
+    image: productJson.image?.[0] || productJson.image || ogImage || '',
+    text_excerpt: text.slice(0, 1200),
+  };
+}
+
+function normalizeIwakApiProduct(product, finalUrl) {
+  if (!product || typeof product !== 'object') return null;
+  const base = new URL(finalUrl).origin;
+  const imagePath = Array.isArray(product.images) && product.images[0] ? product.images[0] : (product.image || '');
+  return {
+    source: 'iwak.ru',
+    canonical_url: finalUrl,
+    title: String(product.name || '').trim(),
+    description: [product.brand, product.category, product.color].filter(Boolean).join(' · '),
+    price: product.price ? `${product.price} ₽` : '',
+    old_price: product.originalPrice ? `${product.originalPrice} ₽` : '',
+    currency: 'RUB',
+    sizes: Array.isArray(product.sizes) ? product.sizes.map(String) : [],
+    availability: product.deletedAt ? 'Нет в наличии' : 'В наличии',
+    region: 'Россия / Беларусь',
+    product_id: String(product.id || ''),
+    image: imagePath ? new URL(String(imagePath).replace(/^\.\//, '/'), base).toString() : '',
+    text_excerpt: '',
+    fetched_via: 'api',
+    raw_product: {
+      brand: String(product.brand || ''),
+      category: String(product.category || ''),
+      color: String(product.color || ''),
+      gender: String(product.gender || ''),
+    },
+  };
+}
+
+async function fetchIwakProductContext(rawUrl, traceId = '') {
+  const normalizedUrl = normalizeIwakUrl(rawUrl);
+  if (!normalizedUrl) return null;
+  const cached = iwakPageCache.get(normalizedUrl);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  await assertSafeIwakHost(normalizedUrl);
+  const productId = extractIwakProductIdFromUrl(normalizedUrl);
+  if (productId) {
+    try {
+      const apiUrl = new URL(`/api/products/${productId}`, normalizedUrl).toString();
+      const apiResponse = await axios.get(apiUrl, {
+        timeout: 5000,
+        maxRedirects: 0,
+        responseType: 'json',
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: {
+          'User-Agent': 'S.AI Product Reader/1.0',
+          'Accept': 'application/json',
+        },
+      });
+      const apiResult = normalizeIwakApiProduct(apiResponse.data, normalizedUrl);
+      if (apiResult?.title) {
+        const result = {
+          ...apiResult,
+          fetched_url: normalizedUrl,
+          final_url: normalizedUrl,
+        };
+        iwakPageCache.set(normalizedUrl, { expiresAt: Date.now() + 1000 * 60 * 10, data: result });
+        logEvent('IWAK_FETCH_OK', {
+          traceId,
+          url: normalizedUrl,
+          finalUrl: normalizedUrl,
+          title: result.title,
+          productId: result.product_id,
+          source: 'api',
+        });
+        return result;
+      }
+    } catch (error) {
+      logEvent('IWAK_API_FETCH_FAIL', {
+        traceId,
+        url: normalizedUrl,
+        productId,
+        error: error.message,
+        providerError: error.response?.data || null,
+      });
+    }
+  }
+
+  const response = await axios.get(normalizedUrl, {
+    timeout: 5000,
+    maxRedirects: 3,
+    maxContentLength: 1024 * 1024 * 2,
+    maxBodyLength: 1024 * 1024 * 2,
+    responseType: 'text',
+    transformResponse: [(data) => data],
+    validateStatus: (status) => status >= 200 && status < 400,
+    headers: {
+      'User-Agent': 'S.AI Product Reader/1.0',
+      'Accept': 'text/html,application/xhtml+xml',
+    },
+  });
+
+  const finalUrl = normalizeIwakUrl(response.request?.res?.responseUrl || normalizedUrl);
+  if (!finalUrl) throw new Error('Redirect target is not allowed');
+  await assertSafeIwakHost(finalUrl);
+
+  const parsed = parseIwakProductPage(String(response.data || ''), finalUrl);
+  const result = {
+    ...parsed,
+    fetched_url: normalizedUrl,
+    final_url: finalUrl,
+  };
+  iwakPageCache.set(normalizedUrl, { expiresAt: Date.now() + 1000 * 60 * 10, data: result });
+  logEvent('IWAK_FETCH_OK', {
+    traceId,
+    url: normalizedUrl,
+    finalUrl,
+    title: result.title,
+    productId: result.product_id,
+    source: 'html',
+  });
+  return result;
+}
+
+async function buildIwakContextFromText(text, traceId = '') {
+  const urls = extractUrls(text);
+  for (const rawUrl of urls) {
+    const normalizedUrl = normalizeIwakUrl(rawUrl);
+    if (!normalizedUrl) continue;
+    try {
+      return await fetchIwakProductContext(normalizedUrl, traceId);
+    } catch (error) {
+      logEvent('IWAK_FETCH_FAIL', {
+        traceId,
+        url: normalizedUrl,
+        error: error.message,
+      });
+    }
+  }
+  return null;
 }
 
 function parseBool(value) {
@@ -824,6 +1121,7 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const memorySummary = await db.buildMemorySummary(customerId);
   const history = await db.getChatHistory(chatDbId, 50);
   const customerFacts = await db.getCustomerFacts(customerId);
+  const iwakContext = await buildIwakContextFromText(inputText, traceId);
   const currentStage = customerFacts.find((f) => f.key === 'funnel_stage')?.value || '';
   const skipGreeting = await shouldSkipGreeting(chatDbId);
 
@@ -835,6 +1133,12 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const messages = [{ role: 'system', content: systemPrompt }];
   if (memorySummary) {
     messages.push({ role: 'system', content: `Память о клиенте:\n${memorySummary}` });
+  }
+  if (iwakContext) {
+    messages.push({
+      role: 'system',
+      content: `Контекст товара по ссылке iwak.ru:\n${JSON.stringify(iwakContext, null, 2)}`,
+    });
   }
   for (const msg of history) {
     const role = msg.role === 'assistant' || msg.role === 'operator' ? 'assistant' : 'user';
@@ -875,6 +1179,7 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
       historyLength: history.length,
       model: runtimeConfig.model,
       visionUsed,
+      iwakContext,
     },
   };
 }
@@ -1626,11 +1931,19 @@ app.post('/api/test-chat', async (req, res) => {
     logEvent('TEST_IN', { traceId, text, history: history.length });
     const sellerControl = loadAiSellerControl();
     const systemPrompt = compileSystemPrompt(sellerControl, {});
+    const iwakContext = await buildIwakContextFromText(text, traceId);
     const messages = [{ role: 'system', content: systemPrompt }, ...history, { role: 'user', content: text }];
+    if (iwakContext) {
+      messages.splice(1, 0, {
+        role: 'system',
+        content: `Контекст товара по ссылке iwak.ru:\n${JSON.stringify(iwakContext, null, 2)}`,
+      });
+    }
     const { structured, latencyMs } = await requestAi(messages, traceId, {
       compiledPrompt: systemPrompt,
       inputText: text,
       historyLength: history.length,
+      iwakContext,
     });
     logEvent('TEST_OUT', { traceId, structured });
     res.json({
@@ -1639,6 +1952,7 @@ app.post('/api/test-chat', async (req, res) => {
       reply: structured.reply.join('\n\n'),
       structured,
       latencyMs,
+      iwakContext,
       compiledPromptPreview: systemPrompt.slice(0, 800),
     });
   } catch (error) {
