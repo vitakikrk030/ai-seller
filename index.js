@@ -943,6 +943,18 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
   // Step 1: "Read" the message — short pause before reaction
   await sleep(Math.round(readDelayMs * vary() * nightMultiplier));
 
+  // Step 1.5: for Telegram Business, first mark the incoming message as read,
+  // let the UI show the second tick, and only then move into reaction/typing.
+  if (lastMessageId && businessConnectionId) {
+    await markTelegramBusinessMessageRead({
+      chatId,
+      messageId: lastMessageId,
+      businessConnectionId,
+      traceId,
+    });
+    await sleep(Math.round((320 + Math.random() * 380) * nightMultiplier));
+  }
+
   // Step 2: Put a reaction on the last message — humans do this (only if enabled)
   if (lastMessageId && runtimeConfig.reaction_enabled !== false) {
     const emoji = String(runtimeConfig.reaction_emoji || '👀');
