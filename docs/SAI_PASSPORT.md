@@ -172,9 +172,11 @@ Working screen `Диалоги`:
 - channel filters for `Все`, `Telegram`, `VK`, `MAX`;
 - search by customer and message text;
 - selected chat messages from `/api/crm/chats/:chatId/messages`;
+- selected chat messages render even if optional AI turns/events fail to load;
 - selected customer card with visible Telegram/customer identity fields;
 - editable customer phone through `/api/crm/customers/:customerId`;
 - manual reply to Telegram through `/api/crm/chats/:chatId/send`;
+- per-dialog history reset through `/api/crm/chats/:chatId/reset-history`;
 - compact emoji picker for manual replies;
 - media rendering for Telegram photo, video, audio, voice, sticker, and document files;
 - live updates from `/api/crm/live`.

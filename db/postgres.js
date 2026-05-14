@@ -772,7 +772,7 @@ async function resetChatHistory(chatId) {
     const customerId = chat.rows[0]?.customer_id || null;
 
     // Delete events FIRST (before messages/ai_turns, so trace_id subqueries still match)
-    await query(`
+    const events = await query(`
       delete from events
       where
         trace_id in (select trace_id from messages where chat_id = $1 and trace_id is not null
@@ -781,15 +781,16 @@ async function resetChatHistory(chatId) {
         or payload->>'chatDbId' = $1::text
     `, [chatId]);
 
-    // Delete all messages
-    await query('delete from messages where chat_id = $1', [chatId]);
+    // Delete messages only for the selected chat.
+    const messages = await query('delete from messages where chat_id = $1', [chatId]);
 
-    // Delete all ai_turns
-    await query('delete from ai_turns where chat_id = $1', [chatId]);
+    // Delete AI turns only for the selected chat.
+    const aiTurns = await query('delete from ai_turns where chat_id = $1', [chatId]);
 
-    // Delete customer_facts for this customer
+    // Delete memory facts only for this selected chat's customer.
+    let facts = { rowCount: 0 };
     if (customerId) {
-      await query('delete from customer_facts where customer_id = $1', [customerId]);
+      facts = await query('delete from customer_facts where customer_id = $1', [customerId]);
     }
 
     // Reset chat metadata
@@ -802,7 +803,17 @@ async function resetChatHistory(chatId) {
     `, [chatId]);
 
     await query('commit');
-    return { ok: true };
+    return {
+      ok: true,
+      chatId,
+      customerId,
+      deleted: {
+        events: events.rowCount,
+        messages: messages.rowCount,
+        aiTurns: aiTurns.rowCount,
+        customerFacts: facts.rowCount,
+      },
+    };
   } catch (error) {
     await query('rollback');
     throw error;

@@ -4179,18 +4179,29 @@
         crmState.messagesSignature = '';
       }
       if (updateList) renderCrmChatList();
-      const [chat, messages, aiTurns, events] = await Promise.all([
-        crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}`),
-        crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/messages?limit=80`),
-        crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/ai-turns?limit=10`),
-        crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/events?limit=12`),
-      ]);
-      crmState.selectedChat = chat.data;
-      crmState.messages = messages.data || [];
-      crmState.aiTurns = aiTurns.data || [];
-      crmState.events = events.data || [];
-      renderCrmSelectedChat({ forceRender });
-      updateManualReplyState();
+      try {
+        const [chat, messages] = await Promise.all([
+          crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}`),
+          crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/messages?limit=80`),
+        ]);
+        crmState.selectedChat = chat.data;
+        crmState.messages = messages.data || [];
+        renderCrmSelectedChat({ forceRender });
+        updateManualReplyState();
+
+        const [aiTurns, events] = await Promise.allSettled([
+          crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/ai-turns?limit=10`),
+          crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/events?limit=12`),
+        ]);
+        crmState.aiTurns = aiTurns.status === 'fulfilled' ? (aiTurns.value.data || []) : [];
+        crmState.events = events.status === 'fulfilled' ? (events.value.data || []) : [];
+        crmState.messagesSignature = '';
+        renderCrmMessages();
+      } catch (error) {
+        const box = document.getElementById('crmMessages');
+        box.innerHTML = `<div class="crm-empty">${escapeHtml(error.message || 'Не удалось загрузить сообщения.')}</div>`;
+        updateManualReplyState();
+      }
     }
 
     function renderCrmSelectedChat(options = {}) {
@@ -4251,15 +4262,27 @@
       resetHistoryButton.disabled = !chatId;
       resetHistoryButton.onclick = async () => {
         if (!chatId) return;
-        if (!window.confirm('Вы уверены, что хотите сбросить историю диалога? Это действие необратимо удалит все сообщения из БД и интерфейса.')) return;
-        const response = await fetch(`/api/crm/chats/${encodeURIComponent(chatId)}/reset-history`, { method: 'POST' });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          alert(err.error || 'Ошибка при сбросе истории');
-          return;
+        if (!window.confirm('Сбросить историю только этого диалога? Будут удалены сообщения, AI-трейсы и память выбранного клиента. Остальные клиенты и база не трогаются.')) return;
+        resetHistoryButton.disabled = true;
+        const previousText = resetHistoryButton.textContent;
+        resetHistoryButton.textContent = 'Сбрасываю...';
+        try {
+          const data = await crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/reset-history`, { method: 'POST' });
+          crmState.messages = [];
+          crmState.aiTurns = [];
+          crmState.events = [];
+          crmState.messagesSignature = '';
+          const deletedMessages = data.data?.deleted?.messages ?? 0;
+          const box = document.getElementById('crmMessages');
+          box.innerHTML = `<div class="crm-empty">История этого диалога очищена. Удалено сообщений: ${escapeHtml(deletedMessages)}</div>`;
+          await loadCrmChats({ refreshSelected: false });
+          await loadCrmChat(chatId, { updateList: true, forceRender: true });
+        } catch (error) {
+          alert(error.message || 'Ошибка при сбросе истории');
+        } finally {
+          resetHistoryButton.textContent = previousText;
+          resetHistoryButton.disabled = !crmState.selectedChatId;
         }
-        // Перезагружаем страницу чтобы интерфейс полностью очистился
-        window.location.reload();
       };
 
       renderCrmMessages();

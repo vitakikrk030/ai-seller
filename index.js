@@ -1346,10 +1346,15 @@ app.post('/api/crm/chats/:chatId/reset-history', crmHandler(async (req, res) => 
   if (pending) pending.cancelled = true;
   const buf = debounceBuffers.get(chatKey);
   if (buf) { clearTimeout(buf.timer); debounceBuffers.delete(chatKey); }
-  await db.resetChatHistory(req.params.chatId);
-  logEvent('CRM_CHAT_HISTORY_RESET', { chatId: chat.external_chat_id, chatDbId: chat.id });
+  const result = await db.resetChatHistory(req.params.chatId);
+  logEvent('CRM_CHAT_HISTORY_RESET', {
+    chatId: chat.external_chat_id,
+    chatDbId: chat.id,
+    customerId: result.customerId || null,
+    deleted: result.deleted,
+  });
   emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'history.reset' });
-  crmOk(res, { ok: true });
+  crmOk(res, result);
 }));
 
 app.get('/api/crm/escalations', crmHandler(async (req, res) => {

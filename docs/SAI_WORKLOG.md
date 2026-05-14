@@ -1,5 +1,21 @@
 # S.AI Worklog
 
+## 2026-05-14 20:45:00 +03
+
+Fixed CRM message rendering and safer per-dialog history reset.
+
+What changed:
+
+- CRM now loads selected chat messages independently from optional AI turns/events.
+- If AI turns/events fail, messages still render instead of leaving the chat empty.
+- Reset history now updates only the selected dialog in the interface without reloading the whole page.
+- Reset endpoint returns deletion counters for messages, AI turns, events, and customer facts.
+- Reset remains scoped to one `chatId` and the selected chat's customer memory; it does not clear the whole database.
+
+Backup before change:
+
+- `backups/before-crm-messages-reset-fix-20260514-*.tgz`
+
 ## 2026-05-14 16:25:00 +03
 
 Synchronized AI seller runtime status with the current implementation.

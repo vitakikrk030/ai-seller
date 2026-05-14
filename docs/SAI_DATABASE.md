@@ -66,6 +66,7 @@ Endpoints:
 - `GET /api/crm/chats/:chatId/events` — technical events connected through the chat trace ids.
 - `PATCH /api/crm/chats/:chatId` — update visible chat controls: `status`, `ai_enabled`, `notes`, `priority`, `assigned_to`, `mark_read`.
 - `POST /api/crm/chats/:chatId/send` — send a manual operator reply to Telegram and store it as an outgoing operator message.
+- `POST /api/crm/chats/:chatId/reset-history` — reset only the selected chat history, AI turns, connected events, and the selected customer memory facts; it does not clear the whole database.
 - `PATCH /api/crm/customers/:customerId` — update visible customer fields such as phone and notes.
 - `GET /api/crm/live` — live stream for UI updates.
 - `GET /api/telegram/avatar/:fileId` — safe avatar proxy; the bot token is never exposed to the browser.
