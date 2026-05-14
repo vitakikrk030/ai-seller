@@ -1,5 +1,20 @@
 # S.AI Worklog
 
+## 2026-05-14 22:15:00 +03
+
+Softened the trust wording for quality and shipment guarantees.
+
+What changed:
+
+- Removed `мы не бот` and `всегда на связи` as trust arguments.
+- Reframed the business logic from `не будет стыдно` to a steadier repeat-purchase and reputation model.
+- Return wording is now softer: like a marketplace, either exchange the item or return the money.
+- Trust examples now aim to reduce tension without sounding defensive or too salesy.
+
+Backup before change:
+
+- `backups/before-trust-wording-soften-20260514-*.tgz`
+
 ## 2026-05-14 22:05:00 +03
 
 Reworked the trust objection handling for quality and shipment guarantees.
