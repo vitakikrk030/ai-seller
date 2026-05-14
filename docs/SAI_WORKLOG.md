@@ -1,5 +1,26 @@
 # S.AI Worklog
 
+## 2026-05-14 21:25:00 +03
+
+Fixed CRM message bubble jitter during background refresh.
+
+Cause:
+
+- The selected chat refresh loaded messages first, then AI turns/events.
+- After loading AI turns/events, the UI always cleared `messagesSignature`.
+- This forced `renderCrmMessages()` to rebuild every message bubble on each live/poll refresh.
+- Because message bubbles have an entrance animation, the chat visually twitched every few seconds.
+
+What changed:
+
+- Added a stable `aiTurnsSignature`.
+- Message DOM is rebuilt only when messages change, when message DOM is missing, or when AI-turn latency data actually changes.
+- Background refresh no longer recreates identical message bubbles.
+
+Backup before change:
+
+- `backups/before-crm-bubble-rerender-fix-20260514-*.tgz`
+
 ## 2026-05-14 21:15:00 +03
 
 Fixed CRM empty central chat caused by a frontend `chatId` reference error.

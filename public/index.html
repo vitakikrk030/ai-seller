@@ -3383,6 +3383,7 @@
       chatListSignature: '',
       selectedChatSignature: '',
       messagesSignature: '',
+      aiTurnsSignature: '',
       stickToBottomOnce: false,
     };
     let currentModel = '';
@@ -3997,6 +3998,15 @@
       ]));
     }
 
+    function aiTurnsSignature(turns = []) {
+      return signature(turns.map((turn) => [
+        turn.id,
+        turn.trace_id,
+        turn.latency_ms,
+        turn.created_at,
+      ]));
+    }
+
     function bestTelegramPhoto(raw = {}) {
       const photos = Array.isArray(raw.photo) ? raw.photo : [];
       return photos[photos.length - 1]?.file_id || '';
@@ -4285,6 +4295,7 @@
       if (isDifferentChat) {
         crmState.selectedChatSignature = '';
         crmState.messagesSignature = '';
+        crmState.aiTurnsSignature = '';
       }
       if (updateList) renderCrmChatList();
       if (isDifferentChat || forceRender || !document.querySelector('#crmMessages [data-message-id]')) {
@@ -4306,8 +4317,10 @@
         ]);
         crmState.aiTurns = aiTurns.status === 'fulfilled' ? (aiTurns.value.data || []) : [];
         crmState.events = events.status === 'fulfilled' ? (events.value.data || []) : [];
-        crmState.messagesSignature = '';
-        renderCrmMessages();
+        const nextAiTurnsSignature = aiTurnsSignature(crmState.aiTurns);
+        const aiTurnsChanged = nextAiTurnsSignature !== crmState.aiTurnsSignature;
+        crmState.aiTurnsSignature = nextAiTurnsSignature;
+        if (aiTurnsChanged) renderCrmMessages({ force: true });
       } catch (error) {
         const box = document.getElementById('crmMessages');
         box.classList.remove('resetting');
@@ -4387,6 +4400,7 @@
           crmState.aiTurns = [];
           crmState.events = [];
           crmState.messagesSignature = '';
+          crmState.aiTurnsSignature = '';
           const deletedMessages = data.data?.deleted?.messages ?? 0;
           setCrmResetDone(deletedMessages);
           await loadCrmChats({ refreshSelected: false });
@@ -4425,7 +4439,8 @@
       if (crmState.selectedChatId) await loadCrmChat(crmState.selectedChatId, { updateList: true, forceRender: true });
     }
 
-    function renderCrmMessages() {
+    function renderCrmMessages(options = {}) {
+      const { force = false } = options;
       const box = document.getElementById('crmMessages');
       box.classList.remove('resetting');
       if (!crmState.messages.length) {
@@ -4436,7 +4451,7 @@
       const nextMessagesSignature = messagesSignature(crmState.messages);
       const messagesChanged = nextMessagesSignature !== crmState.messagesSignature;
       const hasRenderedMessages = Boolean(box.querySelector('[data-message-id]'));
-      if (!messagesChanged && hasRenderedMessages) return;
+      if (!force && !messagesChanged && hasRenderedMessages) return;
       crmState.messagesSignature = nextMessagesSignature;
       const shouldStickToBottom = crmState.stickToBottomOnce;
       crmState.stickToBottomOnce = false;
