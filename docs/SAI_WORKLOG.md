@@ -1,5 +1,19 @@
 # S.AI Worklog
 
+## 2026-05-14 21:15:00 +03
+
+Fixed CRM empty central chat caused by a frontend `chatId` reference error.
+
+What changed:
+
+- `renderCrmSelectedChat` now uses the selected chat id from the loaded chat/state.
+- Reset-history button no longer references an out-of-scope `chatId` variable.
+- This restores execution flow so the central chat can render messages after selecting a dialog.
+
+Backup before change:
+
+- `backups/before-chatid-reference-fix-20260514-*.tgz`
+
 ## 2026-05-14 21:05:00 +03
 
 Hardened the CRM central chat renderer and added reset animation.

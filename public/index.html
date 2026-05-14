@@ -4370,10 +4370,11 @@
         if (rawUsername) window.open(`https://t.me/${rawUsername}`, '_blank', 'noopener');
       };
 
+      const selectedChatId = chat.id || crmState.selectedChatId || '';
       const resetHistoryButton = document.getElementById('resetChatHistory');
-      resetHistoryButton.disabled = !chatId;
+      resetHistoryButton.disabled = !selectedChatId;
       resetHistoryButton.onclick = async () => {
-        if (!chatId) return;
+        if (!selectedChatId) return;
         if (!window.confirm('Сбросить историю только этого диалога? Будут удалены сообщения, AI-трейсы и память выбранного клиента. Остальные клиенты и база не трогаются.')) return;
         resetHistoryButton.disabled = true;
         resetHistoryButton.classList.add('is-loading');
@@ -4381,7 +4382,7 @@
         resetHistoryButton.textContent = 'Сбрасываю...';
         setCrmResetState();
         try {
-          const data = await crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/reset-history`, { method: 'POST' });
+          const data = await crmFetch(`/api/crm/chats/${encodeURIComponent(selectedChatId)}/reset-history`, { method: 'POST' });
           crmState.messages = [];
           crmState.aiTurns = [];
           crmState.events = [];
@@ -4390,8 +4391,8 @@
           setCrmResetDone(deletedMessages);
           await loadCrmChats({ refreshSelected: false });
           setTimeout(() => {
-            if (crmState.selectedChatId === chatId) {
-              loadCrmChat(chatId, { updateList: true, forceRender: true });
+            if (crmState.selectedChatId === selectedChatId) {
+              loadCrmChat(selectedChatId, { updateList: true, forceRender: true });
             }
           }, 700);
         } catch (error) {
