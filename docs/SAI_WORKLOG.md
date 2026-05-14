@@ -1,5 +1,21 @@
 # S.AI Worklog
 
+## 2026-05-14 21:45:00 +03
+
+Added a visible soft-close rule when a footwear customer cannot provide insole length.
+
+What changed:
+
+- `shoe_sizing` now covers customers who say they do not know the insole length or will check later.
+- AI should give an approximate insole reference for the selected size.
+- AI should reassure the customer about returns if the size does not fit.
+- AI may offer to continue checkout without pressure when the customer is ready.
+- Memory facts now include an unconfirmed insole state.
+
+Backup before change:
+
+- `backups/before-shoe-soft-close-20260514-*.tgz`
+
 ## 2026-05-14 21:35:00 +03
 
 Strengthened visible shoe size and insole validation rules in AI Control.
