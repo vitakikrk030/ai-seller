@@ -1819,14 +1819,6 @@ app.post('/api/telegram/webhook', (req, res) => {
         text,
         isManager,
       });
-      if (!isManager && businessConnectionId && message.message_id) {
-        markTelegramBusinessMessageRead({
-          chatId,
-          messageId: message.message_id,
-          businessConnectionId,
-          traceId,
-        }).catch(() => {});
-      }
       if (!text) return;
 
       if (isManager) {
