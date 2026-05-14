@@ -1,5 +1,21 @@
 # S.AI Worklog
 
+## 2026-05-14 22:05:00 +03
+
+Reworked the trust objection handling for quality and shipment guarantees.
+
+What changed:
+
+- Added a visible foundation block for `качество и логика магазина`.
+- Trust stage now answers quality and shipment guarantees together in one calm message.
+- The agent now explains the store through repeat purchases, recommendations, reputation, and proven suppliers instead of a dry replica-only answer.
+- Added explicit objection coverage for `Какое качество?` and `Какие гарантии, что вы отправите?`
+- Added a ban on replying to this objection only with `фабричная реплика, не оригинал`.
+
+Backup before change:
+
+- `backups/before-trust-quality-reframe-20260514-*.tgz`
+
 ## 2026-05-14 21:52:00 +03
 
 Tightened facts capture for unknown footwear insole length.
