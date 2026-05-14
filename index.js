@@ -241,7 +241,6 @@ function publicConfig() {
     read_delay_ms: Number(runtimeConfig.read_delay_ms || 800),
     typing_speed_cps: Number(runtimeConfig.typing_speed_cps || 60),
     between_messages_delay_ms: Number(runtimeConfig.between_messages_delay_ms || 1200),
-    night_mode_enabled: runtimeConfig.night_mode_enabled !== false,
     greeting_dedup_enabled: runtimeConfig.greeting_dedup_enabled !== false,
     greeting_dedup_hours: Number(runtimeConfig.greeting_dedup_hours || 4),
     reaction_enabled: runtimeConfig.reaction_enabled !== false,
@@ -1057,11 +1056,6 @@ function compileSystemPrompt(sellerControl, context = {}) {
     parts.push(`Сейчас ${msk.formatted}. Правило приветствия: зеркаль стиль клиента. Если клиент написал «Привет» — ответь «Привет». Если клиент написал без приветствия — поздоровайся по времени суток: «${msk.greeting}». Затем СРАЗУ вопрос или ответ по делу. Никогда не отправляй одно приветствие без полезной информации.`);
   }
 
-  // Night mode instruction (only if enabled in config)
-  if (msk.isNight && runtimeConfig.night_mode_enabled !== false) {
-    parts.push('Сейчас ночь. Если клиент пишет поздно, можешь ответить коротко и предложить продолжить утром. Не пиши длинных ответов ночью.');
-  }
-
   const foundation = (sellerControl.foundation || []).filter((b) => b.enabled && b.body);
   for (const block of foundation) {
     parts.push(`### ${block.title}\n${block.body}`);
@@ -1331,10 +1325,7 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
   const readDelayMs = Number(runtimeConfig.read_delay_ms || 800);
   const typingSpeedCps = Number(runtimeConfig.typing_speed_cps || 60);
   const betweenDelayMs = Number(runtimeConfig.between_messages_delay_ms || 1200);
-  const msk = getMskTime();
-
-  // Night mode: multiply delays by 1.3-2x (only if enabled) — reduced from earlier 2-3x
-  const nightMultiplier = (msk.isNight && runtimeConfig.night_mode_enabled !== false) ? (1.3 + Math.random() * 0.7) : 1;
+  const nightMultiplier = 1;
 
   // Variability: ±30% random on all timings
   const vary = () => 0.7 + Math.random() * 0.6;
@@ -1582,7 +1573,7 @@ app.post('/config', (req, res) => {
   const allowed = [
     'telegram_token', 'webhook_url', 'ai_key', 'ai_url', 'model', 'vision_model', 'auto_reply_enabled',
     'manager_passive_seconds', 'read_delay_ms', 'typing_speed_cps', 'between_messages_delay_ms',
-    'night_mode_enabled', 'greeting_dedup_enabled', 'greeting_dedup_hours',
+    'greeting_dedup_enabled', 'greeting_dedup_hours',
     'reaction_enabled', 'reaction_mode', 'reaction_emoji', 'reaction_probability', 'reaction_cooldown_sec', 'debounce_ms',
     'vision_enabled',
   ];

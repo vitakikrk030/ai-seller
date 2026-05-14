@@ -3286,14 +3286,6 @@
 
                 <div class="setting-card">
                   <div class="setting-header">
-                    <span class="setting-title">Ночной режим</span>
-                    <label class="setting-switch"><input type="checkbox" id="setting_night_mode_enabled" checked><span class="switch-track"></span></label>
-                  </div>
-                  <p class="setting-desc">00:00–07:00 МСК: задержки x1.5–3, промпт «ответь коротко, предложи утром»</p>
-                </div>
-
-                <div class="setting-card">
-                  <div class="setting-header">
                     <span class="setting-title">Таймаут менеджера</span>
                   </div>
                   <p class="setting-desc">Через сколько секунд тишины менеджера AI снова начинает отвечать</p>
@@ -4991,7 +4983,6 @@
         setVal('setting_reaction_cooldown_sec', cfg.reaction_cooldown_sec || 180);
         setCheck('setting_greeting_dedup_enabled', cfg.greeting_dedup_enabled);
         setVal('setting_greeting_dedup_hours', cfg.greeting_dedup_hours || 4);
-        setCheck('setting_night_mode_enabled', cfg.night_mode_enabled);
         setVal('setting_manager_passive_seconds', cfg.manager_passive_seconds || 120);
         setVal('setting_read_delay_ms', cfg.read_delay_ms || 1500);
         setVal('setting_typing_speed_cps', cfg.typing_speed_cps || 30);
@@ -5033,7 +5024,6 @@
         reaction_cooldown_sec: getNum('setting_reaction_cooldown_sec') || 180,
         greeting_dedup_enabled: getCheck('setting_greeting_dedup_enabled'),
         greeting_dedup_hours: getNum('setting_greeting_dedup_hours') || 4,
-        night_mode_enabled: getCheck('setting_night_mode_enabled'),
         manager_passive_seconds: getNum('setting_manager_passive_seconds') || 120,
         read_delay_ms: getNum('setting_read_delay_ms') || 1500,
         typing_speed_cps: getNum('setting_typing_speed_cps') || 30,

@@ -1338,7 +1338,6 @@ All agent behavior parameters moved from hardcode to AI Control → Настро
 | Reaction emoji | `reaction_emoji` | 👀 | Text input |
 | Greeting dedup | `greeting_dedup_enabled` | true | Toggle |
 | Greeting dedup window | `greeting_dedup_hours` | 4 | Number (1-24 hours) |
-| Night mode | `night_mode_enabled` | true | Toggle |
 | Manager passive timeout | `manager_passive_seconds` | 120 | Number (10-600 sec) |
 | Read delay | `read_delay_ms` | 1500 | Number (300-5000 ms) |
 | Typing speed | `typing_speed_cps` | 30 | Number (5-100 chars/sec) |
@@ -1834,3 +1833,23 @@ AI Control (ai-seller-control.json): правила усилены — дире�
 
 - Агент не должен больше уверенно называть чужую модель случайным названием вроде `Nike Air Force`.
 - На спорных фото он должен отвечать аккуратнее: распознавание по стилю + проверка наличия на складе.
+
+---
+
+## 2026-05-15 00:52:00 +03
+
+Полностью убран ночной режим поведения AI.
+
+Что изменено:
+
+- Из `index.js` удалена отдельная ночная подсказка в system prompt:
+  - больше нет правила `ночью отвечай короче` или `предложи продолжить утром`.
+- Из humanized reply удалён ночной множитель задержек:
+  - после `00:00` поведение больше не замедляется автоматически.
+- Из панели в `public/index.html` убран переключатель `Ночной режим`.
+- Из runtime config update удалена настройка `night_mode_enabled`.
+
+Результат:
+
+- Агент теперь должен работать одинаково в любое время суток.
+- После полуночи не должно быть отдельного сценария, более медленных пауз или ночной логики в ответах.
