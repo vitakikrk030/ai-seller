@@ -1,5 +1,21 @@
 # S.AI Worklog
 
+## 2026-05-14 21:35:00 +03
+
+Strengthened visible shoe size and insole validation rules in AI Control.
+
+What changed:
+
+- `shoe_sizing` now requires size and insole length for footwear in one flow.
+- If both values are present, AI must compare them against the visible size/insole grid.
+- Obvious mismatches such as `44 размер + 26 см` must be challenged gently before delivery/payment.
+- Checkout now forbids moving to delivery/payment when shoe size and insole length are inconsistent and not rechecked.
+- Memory facts now include size/insole compatibility status.
+
+Backup before change:
+
+- `backups/before-shoe-size-insole-validation-20260514-*.tgz`
+
 ## 2026-05-14 21:25:00 +03
 
 Fixed CRM message bubble jitter during background refresh.
