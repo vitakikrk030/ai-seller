@@ -902,6 +902,52 @@
       box-shadow: none;
     }
 
+    .crm-chat-box.resetting {
+      overflow: hidden;
+    }
+
+    .crm-loading {
+      align-self: center;
+      width: min(100%, 360px);
+      display: grid;
+      justify-items: center;
+      gap: 12px;
+      margin: auto 0;
+      color: rgba(20,20,20,.48);
+      font-size: 13px;
+      font-weight: 680;
+      text-align: center;
+      animation: crmFadeUp .22s ease both;
+    }
+
+    .crm-loader-ring {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 3px solid rgba(20,20,20,.09);
+      border-top-color: rgba(20,20,20,.58);
+      animation: crmSpin .8s linear infinite;
+    }
+
+    .crm-reset-check {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(47,155,99,.12);
+      color: #2f9b63;
+      font-size: 20px;
+      font-weight: 820;
+      animation: crmPop .28s ease both;
+    }
+
+    .profile-action.is-loading {
+      pointer-events: none;
+      opacity: .78;
+      animation: crmPulse .9s ease-in-out infinite;
+    }
+
     .crm-date-separator {
       align-self: center;
       display: inline-flex;
@@ -939,6 +985,7 @@
       width: 100%;
       display: flex;
       flex-direction: column;
+      animation: crmMessageIn .18s ease both;
     }
 
     .crm-message-wrap.in {
@@ -1053,6 +1100,31 @@
     .inspect-btn:hover {
       background: rgba(20,20,20,.06);
       color: rgba(20,20,20,.7);
+    }
+
+    @keyframes crmSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes crmFadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes crmMessageIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes crmPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(.985); }
+    }
+
+    @keyframes crmPop {
+      0% { opacity: 0; transform: scale(.82); }
+      70% { opacity: 1; transform: scale(1.06); }
+      100% { opacity: 1; transform: scale(1); }
     }
 
     .inspector-overlay {
@@ -4170,6 +4242,42 @@
       }, 80);
     }
 
+    function setCrmMessagesLoading(text = 'Загружаю сообщения...') {
+      const box = document.getElementById('crmMessages');
+      if (!box) return;
+      box.classList.remove('resetting');
+      box.innerHTML = `
+        <div class="crm-loading">
+          <span class="crm-loader-ring" aria-hidden="true"></span>
+          <span>${escapeHtml(text)}</span>
+        </div>
+      `;
+    }
+
+    function setCrmResetState(text = 'Сбрасываю историю диалога...') {
+      const box = document.getElementById('crmMessages');
+      if (!box) return;
+      box.classList.add('resetting');
+      box.innerHTML = `
+        <div class="crm-loading">
+          <span class="crm-loader-ring" aria-hidden="true"></span>
+          <span>${escapeHtml(text)}</span>
+        </div>
+      `;
+    }
+
+    function setCrmResetDone(deletedMessages = 0) {
+      const box = document.getElementById('crmMessages');
+      if (!box) return;
+      box.classList.remove('resetting');
+      box.innerHTML = `
+        <div class="crm-loading">
+          <span class="crm-reset-check" aria-hidden="true">✓</span>
+          <span>История этого диалога очищена. Удалено сообщений: ${escapeHtml(String(deletedMessages))}</span>
+        </div>
+      `;
+    }
+
     async function loadCrmChat(chatId, options = {}) {
       const { updateList = true, forceRender = false } = options;
       const isDifferentChat = crmState.selectedChatId !== chatId;
@@ -4179,6 +4287,9 @@
         crmState.messagesSignature = '';
       }
       if (updateList) renderCrmChatList();
+      if (isDifferentChat || forceRender || !document.querySelector('#crmMessages [data-message-id]')) {
+        setCrmMessagesLoading();
+      }
       try {
         const [chat, messages] = await Promise.all([
           crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}`),
@@ -4199,6 +4310,7 @@
         renderCrmMessages();
       } catch (error) {
         const box = document.getElementById('crmMessages');
+        box.classList.remove('resetting');
         box.innerHTML = `<div class="crm-empty">${escapeHtml(error.message || 'Не удалось загрузить сообщения.')}</div>`;
         updateManualReplyState();
       }
@@ -4264,8 +4376,10 @@
         if (!chatId) return;
         if (!window.confirm('Сбросить историю только этого диалога? Будут удалены сообщения, AI-трейсы и память выбранного клиента. Остальные клиенты и база не трогаются.')) return;
         resetHistoryButton.disabled = true;
+        resetHistoryButton.classList.add('is-loading');
         const previousText = resetHistoryButton.textContent;
         resetHistoryButton.textContent = 'Сбрасываю...';
+        setCrmResetState();
         try {
           const data = await crmFetch(`/api/crm/chats/${encodeURIComponent(chatId)}/reset-history`, { method: 'POST' });
           crmState.messages = [];
@@ -4273,14 +4387,19 @@
           crmState.events = [];
           crmState.messagesSignature = '';
           const deletedMessages = data.data?.deleted?.messages ?? 0;
-          const box = document.getElementById('crmMessages');
-          box.innerHTML = `<div class="crm-empty">История этого диалога очищена. Удалено сообщений: ${escapeHtml(deletedMessages)}</div>`;
+          setCrmResetDone(deletedMessages);
           await loadCrmChats({ refreshSelected: false });
-          await loadCrmChat(chatId, { updateList: true, forceRender: true });
+          setTimeout(() => {
+            if (crmState.selectedChatId === chatId) {
+              loadCrmChat(chatId, { updateList: true, forceRender: true });
+            }
+          }, 700);
         } catch (error) {
+          document.getElementById('crmMessages')?.classList.remove('resetting');
           alert(error.message || 'Ошибка при сбросе истории');
         } finally {
           resetHistoryButton.textContent = previousText;
+          resetHistoryButton.classList.remove('is-loading');
           resetHistoryButton.disabled = !crmState.selectedChatId;
         }
       };
@@ -4307,6 +4426,7 @@
 
     function renderCrmMessages() {
       const box = document.getElementById('crmMessages');
+      box.classList.remove('resetting');
       if (!crmState.messages.length) {
         crmState.messagesSignature = '';
         box.innerHTML = '<div class="crm-empty">Сообщений пока нет.</div>';
@@ -4314,7 +4434,8 @@
       }
       const nextMessagesSignature = messagesSignature(crmState.messages);
       const messagesChanged = nextMessagesSignature !== crmState.messagesSignature;
-      if (!messagesChanged) return;
+      const hasRenderedMessages = Boolean(box.querySelector('[data-message-id]'));
+      if (!messagesChanged && hasRenderedMessages) return;
       crmState.messagesSignature = nextMessagesSignature;
       const shouldStickToBottom = crmState.stickToBottomOnce;
       crmState.stickToBottomOnce = false;

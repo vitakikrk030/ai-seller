@@ -1,5 +1,20 @@
 # S.AI Worklog
 
+## 2026-05-14 21:05:00 +03
+
+Hardened the CRM central chat renderer and added reset animation.
+
+What changed:
+
+- Central CRM chat now forces a render when message data exists but the DOM has no message bubbles.
+- Selected chat loading now shows an animated loader in the central chat area.
+- Dialog reset now shows an animated reset state and success check before refreshing the selected chat.
+- Message bubbles now animate in lightly when rendered.
+
+Backup before change:
+
+- `backups/before-crm-chat-empty-animation-fix-20260514-*.tgz`
+
 ## 2026-05-14 20:45:00 +03
 
 Fixed CRM message rendering and safer per-dialog history reset.
