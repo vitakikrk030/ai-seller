@@ -15,7 +15,7 @@ const CONFIG_FILE = path.join(DATA_DIR, 'runtime-config.json');
 const AI_SELLER_CONTROL_FILE = path.join(DATA_DIR, 'ai-seller-control.json');
 const PRODUCT_CATALOG_FILE = path.join(DATA_DIR, 'product-catalog.json');
 const LOG_FILE = path.join(LOG_DIR, 'runtime.jsonl');
-const REQUEST_TIMEOUT_MS = 60000;
+const REQUEST_TIMEOUT_MS = 20000;
 const AUTH_USER = process.env.SAI_AUTH_USER || process.env.AUTH_USER || 'admin';
 const AUTH_PASSWORD = process.env.SAI_AUTH_PASSWORD || process.env.AUTH_PASSWORD || '';
 const AUTH_SECRET = process.env.SAI_AUTH_SECRET || crypto.randomBytes(32).toString('hex');
@@ -29,6 +29,8 @@ function getDebounceMs() { return Math.max(500, Math.min(10000, Number(runtimeCo
 const debounceBuffers = new Map();
 // AI processing state: chatId → { cancelled, traceId }
 const aiProcessing = new Map();
+// System prompt cache — invalidated when AI seller control changes
+const promptCache = { hash: '', prompt: '', catalogHash: '', mtime: 0 };
 // Manager takeover: chatId → { lastManagerAt, managerUserId }
 const passiveChats = new Map();
 // Manual pause: chatId → { pausedAt, pausedBy }
@@ -218,9 +220,9 @@ function publicConfig() {
     auto_reply_enabled: runtimeConfig.auto_reply_enabled,
     // Agent behavior settings (visible in AI Control)
     manager_passive_seconds: Number(runtimeConfig.manager_passive_seconds || 120),
-    read_delay_ms: Number(runtimeConfig.read_delay_ms || 1500),
-    typing_speed_cps: Number(runtimeConfig.typing_speed_cps || 30),
-    between_messages_delay_ms: Number(runtimeConfig.between_messages_delay_ms || 2000),
+    read_delay_ms: Number(runtimeConfig.read_delay_ms || 800),
+    typing_speed_cps: Number(runtimeConfig.typing_speed_cps || 60),
+    between_messages_delay_ms: Number(runtimeConfig.between_messages_delay_ms || 1200),
     night_mode_enabled: runtimeConfig.night_mode_enabled !== false,
     greeting_dedup_enabled: runtimeConfig.greeting_dedup_enabled !== false,
     greeting_dedup_hours: Number(runtimeConfig.greeting_dedup_hours || 4),
@@ -574,8 +576,28 @@ async function sendTelegramReaction({ chatId, messageId, emoji, businessConnecti
   }
 }
 
+function getSellerControlMtime() {
+  try { return fs.statSync(AI_SELLER_CONTROL_FILE).mtimeMs; } catch { return 0; }
+}
+
+function getCatalogMtime() {
+  try { return fs.statSync(PRODUCT_CATALOG_FILE).mtimeMs; } catch { return 0; }
+}
+
 function compileSystemPrompt(sellerControl, context = {}) {
   const msk = getMskTime();
+  const catalog = loadProductCatalog().filter((p) => p.in_stock);
+  
+  // Build cache key from: control file mtime + catalog mtime + context keys (skipGreeting, funnelStage)
+  const controlMtime = getSellerControlMtime();
+  const catalogMtime = getCatalogMtime();
+  const contextKey = [context.skipGreeting ? 1 : 0, context.funnelStage || '', msk.hour].join('|');
+  const cacheKey = `${controlMtime}|${catalogMtime}|${contextKey}`;
+  
+  if (promptCache.hash === cacheKey && promptCache.prompt) {
+    return promptCache.prompt;
+  }
+  
   const parts = [];
 
   parts.push('Ты — AI-агент личного менеджера магазина в Telegram. Клиент пишет тебе в личные сообщения. Ты общаешься на вы, коротко, по-человечески. Ты не бот и не скрипт.');
@@ -584,7 +606,7 @@ function compileSystemPrompt(sellerControl, context = {}) {
   if (context.skipGreeting) {
     parts.push(`Сейчас ${msk.formatted}. Клиент уже общался с вами недавно — НЕ начинай с приветствия, продолжай разговор естественно.`);
   } else {
-    parts.push(`Сейчас ${msk.formatted}. При первом сообщении используй приветствие: "${msk.greeting}".`);
+    parts.push(`Сейчас ${msk.formatted}. Правило приветствия: зеркаль стиль клиента. Если клиент написал «Привет» — ответь «Привет». Если клиент написал без приветствия — поздоровайся по времени суток: «${msk.greeting}». Затем СРАЗУ вопрос или ответ по делу. Никогда не отправляй одно приветствие без полезной информации.`);
   }
 
   // Night mode instruction (only if enabled in config)
@@ -607,9 +629,7 @@ function compileSystemPrompt(sellerControl, context = {}) {
       parts.push(`\n### Текущий этап: ${activeStage.title}`);
       if (activeStage.actions) parts.push(`Действия:\n${activeStage.actions}`);
       if (activeStage.questions) parts.push(`Вопросы:\n${activeStage.questions}`);
-      if (activeStage.objections) parts.push(`Возражения:\n${activeStage.objections}`);
       if (activeStage.forbidden) parts.push(`Запрещено:\n${activeStage.forbidden}`);
-      if (activeStage.examples) parts.push(`Примеры:\n${activeStage.examples}`);
       if (activeStage.handoff) parts.push(`Передача человеку:\n${activeStage.handoff}`);
     }
   }
@@ -620,16 +640,14 @@ function compileSystemPrompt(sellerControl, context = {}) {
   }
 
   // Product catalog — inject into system prompt
-  const catalog = loadProductCatalog().filter((p) => p.in_stock);
   if (catalog.length > 0) {
     const catalogLines = catalog.map((p) => {
       let line = `- ${p.name}: ${p.price}`;
       if (p.sizes && p.sizes.length > 0) line += ` (размеры: ${p.sizes.join(', ')})`;
       if (p.description) line += ` — ${p.description}`;
-      if (p.photo_url) line += ` [фото: ${p.id}]`;
       return line;
     });
-    parts.push(`### Каталог товаров\nВот товары, которые есть в наличии. Используй эту информацию для ответов о ценах, наличии, размерах.\n${catalogLines.join('\n')}`);
+    parts.push(`### Каталог товаров\nВот товары, которые есть в наличии:\n${catalogLines.join('\n')}`);
   }
 
   const hasPhotoCatalog = catalog.some((p) => p.photo_url);
@@ -640,23 +658,25 @@ function compileSystemPrompt(sellerControl, context = {}) {
   parts.push(`### Формат ответа
 Ты ОБЯЗАН ответить ТОЛЬКО валидным JSON без markdown-обёрток. Формат:
 {
-  "reply": ["первое сообщение", "второе сообщение"],
+  "reply": ["сообщение1", "сообщение2"],
   "facts": {"ключ": "значение"},
-  "stage": "id этапа воронки",
+  "stage": "id этапа",
   "decision": "reply",
   "needs_human": false,
   "needs_human_reason": null${hasPhotoCatalog ? ',\n  "send_photo": null' : ''}
 }
 
 Правила:
-- reply — массив коротких сообщений как в переписке, НЕ один длинный блок
-- facts — новые факты о клиенте (имя, размер, город и т.д.), пустой объект если ничего нового
-- stage — один из: first_touch, interest, trust, decision, checkout, support, return_conflict
-- decision — одно из: reply (ответить), wait (клиент обещал дослать), skip (ответ не нужен, напр. на 👍), escalate (позвать менеджера)
-- needs_human — true если ситуация требует менеджера
-- needs_human_reason — причина если needs_human=true${sendPhotoInstruction}`);
+- reply — массив коротких сообщений
+- facts — новые факты о клиенте
+- stage: first_touch|interest|trust|decision|checkout|support|return_conflict
+- decision: reply|wait|skip|escalate
+- needs_human — true если нужен менеджер${sendPhotoInstruction}`);
 
-  return parts.join('\n\n');
+  const finalPrompt = parts.join('\n\n');
+  promptCache.hash = cacheKey;
+  promptCache.prompt = finalPrompt;
+  return finalPrompt;
 }
 
 async function compileAiRequest({ chatDbId, customerId, inputText, traceId, mediaFileId = null }) {
@@ -824,13 +844,13 @@ function sleep(ms) {
 
 async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages, businessConnectionId, traceId, lastMessageId, sendPhotoId = null }) {
   if (!runtimeConfig.telegram_token) throw new Error('Telegram token is missing');
-  const readDelayMs = Number(runtimeConfig.read_delay_ms || 1500);
-  const typingSpeedCps = Number(runtimeConfig.typing_speed_cps || 30);
-  const betweenDelayMs = Number(runtimeConfig.between_messages_delay_ms || 2000);
+  const readDelayMs = Number(runtimeConfig.read_delay_ms || 800);
+  const typingSpeedCps = Number(runtimeConfig.typing_speed_cps || 60);
+  const betweenDelayMs = Number(runtimeConfig.between_messages_delay_ms || 1200);
   const msk = getMskTime();
 
-  // Night mode: multiply all delays by 2-3x (only if enabled)
-  const nightMultiplier = (msk.isNight && runtimeConfig.night_mode_enabled !== false) ? (1.5 + Math.random() * 1.5) : 1;
+  // Night mode: multiply delays by 1.3-2x (only if enabled) — reduced from earlier 2-3x
+  const nightMultiplier = (msk.isNight && runtimeConfig.night_mode_enabled !== false) ? (1.3 + Math.random() * 0.7) : 1;
 
   // Variability: ±30% random on all timings
   const vary = () => 0.7 + Math.random() * 0.6;
@@ -882,7 +902,7 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
       await axios.post(telegramApi('sendChatAction'), actionPayload, { timeout: 5000 }).catch(() => {});
     } catch {}
 
-    const typingMs = Math.max(800, Math.min(8000, (text.length / typingSpeedCps) * 1000 * vary() * nightMultiplier));
+    const typingMs = Math.max(400, Math.min(5000, (text.length / typingSpeedCps) * 1000 * vary() * nightMultiplier));
     await sleep(typingMs);
 
     const sendPayload = { chat_id: chatId, text };
