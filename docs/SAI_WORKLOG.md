@@ -1,5 +1,19 @@
 # S.AI Worklog
 
+## 2026-05-14 21:52:00 +03
+
+Tightened facts capture for unknown footwear insole length.
+
+What changed:
+
+- Soft-close insole rule now explicitly requires JSON facts when the customer cannot measure now.
+- Required facts: `shoe_size`, `insole_cm = unknown`, `size_insole_check = not_measured`.
+- Checkout also reminds the model to save `size_insole_check = not_measured` for this path.
+
+Backup before change:
+
+- `backups/before-shoe-soft-close-facts-20260514-*.tgz`
+
 ## 2026-05-14 21:45:00 +03
 
 Added a visible soft-close rule when a footwear customer cannot provide insole length.
