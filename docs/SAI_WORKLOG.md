@@ -1,5 +1,21 @@
 # S.AI Worklog
 
+## 2026-05-14 16:25:00 +03
+
+Synchronized AI seller runtime status with the current implementation.
+
+What changed:
+
+- `/api/ai-seller/control` now returns a real `runtime` object.
+- `production_effect` now reflects the global auto-reply state instead of always returning `false`.
+- The `AI продавец` top status pill now shows whether the runtime is active.
+- The AI Control inspector now shows `agent_runtime: connected`, production effect, and compiler name.
+- Updated readiness/passport docs to remove the stale “runtime not connected” state.
+
+Backup before change:
+
+- `backups/before-ai-runtime-status-sync-20260514-*.tgz`
+
 ## 2026-05-10 14:17:48 +03
 
 Established the clean S.AI foundation after removing the old seller behavior.

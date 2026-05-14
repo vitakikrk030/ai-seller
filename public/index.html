@@ -1984,6 +1984,10 @@
       background: #b84a4a;
     }
 
+    .seller-pill.on .status-dot {
+      background: #2f9b63;
+    }
+
     .seller-list {
       display: grid;
       gap: 8px;
@@ -2997,7 +3001,7 @@
               <p>AI Control строится по классической воронке продаж: этап клиента, цель этапа, действия агента, запреты, примеры и передача человеку. Код может брать поведение только отсюда.</p>
             </div>
             <div class="seller-top-actions">
-              <span class="seller-pill off"><span class="status-dot off"></span>агент выключен</span>
+              <span class="seller-pill off" id="sellerRuntimePill"><span class="status-dot off"></span>статус неизвестен</span>
               <button class="action" id="saveSellerControl" type="button">Сохранить AI Control</button>
             </div>
           </div>
@@ -3287,6 +3291,7 @@
     const quickEmojis = ['👍', '👌', '🙏', '✅', '🔥', '❤️', '🙂', '😉', '😊', '🤝', '💬', '📦', '🚚', '💳', '⭐', '✨'];
     const testHistory = [];
     let aiSellerControl = null;
+    let aiSellerRuntime = null;
     let sellerActiveStageId = '';
     let sellerActiveTab = 'funnel';
     const crmState = {
@@ -3505,6 +3510,25 @@
       node.dataset.tone = tone;
     }
 
+    function updateSellerRuntimePill(runtime = aiSellerRuntime) {
+      const pill = document.getElementById('sellerRuntimePill');
+      if (!pill) return;
+      const connected = runtime?.compiler_connected === true;
+      const active = connected && runtime?.production_effect !== false;
+      pill.classList.toggle('on', active);
+      pill.classList.toggle('off', !active);
+      const dot = pill.querySelector('.status-dot');
+      if (dot) {
+        dot.classList.toggle('on', active);
+        dot.classList.toggle('off', !active);
+      }
+      pill.lastChild.textContent = active
+        ? 'runtime активен'
+        : connected
+          ? 'runtime подключен, автоответ выключен'
+          : 'runtime не подключен';
+    }
+
     function updateSellerInspector(data = aiSellerControl) {
       const nodes = [document.getElementById('sellerInspector'), document.getElementById('sellerInspectorFull')].filter(Boolean);
       if (!nodes.length) return;
@@ -3516,8 +3540,9 @@
       const text = [
         'source: data/ai-seller-control.json',
         'api: /api/ai-seller/control',
-        'agent_runtime: not connected',
-        'compiler: must read only AI Control',
+        `agent_runtime: ${aiSellerRuntime?.compiler_connected ? 'connected' : 'unknown'}`,
+        `production_effect: ${aiSellerRuntime?.production_effect ? 'on' : 'off'}`,
+        `compiler: ${aiSellerRuntime?.compiler || 'compileSystemPrompt'}`,
         `updated_at: ${data.updated_at || 'unknown'}`,
         '',
         `active_tab: ${sellerActiveTab}`,
@@ -3713,8 +3738,10 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось загрузить настройки');
         aiSellerControl = data.data;
+        aiSellerRuntime = data.runtime || null;
+        updateSellerRuntimePill();
         renderSellerControl();
-        setSellerStatus('Правила загружены. Изменения сохраняются только кнопкой.');
+        setSellerStatus('Правила загружены. Изменения после сохранения влияют на runtime AI-продавца.');
       } catch (error) {
         setSellerStatus(error.message || 'Не удалось загрузить настройки', 'error');
         const editor = document.getElementById('sellerEditor');
@@ -3734,8 +3761,10 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || 'Не удалось сохранить правила');
         aiSellerControl = data.data;
+        aiSellerRuntime = data.runtime || aiSellerRuntime;
+        updateSellerRuntimePill();
         renderSellerControl();
-        setSellerStatus('Сохранено. AI Control — единственный источник будущего поведения агента.');
+        setSellerStatus('Сохранено. AI Control — источник поведения runtime AI-продавца.');
       } catch (error) {
         setSellerStatus(error.message || 'Не удалось сохранить правила', 'error');
       }

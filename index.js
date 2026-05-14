@@ -131,6 +131,16 @@ function defaultAiSellerControl() {
   };
 }
 
+function aiSellerRuntimeStatus() {
+  return {
+    compiler_connected: true,
+    production_effect: runtimeConfig.auto_reply_enabled !== false,
+    test_chat_effect: true,
+    source: 'data/ai-seller-control.json',
+    compiler: 'compileSystemPrompt',
+  };
+}
+
 function normalizeSellerBlock(block = {}) {
   const id = String(block.id || '').trim().replace(/[^a-z0-9_-]/gi, '').slice(0, 64);
   const title = String(block.title || '').trim().slice(0, 120);
@@ -1078,7 +1088,8 @@ app.get('/api/ai-seller/control', (req, res) => {
   res.json({
     ok: true,
     data: loadAiSellerControl(),
-    production_effect: false,
+    production_effect: aiSellerRuntimeStatus().production_effect,
+    runtime: aiSellerRuntimeStatus(),
   });
 });
 
@@ -1097,7 +1108,8 @@ app.post('/api/ai-seller/control', (req, res) => {
   res.json({
     ok: true,
     data: nextControl,
-    production_effect: false,
+    production_effect: aiSellerRuntimeStatus().production_effect,
+    runtime: aiSellerRuntimeStatus(),
   });
 });
 

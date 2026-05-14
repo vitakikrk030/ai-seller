@@ -189,10 +189,11 @@ Working screen `AI продавец`:
 - each funnel stage has editable goal, actions, questions, objections, forbidden behavior, examples, and human handoff rules;
 - visible foundation blocks for store model, live-manager style, replica honesty, prepayment, and return;
 - visible memory, objection, inspector, and polygon blocks;
-- production status is explicitly shown as off because the AI seller runtime is not connected yet;
-- when the AI seller runtime is connected, these saved rules must become the only source that controls seller behavior;
-- no AI seller behavior is active yet;
-- no prompt compiler, memory injection, guardrail, or sales logic is connected yet.
+- production status now shows the real runtime state from `/api/ai-seller/control`;
+- AI seller runtime/compiler is connected to production Telegram replies when global auto-reply is enabled;
+- Test chat (Polygon) uses the same visible AI Control compiler path;
+- compiled prompts, memory summary, input text, structured response, latency, and history length are stored in `ai_turns`;
+- AI seller behavior must continue to come only from visible AI Control settings and database/config records managed by the interface.
 
 Removed from CRM by design:
 

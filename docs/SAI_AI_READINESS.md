@@ -1,14 +1,14 @@
 # S.AI AI Seller Readiness
 
-Updated: 2026-05-12 12:35 +03
+Updated: 2026-05-14 16:25 +03
 
 ## Purpose
 
 This document fixes the clean state before building the AI seller.
 
-The current project is a transport, database, and CRM foundation.
+The current project is a transport, database, CRM, and AI seller runtime foundation.
 The AI seller control screen is visible in the sidebar.
-The AI seller behavior layer is not implemented yet.
+The AI seller behavior layer is connected through the visible AI Control compiler path.
 
 ## Supreme Rule
 
@@ -68,20 +68,12 @@ The following foundation is ready for the next stage:
 
 The following must not be assumed to exist:
 
-- prompt editor;
-- prompt compiler;
-- visible skill blocks;
-- visible memory policy;
-- visible sales psychology;
-- visible product/order rules;
-- visible delivery rules;
-- visible payment rules;
-- visible return rules;
-- visible objection handling;
-- visible forbidden phrases;
-- visible examples;
-- AI request inspector in the interface;
-- production-ready AI seller behavior.
+- order entity management;
+- delivery tracking entity management;
+- payment confirmation entity management;
+- full editable memory/facts UI;
+- production QA suite for seller behavior;
+- channel-specific MAX/VK runtime.
 
 ## Required AI Seller Section
 
@@ -100,8 +92,8 @@ The settings are organized as a sales funnel, not as a flat prompt list:
 - `polygon` — visible test cases.
 
 These settings are the future source of truth for seller behavior.
-They are not connected to production replies only because the AI seller runtime/compiler is not implemented yet.
-After the runtime/compiler is connected, behavior-changing settings must come only from this visible control path.
+They are connected to production Telegram replies through the runtime compiler when global auto-reply is enabled.
+Behavior-changing settings must come only from this visible control path.
 
 Recommended first blocks:
 
@@ -139,4 +131,4 @@ CRM is only:
 
 AI behavior belongs to `AI продавец` / AI Control only.
 
-The current `AI продавец` screen saves visible seller-agent rules. It does not compile prompts, inject memory, guard responses, or control production replies until the AI seller runtime/compiler is implemented.
+The current `AI продавец` screen saves visible seller-agent rules. The runtime compiler reads those rules, injects visible customer memory and chat history, stores the trace in `ai_turns`, and controls production Telegram replies when auto-reply is enabled.
