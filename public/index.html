@@ -3243,10 +3243,28 @@
                     <span class="setting-title">Реакция на сообщение</span>
                     <label class="setting-switch"><input type="checkbox" id="setting_reaction_enabled" checked><span class="switch-track"></span></label>
                   </div>
-                  <p class="setting-desc">Ставить эмодзи-реакцию на сообщение клиента перед ответом (👀)</p>
+                  <p class="setting-desc">Небольшая живая реакция на сообщение клиента перед ответом. Лучше использовать редко и по смыслу.</p>
                   <div class="setting-field">
-                    <label>Эмодзи</label>
+                    <label>Режим</label>
+                    <select id="setting_reaction_mode" style="width: 160px;">
+                      <option value="smart">Умно</option>
+                      <option value="fixed">Всегда один эмодзи</option>
+                      <option value="off">Выключено</option>
+                    </select>
+                  </div>
+                  <div class="setting-field">
+                    <label>Эмодзи для fixed</label>
                     <input type="text" id="setting_reaction_emoji" value="👀" maxlength="4" style="width: 60px; text-align: center; font-size: 20px;">
+                  </div>
+                  <div class="setting-field">
+                    <label>Вероятность</label>
+                    <input type="number" id="setting_reaction_probability" value="28" min="0" max="100" step="1" style="width: 80px;">
+                    <span class="setting-hint">%</span>
+                  </div>
+                  <div class="setting-field">
+                    <label>Кулдаун</label>
+                    <input type="number" id="setting_reaction_cooldown_sec" value="180" min="15" max="3600" step="15" style="width: 90px;">
+                    <span class="setting-hint">сек</span>
                   </div>
                 </div>
 
@@ -4958,7 +4976,10 @@
         const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
         setCheck('setting_auto_reply_enabled', cfg.auto_reply_enabled);
         setCheck('setting_reaction_enabled', cfg.reaction_enabled);
+        setVal('setting_reaction_mode', cfg.reaction_mode || 'smart');
         setVal('setting_reaction_emoji', cfg.reaction_emoji || '👀');
+        setVal('setting_reaction_probability', cfg.reaction_probability || 28);
+        setVal('setting_reaction_cooldown_sec', cfg.reaction_cooldown_sec || 180);
         setCheck('setting_greeting_dedup_enabled', cfg.greeting_dedup_enabled);
         setVal('setting_greeting_dedup_hours', cfg.greeting_dedup_hours || 4);
         setCheck('setting_night_mode_enabled', cfg.night_mode_enabled);
@@ -4997,7 +5018,10 @@
       const payload = {
         auto_reply_enabled: getCheck('setting_auto_reply_enabled'),
         reaction_enabled: getCheck('setting_reaction_enabled'),
+        reaction_mode: getStr('setting_reaction_mode') || 'smart',
         reaction_emoji: getStr('setting_reaction_emoji') || '👀',
+        reaction_probability: getNum('setting_reaction_probability') || 28,
+        reaction_cooldown_sec: getNum('setting_reaction_cooldown_sec') || 180,
         greeting_dedup_enabled: getCheck('setting_greeting_dedup_enabled'),
         greeting_dedup_hours: getNum('setting_greeting_dedup_hours') || 4,
         night_mode_enabled: getCheck('setting_night_mode_enabled'),

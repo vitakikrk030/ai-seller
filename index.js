@@ -37,6 +37,8 @@ const passiveChats = new Map();
 const pausedChats = new Map();
 // Escalation: chatId → { at, reason, traceId }
 const escalatedChats = new Map();
+// Reactions cooldown: chatId -> last reaction timestamp
+const recentReactions = new Map();
 
 function getChatAiStatus(chatId) {
   const key = String(chatId);
@@ -237,7 +239,10 @@ function publicConfig() {
     greeting_dedup_enabled: runtimeConfig.greeting_dedup_enabled !== false,
     greeting_dedup_hours: Number(runtimeConfig.greeting_dedup_hours || 4),
     reaction_enabled: runtimeConfig.reaction_enabled !== false,
+    reaction_mode: String(runtimeConfig.reaction_mode || 'smart'),
     reaction_emoji: String(runtimeConfig.reaction_emoji || '👀'),
+    reaction_probability: Number(runtimeConfig.reaction_probability || 28),
+    reaction_cooldown_sec: Number(runtimeConfig.reaction_cooldown_sec || 180),
     debounce_ms: Number(runtimeConfig.debounce_ms || 3000),
     vision_enabled: runtimeConfig.vision_enabled !== false,
   };
@@ -586,6 +591,59 @@ async function sendTelegramReaction({ chatId, messageId, emoji, businessConnecti
   }
 }
 
+function getReactionMode() {
+  const mode = String(runtimeConfig.reaction_mode || 'smart').toLowerCase();
+  return ['off', 'fixed', 'smart'].includes(mode) ? mode : 'smart';
+}
+
+function detectCheckoutLikeMessage(text = '') {
+  const lines = String(text).split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const hasPhone = /\+?\d[\d()\-\s]{8,}/.test(text);
+  const hasDeliveryWords = /(город|доставка|пвз|cdek|сдэк|ozon|wildberries|яндекс|почта|адрес|фио|телефон)/i.test(text);
+  return (lines.length >= 3 && hasPhone) || (hasPhone && hasDeliveryWords);
+}
+
+function pickSmartReaction({ chatId, texts, mediaFileId, stage, lastClientText }) {
+  if (runtimeConfig.reaction_enabled === false) return null;
+  if (getReactionMode() === 'off') return null;
+
+  const probability = Math.max(0, Math.min(100, Number(runtimeConfig.reaction_probability || 28)));
+  const cooldownMs = Math.max(15, Math.min(3600, Number(runtimeConfig.reaction_cooldown_sec || 180))) * 1000;
+  const lastAt = recentReactions.get(String(chatId)) || 0;
+  if (Date.now() - lastAt < cooldownMs) return null;
+
+  const joined = String(texts.join('\n') || lastClientText || '');
+  const lower = joined.toLowerCase();
+
+  if (/(не обман|обман|дорого|подумаю|сомнева|возврат|жалоба|плохо|не устраивает|почему так|долго)/i.test(lower)) {
+    return null;
+  }
+
+  let reaction = null;
+  let chance = probability;
+
+  if (mediaFileId) {
+    reaction = '👀';
+    chance = Math.max(probability, 65);
+  } else if (/(чек|оплатил|оплатила|перевел|перевела|оплата прошла|сделал оплату|сделала оплату)/i.test(lower)) {
+    reaction = '✅';
+    chance = Math.max(probability, 80);
+  } else if (detectCheckoutLikeMessage(joined) || stage === 'checkout') {
+    reaction = '👍';
+    chance = Math.max(probability, 55);
+  } else if (/(беру|оформляем|давайте оформим|заказываю|хочу заказать|забираю|готов оформить)/i.test(lower)) {
+    reaction = '🔥';
+    chance = Math.max(probability, 58);
+  } else if (/(спасибо|супер|отлично|класс|идеально|понял|поняла)/i.test(lower)) {
+    reaction = '👍';
+    chance = Math.max(probability, 35);
+  }
+
+  if (!reaction) return null;
+  if (Math.random() * 100 > chance) return null;
+  return reaction;
+}
+
 async function markTelegramBusinessMessageRead({ chatId, messageId, businessConnectionId, traceId }) {
   if (!runtimeConfig.telegram_token || !businessConnectionId || !messageId) return false;
   try {
@@ -927,7 +985,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages, businessConnectionId, traceId, lastMessageId, sendPhotoId = null }) {
+async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages, businessConnectionId, traceId, lastMessageId, sendPhotoId = null, reactionEmoji = null }) {
   if (!runtimeConfig.telegram_token) throw new Error('Telegram token is missing');
   const readDelayMs = Number(runtimeConfig.read_delay_ms || 800);
   const typingSpeedCps = Number(runtimeConfig.typing_speed_cps || 60);
@@ -957,9 +1015,14 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
 
   // Step 2: Put a reaction on the last message — humans do this (only if enabled)
   if (lastMessageId && runtimeConfig.reaction_enabled !== false) {
-    const emoji = String(runtimeConfig.reaction_emoji || '👀');
-    await sendTelegramReaction({ chatId, messageId: lastMessageId, emoji, businessConnectionId });
-    await sleep(Math.round((500 + Math.random() * 1000) * nightMultiplier));
+    const mode = getReactionMode();
+    const emoji = reactionEmoji || (mode === 'fixed' ? String(runtimeConfig.reaction_emoji || '👀') : '');
+    if (emoji) {
+      await sendTelegramReaction({ chatId, messageId: lastMessageId, emoji, businessConnectionId });
+      recentReactions.set(String(chatId), Date.now());
+      logEvent('TG_REACTION_SENT', { traceId, chatId, businessConnectionId, messageId: lastMessageId, emoji, mode });
+      await sleep(Math.round((420 + Math.random() * 780) * nightMultiplier));
+    }
   }
 
   // Step 3 (optional): Send product photo before reply
@@ -1159,7 +1222,7 @@ app.post('/config', (req, res) => {
     'telegram_token', 'webhook_url', 'ai_key', 'ai_url', 'model', 'auto_reply_enabled',
     'manager_passive_seconds', 'read_delay_ms', 'typing_speed_cps', 'between_messages_delay_ms',
     'night_mode_enabled', 'greeting_dedup_enabled', 'greeting_dedup_hours',
-    'reaction_enabled', 'reaction_emoji', 'debounce_ms',
+    'reaction_enabled', 'reaction_mode', 'reaction_emoji', 'reaction_probability', 'reaction_cooldown_sec', 'debounce_ms',
     'vision_enabled',
   ];
   for (const key of allowed) {
@@ -1660,7 +1723,26 @@ async function processBatchedMessages(bufferKey, buffer) {
     }
 
     if (structured.reply.length > 0) {
-      await sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages: structured.reply, businessConnectionId, traceId, lastMessageId, sendPhotoId: structured.sendPhoto || null });
+      const reactionEmoji = getReactionMode() === 'smart'
+        ? pickSmartReaction({
+            chatId,
+            texts,
+            mediaFileId,
+            stage: structured.stage || '',
+            lastClientText: combinedText,
+          })
+        : null;
+      await sendHumanizedReply({
+        chatId,
+        chatDbId,
+        customerId,
+        replyMessages: structured.reply,
+        businessConnectionId,
+        traceId,
+        lastMessageId,
+        sendPhotoId: structured.sendPhoto || null,
+        reactionEmoji,
+      });
     }
   } catch (error) {
     if (processingState.cancelled) return;
