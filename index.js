@@ -1000,6 +1000,15 @@ function estimateBetweenMessagesMs({ previousText, nextText, betweenDelayMs, nig
   return Math.max(350, Math.min(2600, Math.round(total)));
 }
 
+function collapseReplyMessages(replyMessages, { preferSingle = false } = {}) {
+  const items = Array.isArray(replyMessages)
+    ? replyMessages.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (!items.length) return [];
+  if (!preferSingle) return items;
+  return [items.join('\n\n')];
+}
+
 async function simulateTelegramTyping({ chatId, businessConnectionId, durationMs }) {
   const totalMs = Math.max(0, Number(durationMs || 0));
   if (!totalMs) return;
@@ -1133,6 +1142,13 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const messages = [{ role: 'system', content: systemPrompt }];
   if (memorySummary) {
     messages.push({ role: 'system', content: `Память о клиенте:\n${memorySummary}` });
+  }
+  const batchedLines = String(inputText || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (batchedLines.length > 1) {
+    messages.push({
+      role: 'system',
+      content: 'Клиент отправил несколько коротких сообщений подряд. Воспринимай их как одну общую мысль и отвечай одним цельным сообщением по суммарному смыслу, а не отдельной репликой на каждую строку.',
+    });
   }
   if (iwakContext) {
     messages.push({
@@ -1290,7 +1306,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages, businessConnectionId, traceId, lastMessageId, sendPhotoId = null, reactionEmoji = null }) {
+async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages, businessConnectionId, traceId, lastMessageId, sendPhotoId = null, reactionEmoji = null, processingState = null }) {
   if (!runtimeConfig.telegram_token) throw new Error('Telegram token is missing');
   const readDelayMs = Number(runtimeConfig.read_delay_ms || 800);
   const typingSpeedCps = Number(runtimeConfig.typing_speed_cps || 60);
@@ -1360,6 +1376,16 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
   }
 
   for (let i = 0; i < replyMessages.length; i++) {
+    if (processingState?.cancelled) {
+      logEvent('TG_SEND_ABORTED', {
+        traceId,
+        chatId,
+        reason: 'new_message_during_send',
+        sentParts: i,
+        totalParts: replyMessages.length,
+      });
+      break;
+    }
     const text = replyMessages[i];
     const thinkingMs = estimateThinkingPauseMs({
       text,
@@ -1393,6 +1419,16 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
     emitLive('message.created', { traceId, chatId: chatDbId, customerId, direction: 'out', role: 'assistant', source: 'telegram' });
 
     if (i < replyMessages.length - 1) {
+      if (processingState?.cancelled) {
+        logEvent('TG_SEND_ABORTED', {
+          traceId,
+          chatId,
+          reason: 'new_message_after_partial_send',
+          sentParts: i + 1,
+          totalParts: replyMessages.length,
+        });
+        break;
+      }
       const gapMs = estimateBetweenMessagesMs({
         previousText: text,
         nextText: replyMessages[i + 1],
@@ -2037,6 +2073,7 @@ async function processBatchedMessages(bufferKey, buffer) {
     }
 
     if (structured.reply.length > 0) {
+      const normalizedReply = collapseReplyMessages(structured.reply, { preferSingle: texts.length > 1 });
       const reactionEmoji = getReactionMode() === 'smart'
         ? pickSmartReaction({
             chatId,
@@ -2050,12 +2087,13 @@ async function processBatchedMessages(bufferKey, buffer) {
         chatId,
         chatDbId,
         customerId,
-        replyMessages: structured.reply,
+        replyMessages: normalizedReply,
         businessConnectionId,
         traceId,
         lastMessageId,
         sendPhotoId: structured.sendPhoto || null,
         reactionEmoji,
+        processingState,
       });
     }
   } catch (error) {
