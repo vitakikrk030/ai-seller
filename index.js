@@ -117,6 +117,7 @@ function loadConfig() {
     ai_key: process.env.AI_API_KEY || saved.ai_key || saved.sai_gpt_key || '',
     ai_url: process.env.AI_BASE_URL || saved.ai_url || saved.sai_gpt_url || 'https://api.openai.com/v1',
     model: process.env.MODEL || saved.model || saved.sai_gpt_model || 'gpt-4o-mini',
+    vision_model: process.env.VISION_MODEL || saved.vision_model || '',
     auto_reply_enabled: saved.auto_reply_enabled !== false,
   };
 }
@@ -233,6 +234,7 @@ function publicConfig() {
     ai_key_preview: redact(runtimeConfig.ai_key),
     ai_url: runtimeConfig.ai_url,
     model: runtimeConfig.model,
+    vision_model: runtimeConfig.vision_model || '',
     auto_reply_enabled: runtimeConfig.auto_reply_enabled,
     // Agent behavior settings (visible in AI Control)
     manager_passive_seconds: Number(runtimeConfig.manager_passive_seconds || 120),
@@ -1133,6 +1135,9 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const iwakContext = await buildIwakContextFromText(inputText, traceId);
   const currentStage = customerFacts.find((f) => f.key === 'funnel_stage')?.value || '';
   const skipGreeting = await shouldSkipGreeting(chatDbId);
+  const requestModel = mediaFileId && runtimeConfig.vision_enabled !== false
+    ? String(runtimeConfig.vision_model || runtimeConfig.model || '').trim()
+    : String(runtimeConfig.model || '').trim();
 
   // If the dialog is already active, suppress first_touch stage to avoid re-greeting
   const effectiveStage = skipGreeting && currentStage === 'first_touch' ? '' : currentStage;
@@ -1148,6 +1153,19 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
     messages.push({
       role: 'system',
       content: 'Клиент отправил несколько коротких сообщений подряд. Воспринимай их как одну общую мысль и отвечай одним цельным сообщением по суммарному смыслу, а не отдельной репликой на каждую строку.',
+    });
+  }
+  if (mediaFileId && runtimeConfig.vision_enabled !== false) {
+    messages.push({
+      role: 'system',
+      content: [
+        'Клиент прислал фото.',
+        'Если на фото товар и точная модель неочевидна, не выдумывай уверенное название.',
+        'Вместо этого используй честную формулировку вроде «похоже на ...» и предложи проверить наличие на складе.',
+        'Если есть риск перепутать близкие линейки вроде Balenciaga 3XL / Track / Runner, не называй конкретную линейку вообще.',
+        'Если товар не найден в явном каталоге или нет ссылки iwak.ru, не обещай наличие сразу.',
+        'Предпочтительный fallback-ответ: коротко описать, на что похож товар, и сказать, что такие позиции не всегда успевают попасть на витрину, поэтому ты уточнишь по складу и вернёшься чуть позже.',
+      ].join(' '),
     });
   }
   if (iwakContext) {
@@ -1194,6 +1212,7 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
       memorySummary: memorySummary || '',
       historyLength: history.length,
       model: runtimeConfig.model,
+      requestModel,
       visionUsed,
       iwakContext,
     },
@@ -1235,20 +1254,21 @@ async function requestAi(compiledMessages, traceId, context = {}) {
   if (!runtimeConfig.ai_key) throw new Error('AI key is missing');
   const baseUrl = String(runtimeConfig.ai_url || '').replace(/\/+$/, '');
   const startedAt = Date.now();
+  const requestModel = String(context.modelOverride || runtimeConfig.model || '').trim();
   const payload = {
-    model: runtimeConfig.model,
+    model: requestModel,
     messages: compiledMessages,
     temperature: 0.75,
   };
   logEvent('AI_REQUEST', {
     traceId,
-    model: runtimeConfig.model,
+    model: requestModel,
     messages: compiledMessages.length,
   });
   emitLive('ai.requested', {
     traceId,
     chatId: context.chatDbId || null,
-    model: runtimeConfig.model,
+    model: requestModel,
   });
   try {
     const response = await axios.post(`${baseUrl}/chat/completions`, payload, {
@@ -1270,7 +1290,7 @@ async function requestAi(compiledMessages, traceId, context = {}) {
     db.recordAiTurn({
       chatId: context.chatDbId || null,
       traceId,
-      model: runtimeConfig.model,
+      model: requestModel,
       requestMessages: compiledMessages,
       responseText: rawReply,
       latencyMs,
@@ -1287,7 +1307,7 @@ async function requestAi(compiledMessages, traceId, context = {}) {
     db.recordAiTurn({
       chatId: context.chatDbId || null,
       traceId,
-      model: runtimeConfig.model,
+      model: requestModel,
       requestMessages: compiledMessages,
       responseText: '',
       latencyMs: Date.now() - startedAt,
@@ -1560,7 +1580,7 @@ app.get('/config/status', (req, res) => {
 app.post('/config', (req, res) => {
   const body = req.body || {};
   const allowed = [
-    'telegram_token', 'webhook_url', 'ai_key', 'ai_url', 'model', 'auto_reply_enabled',
+    'telegram_token', 'webhook_url', 'ai_key', 'ai_url', 'model', 'vision_model', 'auto_reply_enabled',
     'manager_passive_seconds', 'read_delay_ms', 'typing_speed_cps', 'between_messages_delay_ms',
     'night_mode_enabled', 'greeting_dedup_enabled', 'greeting_dedup_hours',
     'reaction_enabled', 'reaction_mode', 'reaction_emoji', 'reaction_probability', 'reaction_cooldown_sec', 'debounce_ms',
@@ -2029,6 +2049,7 @@ async function processBatchedMessages(bufferKey, buffer) {
       memorySummary: compiled.metadata.memorySummary || '',
       inputText: combinedText,
       historyLength: compiled.metadata.historyLength || 0,
+      modelOverride: compiled.metadata.requestModel || runtimeConfig.model,
     });
 
     if (processingState.cancelled) {

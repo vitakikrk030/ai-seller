@@ -2957,6 +2957,10 @@
               <button class="action secondary" id="loadModels" type="button">Загрузить</button>
             </div>
           </div>
+          <div class="field">
+            <label>Vision-модель для фото</label>
+            <select id="vision_model"></select>
+          </div>
         </div>
         <div class="actions">
           <button class="action" id="saveAi">Сохранить</button>
@@ -3405,6 +3409,7 @@
       stickToBottomOnce: false,
     };
     let currentModel = '';
+    let currentVisionModel = '';
 
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>"']/g, (char) => ({
@@ -3416,9 +3421,10 @@
       }[char]));
     }
 
-    function setModelOptions(models, selected) {
-      const select = document.getElementById('model');
-      const value = selected || currentModel || '';
+    function setModelOptions(models, selected, elementId = 'model', fallbackValue = '') {
+      const select = document.getElementById(elementId);
+      if (!select) return;
+      const value = selected || fallbackValue || '';
       const unique = Array.from(new Set([value, ...models].filter(Boolean)));
       select.innerHTML = unique.length
         ? unique.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')
@@ -3433,7 +3439,9 @@
       document.getElementById('webhook_url').value = cfg.webhook_url || '';
       document.getElementById('ai_url').value = cfg.ai_url || '';
       currentModel = cfg.model || '';
-      setModelOptions([], currentModel);
+      currentVisionModel = cfg.vision_model || cfg.model || '';
+      setModelOptions([], currentModel, 'model', currentModel);
+      setModelOptions([], currentVisionModel, 'vision_model', currentModel);
       const telegramInput = document.getElementById('telegram_token');
       const aiKeyInput = document.getElementById('ai_key');
       telegramInput.value = cfg.telegram_token_set ? cfg.telegram_token_preview : '';
@@ -3466,7 +3474,8 @@
         alert(data.error || 'Не удалось загрузить модели');
         return;
       }
-      setModelOptions(data.models || [], document.getElementById('model').value || currentModel);
+      setModelOptions(data.models || [], document.getElementById('model').value || currentModel, 'model', currentModel);
+      setModelOptions(data.models || [], document.getElementById('vision_model').value || currentVisionModel || currentModel, 'vision_model', currentModel);
       await loadLogs();
     }
 
@@ -4605,7 +4614,7 @@
     }
 
     document.getElementById('saveTelegram').onclick = () => saveConfig(['telegram_token', 'webhook_url']);
-    document.getElementById('saveAi').onclick = () => saveConfig(['ai_key', 'ai_url', 'model']);
+    document.getElementById('saveAi').onclick = () => saveConfig(['ai_key', 'ai_url', 'model', 'vision_model']);
     document.getElementById('loadModels').onclick = loadModels;
     document.getElementById('refreshLogs').onclick = loadLogs;
     document.getElementById('clearLogs').onclick = async () => {
