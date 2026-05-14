@@ -625,6 +625,26 @@ function estimateTypingMs(text, typingSpeedCps, nightMultiplier, vary) {
   return Math.max(700, Math.min(22000, Math.round(total)));
 }
 
+function estimateThinkingPauseMs({ text, index, totalMessages, readDelayMs, nightMultiplier, vary }) {
+  const safeText = String(text || '');
+  const charCount = safeText.length;
+  const wordCount = safeText.trim() ? safeText.trim().split(/\s+/).length : 0;
+  const isFirst = index === 0;
+  const multiMessageBonus = totalMessages > 1 ? 140 : 0;
+  const complexityBonus = Math.min(700, wordCount * 18 + Math.floor(charCount / 9));
+  const base = isFirst ? Math.max(220, readDelayMs * 0.28) : 180;
+  const total = (base + multiMessageBonus + complexityBonus) * vary() * nightMultiplier;
+  return Math.max(isFirst ? 320 : 180, Math.min(isFirst ? 1800 : 1100, Math.round(total)));
+}
+
+function estimateBetweenMessagesMs({ previousText, nextText, betweenDelayMs, nightMultiplier, vary }) {
+  const prevLen = String(previousText || '').length;
+  const nextLen = String(nextText || '').length;
+  const bridgeMs = Math.min(900, Math.round(prevLen * 2.8 + nextLen * 1.6));
+  const total = (betweenDelayMs * 0.35 + bridgeMs) * vary() * nightMultiplier;
+  return Math.max(350, Math.min(2600, Math.round(total)));
+}
+
 async function simulateTelegramTyping({ chatId, businessConnectionId, durationMs }) {
   const totalMs = Math.max(0, Number(durationMs || 0));
   if (!totalMs) return;
@@ -961,6 +981,15 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
 
   for (let i = 0; i < replyMessages.length; i++) {
     const text = replyMessages[i];
+    const thinkingMs = estimateThinkingPauseMs({
+      text,
+      index: i,
+      totalMessages: replyMessages.length,
+      readDelayMs,
+      nightMultiplier,
+      vary,
+    });
+    await sleep(thinkingMs);
     const typingMs = estimateTypingMs(text, typingSpeedCps, nightMultiplier, vary);
     await simulateTelegramTyping({ chatId, businessConnectionId, durationMs: typingMs });
 
@@ -983,7 +1012,16 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
 
     emitLive('message.created', { traceId, chatId: chatDbId, customerId, direction: 'out', role: 'assistant', source: 'telegram' });
 
-    if (i < replyMessages.length - 1) await sleep(Math.round((betweenDelayMs + Math.random() * 1500) * vary() * nightMultiplier));
+    if (i < replyMessages.length - 1) {
+      const gapMs = estimateBetweenMessagesMs({
+        previousText: text,
+        nextText: replyMessages[i + 1],
+        betweenDelayMs,
+        nightMultiplier,
+        vary,
+      });
+      await sleep(gapMs);
+    }
   }
 
   emitLive('telegram.sent', { traceId, chatId: chatDbId, externalChatId: String(chatId), telegramOk: true });
