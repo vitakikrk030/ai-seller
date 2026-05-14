@@ -687,7 +687,10 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const currentStage = customerFacts.find((f) => f.key === 'funnel_stage')?.value || '';
   const skipGreeting = await shouldSkipGreeting(chatDbId);
 
-  const systemPrompt = compileSystemPrompt(sellerControl, { funnelStage: currentStage, skipGreeting });
+  // If the dialog is already active, suppress first_touch stage to avoid re-greeting
+  const effectiveStage = skipGreeting && currentStage === 'first_touch' ? '' : currentStage;
+
+  const systemPrompt = compileSystemPrompt(sellerControl, { funnelStage: effectiveStage, skipGreeting });
 
   const messages = [{ role: 'system', content: systemPrompt }];
   if (memorySummary) {
