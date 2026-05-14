@@ -1034,6 +1034,7 @@ function getCatalogMtime() {
 function compileSystemPrompt(sellerControl, context = {}) {
   const msk = getMskTime();
   const catalog = loadProductCatalog().filter((p) => p.in_stock);
+  const greetingDedupHours = Math.max(1, Math.min(24, Number(runtimeConfig.greeting_dedup_hours || 4)));
   
   // Build cache key from: control file mtime + catalog mtime + context keys (skipGreeting, funnelStage)
   const controlMtime = getSellerControlMtime();
@@ -1051,9 +1052,9 @@ function compileSystemPrompt(sellerControl, context = {}) {
 
   // Greeting logic: skip if already greeted recently
   if (context.skipGreeting) {
-    parts.push(`Сейчас ${msk.formatted}. Клиент уже общался с вами недавно — НЕ начинай с приветствия, продолжай разговор естественно.`);
+    parts.push(`Сейчас ${msk.formatted}. Клиент уже общался с вами недавно, в пределах последних ${greetingDedupHours} ч — НЕ начинай с приветствия, даже если он снова написал «Привет» или «Здравствуйте». Продолжай разговор естественно и сразу отвечай по сути.`);
   } else {
-    parts.push(`Сейчас ${msk.formatted}. Правило приветствия: зеркаль стиль клиента. Если клиент написал «Привет» — ответь «Привет». Если клиент написал без приветствия — поздоровайся по времени суток: «${msk.greeting}». Затем СРАЗУ вопрос или ответ по делу. Никогда не отправляй одно приветствие без полезной информации.`);
+    parts.push(`Сейчас ${msk.formatted}. Правило приветствия: если клиент не писал дольше ${greetingDedupHours} ч, это можно считать новым касанием. Тогда зеркаль стиль клиента. Если клиент написал «Привет» — ответь «Привет». Если клиент написал без приветствия — поздоровайся по времени суток: «${msk.greeting}». Затем СРАЗУ вопрос или ответ по делу. Никогда не отправляй одно приветствие без полезной информации.`);
   }
 
   const foundation = (sellerControl.foundation || []).filter((b) => b.enabled && b.body);
