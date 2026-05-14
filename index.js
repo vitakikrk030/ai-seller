@@ -586,6 +586,58 @@ async function sendTelegramReaction({ chatId, messageId, emoji, businessConnecti
   }
 }
 
+async function markTelegramBusinessMessageRead({ chatId, messageId, businessConnectionId, traceId }) {
+  if (!runtimeConfig.telegram_token || !businessConnectionId || !messageId) return false;
+  try {
+    await axios.post(telegramApi('readBusinessMessage'), {
+      business_connection_id: businessConnectionId,
+      chat_id: chatId,
+      message_id: messageId,
+    }, { timeout: 5000 });
+    logEvent('TG_MARK_READ', { traceId, chatId, businessConnectionId, messageId, ok: true });
+    return true;
+  } catch (error) {
+    logEvent('TG_MARK_READ_ERROR', {
+      traceId,
+      chatId,
+      businessConnectionId,
+      messageId,
+      error: error.message,
+      providerError: error.response?.data || null,
+    });
+    return false;
+  }
+}
+
+async function sendTelegramTyping({ chatId, businessConnectionId }) {
+  const actionPayload = { chat_id: chatId, action: 'typing' };
+  if (businessConnectionId) actionPayload.business_connection_id = businessConnectionId;
+  await axios.post(telegramApi('sendChatAction'), actionPayload, { timeout: 5000 }).catch(() => {});
+}
+
+function estimateTypingMs(text, typingSpeedCps, nightMultiplier, vary) {
+  const safeText = String(text || '');
+  const charBasedMs = (safeText.length / Math.max(5, typingSpeedCps)) * 1000;
+  const wordCount = safeText.trim() ? safeText.trim().split(/\s+/).length : 0;
+  const punctuationPauses = (safeText.match(/[.,!?;:]/g) || []).length * 110;
+  const wordThinkMs = wordCount * 45;
+  const total = (charBasedMs + punctuationPauses + wordThinkMs) * vary() * nightMultiplier;
+  return Math.max(700, Math.min(22000, Math.round(total)));
+}
+
+async function simulateTelegramTyping({ chatId, businessConnectionId, durationMs }) {
+  const totalMs = Math.max(0, Number(durationMs || 0));
+  if (!totalMs) return;
+  const actionTtlMs = 4500;
+  let remaining = totalMs;
+  while (remaining > 0) {
+    await sendTelegramTyping({ chatId, businessConnectionId });
+    const chunk = Math.min(actionTtlMs, remaining);
+    await sleep(chunk);
+    remaining -= chunk;
+  }
+}
+
 function getSellerControlMtime() {
   try { return fs.statSync(AI_SELLER_CONTROL_FILE).mtimeMs; } catch { return 0; }
 }
@@ -909,14 +961,8 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
 
   for (let i = 0; i < replyMessages.length; i++) {
     const text = replyMessages[i];
-    try {
-      const actionPayload = { chat_id: chatId, action: 'typing' };
-      if (businessConnectionId) actionPayload.business_connection_id = businessConnectionId;
-      await axios.post(telegramApi('sendChatAction'), actionPayload, { timeout: 5000 }).catch(() => {});
-    } catch {}
-
-    const typingMs = Math.max(400, Math.min(5000, (text.length / typingSpeedCps) * 1000 * vary() * nightMultiplier));
-    await sleep(typingMs);
+    const typingMs = estimateTypingMs(text, typingSpeedCps, nightMultiplier, vary);
+    await simulateTelegramTyping({ chatId, businessConnectionId, durationMs: typingMs });
 
     const sendPayload = { chat_id: chatId, text };
     if (businessConnectionId) sendPayload.business_connection_id = businessConnectionId;
@@ -938,15 +984,6 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
     emitLive('message.created', { traceId, chatId: chatDbId, customerId, direction: 'out', role: 'assistant', source: 'telegram' });
 
     if (i < replyMessages.length - 1) await sleep(Math.round((betweenDelayMs + Math.random() * 1500) * vary() * nightMultiplier));
-
-    // Re-send typing action between messages for long multi-message replies
-    if (i < replyMessages.length - 1) {
-      try {
-        const actionPayload = { chat_id: chatId, action: 'typing' };
-        if (businessConnectionId) actionPayload.business_connection_id = businessConnectionId;
-        await axios.post(telegramApi('sendChatAction'), actionPayload, { timeout: 5000 }).catch(() => {});
-      } catch {}
-    }
   }
 
   emitLive('telegram.sent', { traceId, chatId: chatDbId, externalChatId: String(chatId), telegramOk: true });
@@ -1650,6 +1687,14 @@ app.post('/api/telegram/webhook', (req, res) => {
         text,
         isManager,
       });
+      if (!isManager && businessConnectionId && message.message_id) {
+        markTelegramBusinessMessageRead({
+          chatId,
+          messageId: message.message_id,
+          businessConnectionId,
+          traceId,
+        }).catch(() => {});
+      }
       if (!text) return;
 
       if (isManager) {
