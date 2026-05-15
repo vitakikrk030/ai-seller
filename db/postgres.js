@@ -79,7 +79,7 @@ function status() {
 
 async function foundationStatus() {
   const baseStatus = status();
-  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts'];
+  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts', 'orders'];
   if (!ready) {
     return {
       ...baseStatus,
@@ -112,6 +112,15 @@ async function foundationStatus() {
 
 function json(value) {
   return value == null ? null : JSON.stringify(value);
+}
+
+function normalizePhone(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.replace(/[^\d+]/g, '');
+  if (!compact) return '';
+  if (compact.startsWith('+')) return `+${compact.slice(1).replace(/\D/g, '')}`;
+  return compact.replace(/\D/g, '');
 }
 
 function ensureReady() {
@@ -679,7 +688,7 @@ async function updateCrmCustomer(customerId, changes = {}) {
   }
 
   if (Object.prototype.hasOwnProperty.call(changes, 'phone')) {
-    sets.push(`phone = ${add(String(changes.phone || '').trim() || null)}`);
+    sets.push(`phone = ${add(normalizePhone(changes.phone) || null)}`);
   }
   if (Object.prototype.hasOwnProperty.call(changes, 'notes')) {
     sets.push(`notes = ${add(String(changes.notes || ''))}`);
@@ -699,6 +708,7 @@ async function updateCrmCustomer(customerId, changes = {}) {
 
 async function upsertCustomerFact(customerId, key, value, source = 'ai') {
   if (!ready || !customerId || !key) return null;
+  const normalizedValue = String(value || '');
   const result = await query(`
     insert into customer_facts (customer_id, key, value, source)
     values ($1, $2, $3, $4)
@@ -708,7 +718,19 @@ async function upsertCustomerFact(customerId, key, value, source = 'ai') {
       source = excluded.source,
       updated_at = now()
     returning id
-  `, [customerId, key, String(value || ''), source]);
+  `, [customerId, key, normalizedValue, source]);
+  if (['phone', 'phone_number', 'customer_phone'].includes(String(key))) {
+    const phone = normalizePhone(normalizedValue);
+    if (phone) {
+      await query(`
+        update customers
+        set phone = $2,
+            updated_at = now()
+        where id = $1
+          and coalesce(phone, '') is distinct from $2
+      `, [customerId, phone]);
+    }
+  }
   return result.rows[0]?.id || null;
 }
 
@@ -721,6 +743,185 @@ async function getCustomerFacts(customerId) {
     order by key asc
   `, [customerId]);
   return result.rows;
+}
+
+async function getCustomerSnapshot(customerId) {
+  if (!ready || !customerId) return {};
+  const [customer, facts] = await Promise.all([
+    query(`
+      select
+        id,
+        display_name,
+        telegram_username,
+        phone,
+        first_name,
+        last_name,
+        notes
+      from customers
+      where id = $1
+    `, [customerId]),
+    getCustomerFacts(customerId),
+  ]);
+  const customerRow = customer.rows[0] || {};
+  const factMap = Object.fromEntries(facts.map((fact) => [fact.key, fact.value]));
+  return {
+    customer_name: customerRow.display_name || '',
+    telegram_username: customerRow.telegram_username || '',
+    phone: customerRow.phone || factMap.phone || '',
+    first_name: customerRow.first_name || '',
+    last_name: customerRow.last_name || '',
+    notes: customerRow.notes || '',
+    ...factMap,
+  };
+}
+
+async function upsertOrderDraft({
+  customerId = null,
+  chatId = null,
+  source = 'telegram',
+  traceId = null,
+  totalAmount = null,
+  currency = 'RUB',
+  summary = '',
+  snapshot = {},
+  paymentMessageId = null,
+}) {
+  if (!ready || (!customerId && !chatId)) return null;
+  const recent = await query(`
+    select id
+    from orders
+    where status = 'awaiting_payment'
+      and (
+        ($1::uuid is not null and customer_id = $1)
+        or ($2::uuid is not null and chat_id = $2)
+      )
+    order by created_at desc
+    limit 1
+  `, [customerId, chatId]);
+  if (recent.rowCount) {
+    const orderId = recent.rows[0].id;
+    const updated = await query(`
+      update orders
+      set source = $2,
+          trace_id = $3,
+          total_amount = $4,
+          currency = $5,
+          summary = $6,
+          snapshot = $7::jsonb,
+          payment_message_id = coalesce($8, payment_message_id),
+          updated_at = now()
+      where id = $1
+      returning id
+    `, [orderId, source, traceId, totalAmount, currency, summary || null, json(snapshot || {}), paymentMessageId ? String(paymentMessageId) : null]);
+    return updated.rows[0]?.id || null;
+  }
+  const created = await query(`
+    insert into orders (
+      customer_id,
+      chat_id,
+      source,
+      trace_id,
+      total_amount,
+      currency,
+      summary,
+      snapshot,
+      payment_message_id
+    )
+    values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+    returning id
+  `, [
+    customerId,
+    chatId,
+    source,
+    traceId,
+    totalAmount,
+    currency,
+    summary || null,
+    json(snapshot || {}),
+    paymentMessageId ? String(paymentMessageId) : null,
+  ]);
+  return created.rows[0]?.id || null;
+}
+
+async function markLatestOrderPaid({
+  customerId = null,
+  chatId = null,
+  traceId = null,
+  receiptMessageId = null,
+  snapshotPatch = {},
+}) {
+  if (!ready || (!customerId && !chatId)) return null;
+  const pending = await query(`
+    select id, snapshot
+    from orders
+    where status = 'awaiting_payment'
+      and (
+        ($1::uuid is not null and customer_id = $1)
+        or ($2::uuid is not null and chat_id = $2)
+      )
+    order by created_at desc
+    limit 1
+  `, [customerId, chatId]);
+  if (!pending.rowCount) return null;
+  const order = pending.rows[0];
+  const nextSnapshot = {
+    ...(order.snapshot || {}),
+    ...(snapshotPatch || {}),
+  };
+  const updated = await query(`
+    update orders
+    set status = 'paid',
+        trace_id = coalesce($2, trace_id),
+        receipt_message_id = coalesce($3, receipt_message_id),
+        snapshot = $4::jsonb,
+        paid_at = now(),
+        updated_at = now()
+    where id = $1
+    returning id
+  `, [order.id, traceId, receiptMessageId ? String(receiptMessageId) : null, json(nextSnapshot)]);
+  return updated.rows[0]?.id || null;
+}
+
+async function listCustomerOrders(customerId, limit = 20) {
+  if (!ready || !customerId) return [];
+  const result = await query(`
+    select
+      id,
+      customer_id,
+      chat_id,
+      source,
+      trace_id,
+      status,
+      total_amount,
+      currency,
+      summary,
+      snapshot,
+      payment_message_id,
+      receipt_message_id,
+      paid_at,
+      created_at,
+      updated_at
+    from orders
+    where customer_id = $1
+    order by created_at desc, id desc
+    limit $2
+  `, [customerId, clampLimit(limit, 20, 100)]);
+  return result.rows;
+}
+
+async function getCustomerOrderStats(customerId) {
+  if (!ready || !customerId) {
+    return { orders_total: 0, paid_orders: 0, paid_amount_total: 0 };
+  }
+  const result = await query(`
+    select
+      count(*)::int as orders_total,
+      count(*) filter (where status = 'paid')::int as paid_orders,
+      coalesce(sum(total_amount) filter (where status = 'paid'), 0)::int as paid_amount_total
+    from orders
+    where customer_id = $1
+  `, [customerId]);
+  return result.rows[0] || { orders_total: 0, paid_orders: 0, paid_amount_total: 0 };
 }
 
 async function buildMemorySummary(customerId) {
@@ -841,6 +1042,11 @@ module.exports = {
   updateCrmCustomer,
   upsertCustomerFact,
   getCustomerFacts,
+  getCustomerSnapshot,
+  upsertOrderDraft,
+  markLatestOrderPaid,
+  listCustomerOrders,
+  getCustomerOrderStats,
   buildMemorySummary,
   getChatHistory,
   resetChatHistory,

@@ -1712,6 +1712,153 @@
       border-top: 1px solid rgba(20,20,20,.08);
     }
 
+    .client-stats-grid,
+    .client-facts-block,
+    .client-orders-block {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 13px;
+      border-top: 1px solid rgba(20,20,20,.08);
+    }
+
+    .client-section-title {
+      font-size: 11px;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      color: rgba(20,20,20,.42);
+    }
+
+    .client-stats-grid .client-section-title,
+    .client-facts-block .client-section-title,
+    .client-orders-block .client-section-title {
+      grid-column: 1 / -1;
+    }
+
+    .client-stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .client-stat-card {
+      display: grid;
+      gap: 4px;
+      padding: 10px 11px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.68);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+    }
+
+    .client-stat-value {
+      color: rgba(20,20,20,.84);
+      font-size: 16px;
+      font-weight: 760;
+      line-height: 1;
+    }
+
+    .client-stat-label {
+      color: rgba(20,20,20,.48);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .client-facts-list,
+    .client-orders-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .client-fact-item,
+    .client-order-card {
+      display: grid;
+      gap: 6px;
+      padding: 11px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.68);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+    }
+
+    .client-fact-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+    }
+
+    .client-fact-key {
+      color: rgba(20,20,20,.48);
+      font-size: 12px;
+    }
+
+    .client-fact-value {
+      color: rgba(20,20,20,.82);
+      font-size: 13px;
+      font-weight: 650;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .client-order-top,
+    .client-order-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .client-order-amount {
+      color: rgba(20,20,20,.84);
+      font-size: 16px;
+      font-weight: 760;
+      line-height: 1;
+    }
+
+    .client-order-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 760;
+      background: rgba(20,20,20,.06);
+      color: rgba(20,20,20,.6);
+    }
+
+    .client-order-status.paid {
+      background: rgba(52,199,89,.12);
+      color: #1e8a3f;
+    }
+
+    .client-order-status.awaiting_payment {
+      background: rgba(255,149,0,.12);
+      color: #c45d00;
+    }
+
+    .client-order-status.refunded,
+    .client-order-status.cancelled {
+      background: rgba(255,59,48,.1);
+      color: #c0392b;
+    }
+
+    .client-order-summary {
+      color: rgba(20,20,20,.78);
+      font-size: 13px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .client-order-meta,
+    .client-order-snapshot {
+      color: rgba(20,20,20,.48);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .client-order-snapshot {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     .profile-line {
       display: grid;
       grid-template-columns: 20px minmax(0, 1fr);
@@ -3062,6 +3209,9 @@
                 </div>
               </div>
               <div class="client-profile-grid" id="crmClientInfo"></div>
+              <div class="client-stats-grid" id="crmClientStats"></div>
+              <div class="client-facts-block" id="crmClientFacts"></div>
+              <div class="client-orders-block" id="crmClientOrders"></div>
               <button class="profile-action" id="openCrmProfile" type="button" disabled>Открыть профиль</button>
               <button class="profile-action danger" id="resetChatHistory" type="button" disabled>Сбросить историю диалога</button>
             </div>
@@ -3905,6 +4055,43 @@
       }).format(new Date(value));
     }
 
+    function formatRubAmount(value) {
+      const amount = Number(value || 0);
+      if (!Number.isFinite(amount) || amount <= 0) return '—';
+      return `${new Intl.NumberFormat('ru-RU').format(amount)} ₽`;
+    }
+
+    function factLabel(key = '') {
+      const labels = {
+        city: 'Город',
+        phone: 'Телефон',
+        shoe_size: 'Размер обуви',
+        insole_cm: 'Стелька',
+        foot_length: 'Длина стопы',
+        delivery_method: 'Доставка',
+        delivery_address: 'Адрес',
+        pickup_point: 'ПВЗ',
+        full_name: 'ФИО',
+        recipient_name: 'Получатель',
+        name: 'Имя',
+        concerns: 'Опасения',
+        budget: 'Бюджет',
+        product_interest: 'Товар',
+        funnel_stage: 'Этап',
+      };
+      return labels[key] || key;
+    }
+
+    function orderStatusLabel(status = '') {
+      const labels = {
+        awaiting_payment: 'Ждет оплату',
+        paid: 'Оплачен',
+        refunded: 'Возврат',
+        cancelled: 'Отменен',
+      };
+      return labels[status] || status || '—';
+    }
+
     function sourceLabel(source) {
       const labels = { telegram: 'Telegram', vk: 'VK', max: 'MAX' };
       return labels[source] || source || 'Канал';
@@ -4001,6 +4188,9 @@
         phone: chat.phone,
         telegram_username: chat.telegram_username,
         messages_count: chat.messages_count,
+        facts: chat.facts,
+        orders: chat.orders,
+        order_stats: chat.order_stats,
         aiTyping: aiTypingChatId === chat.id,
       });
     }
@@ -4095,6 +4285,81 @@
         <div class="channel-line">
           <span>Канал</span>
           <strong class="channel-value"><span class="channel-icon">${escapeHtml(sourceIcon(source))}</span>${escapeHtml(sourceLabel(source))}</strong>
+        </div>
+      `;
+    }
+
+    function renderClientStats(chat = {}) {
+      const stats = chat.order_stats || {};
+      return `
+        <div class="client-section-title">Покупки</div>
+        <div class="client-stat-card">
+          <span class="client-stat-value">${escapeHtml(String(stats.orders_total || 0))}</span>
+          <span class="client-stat-label">Заказов</span>
+        </div>
+        <div class="client-stat-card">
+          <span class="client-stat-value">${escapeHtml(String(stats.paid_orders || 0))}</span>
+          <span class="client-stat-label">Оплачено</span>
+        </div>
+        <div class="client-stat-card">
+          <span class="client-stat-value">${escapeHtml(formatRubAmount(stats.paid_amount_total || 0))}</span>
+          <span class="client-stat-label">Оставил в магазине</span>
+        </div>
+      `;
+    }
+
+    function renderClientFacts(chat = {}) {
+      const facts = Array.isArray(chat.facts) ? chat.facts : [];
+      const relevant = facts
+        .filter((fact) => fact?.value)
+        .filter((fact) => !['phone'].includes(String(fact.key || '')))
+        .slice(0, 12);
+      if (!relevant.length) {
+        return `<div class="client-section-title">Данные клиента</div><div class="crm-empty">Пока нет сохраненных данных.</div>`;
+      }
+      return `
+        <div class="client-section-title">Данные клиента</div>
+        <div class="client-facts-list">
+          ${relevant.map((fact) => `
+            <div class="client-fact-item">
+              <span class="client-fact-key">${escapeHtml(factLabel(fact.key))}</span>
+              <span class="client-fact-value">${escapeHtml(fact.value)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderClientOrders(chat = {}) {
+      const orders = Array.isArray(chat.orders) ? chat.orders : [];
+      if (!orders.length) {
+        return `<div class="client-section-title">История заказов</div><div class="crm-empty">Заказов пока нет.</div>`;
+      }
+      return `
+        <div class="client-section-title">История заказов</div>
+        <div class="client-orders-list">
+          ${orders.map((order) => {
+            const snapshot = order.snapshot || {};
+            const details = Object.entries(snapshot)
+              .filter(([, value]) => value != null && String(value).trim())
+              .filter(([key]) => !['customer_name', 'telegram_username', 'notes', 'paid_confirmation_text'].includes(String(key)))
+              .map(([key, value]) => `${factLabel(key)}: ${value}`)
+              .join('\n');
+            return `
+              <div class="client-order-card">
+                <div class="client-order-top">
+                  <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
+                  <span class="client-order-status ${escapeHtml(order.status || '')}">${escapeHtml(orderStatusLabel(order.status))}</span>
+                </div>
+                <div class="client-order-summary">${escapeHtml(order.summary || snapshot.product_interest || 'Заказ без описания')}</div>
+                <div class="client-order-meta">
+                  <span>Создан: ${escapeHtml(formatCrmDate(order.created_at))}</span>
+                  <span>${order.paid_at ? `Оплачен: ${escapeHtml(formatCrmDate(order.paid_at))}` : 'Оплата еще не подтверждена'}</span>
+                </div>
+                ${details ? `<div class="client-order-snapshot">${escapeHtml(details)}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
         </div>
       `;
     }
@@ -4394,6 +4659,9 @@
           profileLine('◴', `Первый диалог: ${formatCrmDate(chat.created_at)}`),
           channelProfileLine(chat.source),
         ].join('');
+        document.getElementById('crmClientStats').innerHTML = renderClientStats(chat);
+        document.getElementById('crmClientFacts').innerHTML = renderClientFacts(chat);
+        document.getElementById('crmClientOrders').innerHTML = renderClientOrders(chat);
       }
 
       const profileButton = document.getElementById('openCrmProfile');

@@ -901,6 +901,53 @@ function detectCheckoutLikeMessage(text = '') {
   return (lines.length >= 3 && hasPhone) || (hasPhone && hasDeliveryWords);
 }
 
+function normalizePhoneValue(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.replace(/[^\d+]/g, '');
+  if (!compact) return '';
+  if (compact.startsWith('+')) return `+${compact.slice(1).replace(/\D/g, '')}`;
+  return compact.replace(/\D/g, '');
+}
+
+function extractPhoneFromText(text = '') {
+  const match = String(text || '').match(/(\+?\d[\d()\-\s]{8,}\d)/);
+  return match ? normalizePhoneValue(match[1]) : '';
+}
+
+function parsePaymentAmount(text = '') {
+  const match = String(text || '').match(/сумма\s+к\s+оплате\s*:\s*([\d\s]+)\s*₽/i);
+  if (!match) return null;
+  const digits = Number(String(match[1] || '').replace(/[^\d]/g, ''));
+  return Number.isFinite(digits) && digits > 0 ? digits : null;
+}
+
+function isPaymentTemplateReply(replyMessages = []) {
+  const joined = String((replyMessages || []).join('\n')).toLowerCase();
+  return joined.includes('сумма к оплате')
+    && joined.includes('реквизиты')
+    && joined.includes('получатель');
+}
+
+function isReceiptLikeMessage(message = {}, text = '') {
+  const lower = String(text || '').toLowerCase();
+  if (/(перевел|перевела|оплатил|оплатила|чек|оплата прошла|сделал оплату|сделала оплату)/i.test(lower)) {
+    return true;
+  }
+  const documentName = String(message.document?.file_name || '').toLowerCase();
+  if (/(receipt|чек|pdf)/i.test(documentName)) return true;
+  return false;
+}
+
+function summarizeOrderSnapshot(snapshot = {}) {
+  const parts = [];
+  if (snapshot.product_interest) parts.push(snapshot.product_interest);
+  if (snapshot.shoe_size) parts.push(`${snapshot.shoe_size} размер`);
+  if (snapshot.clothing_size) parts.push(`${snapshot.clothing_size} размер`);
+  if (snapshot.city) parts.push(snapshot.city);
+  return parts.join(' · ').slice(0, 500);
+}
+
 function pickSmartReaction({ chatId, texts, mediaFileId, stage, lastClientText }) {
   if (runtimeConfig.reaction_enabled === false) return null;
   if (getReactionMode() === 'off') return null;
@@ -1742,7 +1789,21 @@ app.get('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
     res.status(404).json({ ok: false, error: 'Chat not found' });
     return;
   }
-  crmOk(res, chat);
+  const [facts, orders, orderStats] = chat.customer_id
+    ? await Promise.all([
+        db.getCustomerFacts(chat.customer_id),
+        db.listCustomerOrders(chat.customer_id, 20),
+        db.getCustomerOrderStats(chat.customer_id),
+      ])
+    : [[], [], { orders_total: 0, paid_orders: 0, paid_amount_total: 0 }];
+  const phoneFact = facts.find((fact) => ['phone', 'phone_number', 'customer_phone'].includes(String(fact.key || '')));
+  crmOk(res, {
+    ...chat,
+    phone: chat.phone || phoneFact?.value || '',
+    facts,
+    orders,
+    order_stats: orderStats,
+  });
 }));
 
 app.get('/api/crm/chats/:chatId/messages', crmHandler(async (req, res) => {
@@ -1810,6 +1871,20 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
     traceId,
     role: 'operator',
   });
+  if (isPaymentTemplateReply([text]) && chat.customer_id) {
+    const snapshot = await db.getCustomerSnapshot(chat.customer_id);
+    await db.upsertOrderDraft({
+      customerId: chat.customer_id,
+      chatId: chat.id,
+      source: 'telegram',
+      traceId,
+      totalAmount: parsePaymentAmount(text),
+      currency: 'RUB',
+      summary: summarizeOrderSnapshot(snapshot),
+      snapshot,
+      paymentMessageId: null,
+    });
+  }
   // CRM manual send also activates passive mode and clears escalation
   const chatKey = String(chat.external_chat_id);
   passiveChats.set(chatKey, { lastManagerAt: Date.now(), managerUserId: 'crm' });
@@ -2117,6 +2192,21 @@ async function processBatchedMessages(bufferKey, buffer) {
 
     if (structured.reply.length > 0) {
       const normalizedReply = collapseReplyMessages(structured.reply, { preferSingle: texts.length > 1 });
+      if (isPaymentTemplateReply(normalizedReply)) {
+        const paymentAmount = parsePaymentAmount(normalizedReply.join('\n'));
+        const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+        await db.upsertOrderDraft({
+          customerId,
+          chatId: chatDbId,
+          source: 'telegram',
+          traceId,
+          totalAmount: paymentAmount,
+          currency: 'RUB',
+          summary: summarizeOrderSnapshot(snapshot),
+          snapshot,
+          paymentMessageId: null,
+        });
+      }
       const reactionEmoji = getReactionMode() === 'smart'
         ? pickSmartReaction({
             chatId,
@@ -2173,6 +2263,20 @@ app.post('/api/telegram/webhook', (req, res) => {
         customerId,
         businessConnectionId,
       });
+      if (message.contact?.phone_number && customerId) {
+        const phone = normalizePhoneValue(message.contact.phone_number);
+        if (phone) {
+          await db.updateCrmCustomer(customerId, { phone });
+          await db.upsertCustomerFact(customerId, 'phone', phone, 'telegram_contact');
+        }
+      }
+      if (customerId && text) {
+        const phoneFromText = extractPhoneFromText(text);
+        if (phoneFromText) {
+          await db.updateCrmCustomer(customerId, { phone: phoneFromText });
+          await db.upsertCustomerFact(customerId, 'phone', phoneFromText, 'telegram_text');
+        }
+      }
       refreshTelegramCustomerAvatar({
         customerId,
         userId: message.from?.id || message.chat?.id || '',
@@ -2195,6 +2299,19 @@ app.post('/api/telegram/webhook', (req, res) => {
         traceId,
         raw: message,
       });
+      if (!isManager && isReceiptLikeMessage(message, text)) {
+        const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+        await db.markLatestOrderPaid({
+          customerId,
+          chatId: chatDbId,
+          traceId,
+          receiptMessageId: message.message_id || null,
+          snapshotPatch: {
+            ...snapshot,
+            paid_confirmation_text: text,
+          },
+        });
+      }
       emitLive('message.created', {
         traceId,
         chatId: chatDbId,
