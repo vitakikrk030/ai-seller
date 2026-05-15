@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js",
+    "backfill:crm-sales": "node scripts/backfill-crm-sales-history.js",
     "db:start": "pg_ctl -D data/postgres -o \"-p 55432\" -l logs/postgres.log start",
     "db:stop": "pg_ctl -D data/postgres stop",
     "db:status": "pg_ctl -D data/postgres status"
