@@ -1723,6 +1723,10 @@
     }
 
     .client-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       font-size: 11px;
       font-weight: 760;
       text-transform: uppercase;
@@ -1738,62 +1742,73 @@
 
     .client-stats-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
     }
 
     .client-stat-card {
       display: grid;
-      gap: 4px;
+      gap: 2px;
+      min-height: 68px;
       padding: 10px 11px;
-      border-radius: 10px;
-      background: rgba(255,255,255,.68);
-      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+      border-radius: 8px;
+      background: rgba(255,255,255,.58);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.05);
     }
 
     .client-stat-value {
-      color: rgba(20,20,20,.84);
-      font-size: 16px;
-      font-weight: 760;
+      color: rgba(20,20,20,.86);
+      font-size: 18px;
+      font-weight: 780;
       line-height: 1;
     }
 
     .client-stat-label {
-      color: rgba(20,20,20,.48);
+      color: rgba(20,20,20,.46);
       font-size: 11px;
       line-height: 1.2;
     }
 
-    .client-facts-list,
-    .client-orders-list {
+    .client-facts-list {
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
     }
 
-    .client-fact-item,
-    .client-order-card {
-      display: grid;
-      gap: 6px;
-      padding: 11px 12px;
-      border-radius: 10px;
-      background: rgba(255,255,255,.68);
-      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
-    }
-
     .client-fact-item {
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
+      display: grid;
+      gap: 3px;
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.52);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.05);
     }
 
     .client-fact-key {
-      color: rgba(20,20,20,.48);
-      font-size: 12px;
+      color: rgba(20,20,20,.42);
+      font-size: 11px;
+      line-height: 1.1;
     }
 
     .client-fact-value {
       color: rgba(20,20,20,.82);
       font-size: 13px;
       font-weight: 650;
-      text-align: right;
+      line-height: 1.3;
       overflow-wrap: anywhere;
+    }
+
+    .client-orders-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .client-order-card {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.74);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
     }
 
     .client-order-top,
@@ -1805,10 +1820,25 @@
       flex-wrap: wrap;
     }
 
-    .client-order-amount {
+    .client-order-title {
       color: rgba(20,20,20,.84);
+      font-size: 14px;
+      font-weight: 720;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .client-order-summary {
+      color: rgba(20,20,20,.56);
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .client-order-amount {
+      color: rgba(20,20,20,.88);
       font-size: 16px;
-      font-weight: 760;
+      font-weight: 780;
       line-height: 1;
     }
 
@@ -1840,23 +1870,34 @@
       color: #c0392b;
     }
 
-    .client-order-summary {
+    .client-order-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .client-order-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(20,20,20,.045);
+      color: rgba(20,20,20,.62);
+      font-size: 11px;
+      line-height: 1.2;
+      max-width: 100%;
+    }
+
+    .client-order-chip strong {
       color: rgba(20,20,20,.78);
-      font-size: 13px;
-      line-height: 1.35;
-      overflow-wrap: anywhere;
+      font-weight: 700;
     }
 
-    .client-order-meta,
-    .client-order-snapshot {
-      color: rgba(20,20,20,.48);
-      font-size: 12px;
-      line-height: 1.35;
-    }
-
-    .client-order-snapshot {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
+    .client-order-meta {
+      color: rgba(20,20,20,.42);
+      font-size: 11px;
+      line-height: 1.25;
     }
 
     .profile-line {
@@ -4069,14 +4110,21 @@
         insole_cm: 'Стелька',
         foot_length: 'Длина стопы',
         delivery_method: 'Доставка',
+        delivery_service: 'Доставка',
         delivery_address: 'Адрес',
         pickup_point: 'ПВЗ',
         full_name: 'ФИО',
+        fio: 'ФИО',
         recipient_name: 'Получатель',
         name: 'Имя',
         concerns: 'Опасения',
         budget: 'Бюджет',
         product_interest: 'Товар',
+        product_link: 'Ссылка',
+        price: 'Сумма',
+        size: 'Размер',
+        item: 'Товары',
+        size_insole_check: 'Проверка размера',
         funnel_stage: 'Этап',
       };
       return labels[key] || key;
@@ -4090,6 +4138,93 @@
         cancelled: 'Отменен',
       };
       return labels[status] || status || '—';
+    }
+
+    function prettifyValue(value) {
+      if (value == null) return '';
+      if (Array.isArray(value)) {
+        return value.map((item) => prettifyValue(item)).filter(Boolean).join(', ');
+      }
+      if (typeof value === 'object') {
+        const name = value.name || value.title || value.product_name || value.label || '';
+        if (name) return String(name);
+        return '';
+      }
+      const text = String(value).trim();
+      if (!text || text === '[object Object]' || /^\[object Object\](,\[object Object\])+$/i.test(text)) return '';
+      try {
+        const parsed = JSON.parse(text);
+        return prettifyValue(parsed);
+      } catch {
+        return text;
+      }
+    }
+
+    function compactFactRows(chat = {}) {
+      const facts = Array.isArray(chat.facts) ? chat.facts : [];
+      const preferredOrder = [
+        'product_interest',
+        'city',
+        'delivery_service',
+        'delivery_method',
+        'pickup_point',
+        'delivery_address',
+        'full_name',
+        'fio',
+        'shoe_size',
+        'insole_cm',
+        'size_insole_check',
+        'funnel_stage',
+      ];
+      const seen = new Set();
+      const byKey = new Map(
+        facts
+          .filter((fact) => fact?.value)
+          .map((fact) => [String(fact.key || ''), prettifyValue(fact.value)])
+          .filter(([key, value]) => key && value && key !== 'phone')
+      );
+      const rows = [];
+      preferredOrder.forEach((key) => {
+        const value = byKey.get(key);
+        if (!value || seen.has(key)) return;
+        seen.add(key);
+        rows.push({ key, label: factLabel(key), value });
+      });
+      byKey.forEach((value, key) => {
+        if (!value || seen.has(key)) return;
+        rows.push({ key, label: factLabel(key), value });
+      });
+      return rows.slice(0, 8);
+    }
+
+    function getOrderTitle(order = {}) {
+      const snapshot = order.snapshot || {};
+      const itemValue = prettifyValue(snapshot.item);
+      if (itemValue) return itemValue;
+      return prettifyValue(snapshot.product_interest) || order.summary || 'Заказ';
+    }
+
+    function getOrderSummary(order = {}) {
+      const snapshot = order.snapshot || {};
+      const parts = [
+        prettifyValue(snapshot.city),
+        prettifyValue(snapshot.delivery_service || snapshot.delivery_method),
+        prettifyValue(snapshot.pickup_point),
+      ].filter(Boolean);
+      return parts.join(' · ');
+    }
+
+    function getOrderChips(order = {}) {
+      const snapshot = order.snapshot || {};
+      const rawRows = [
+        ['Размер', prettifyValue(snapshot.shoe_size || snapshot.size)],
+        ['Стелька', prettifyValue(snapshot.insole_cm)],
+        ['Получатель', prettifyValue(snapshot.full_name || snapshot.fio || snapshot.recipient_name)],
+        ['Телефон', prettifyValue(snapshot.phone)],
+        ['Адрес', prettifyValue(snapshot.delivery_address)],
+        ['ПВЗ', prettifyValue(snapshot.pickup_point)],
+      ];
+      return rawRows.filter(([, value]) => value).slice(0, 6);
     }
 
     function sourceLabel(source) {
@@ -4309,11 +4444,7 @@
     }
 
     function renderClientFacts(chat = {}) {
-      const facts = Array.isArray(chat.facts) ? chat.facts : [];
-      const relevant = facts
-        .filter((fact) => fact?.value)
-        .filter((fact) => !['phone'].includes(String(fact.key || '')))
-        .slice(0, 12);
+      const relevant = compactFactRows(chat);
       if (!relevant.length) {
         return `<div class="client-section-title">Данные клиента</div><div class="crm-empty">Пока нет сохраненных данных.</div>`;
       }
@@ -4322,7 +4453,7 @@
         <div class="client-facts-list">
           ${relevant.map((fact) => `
             <div class="client-fact-item">
-              <span class="client-fact-key">${escapeHtml(factLabel(fact.key))}</span>
+              <span class="client-fact-key">${escapeHtml(fact.label)}</span>
               <span class="client-fact-value">${escapeHtml(fact.value)}</span>
             </div>
           `).join('')}
@@ -4339,24 +4470,28 @@
         <div class="client-section-title">История заказов</div>
         <div class="client-orders-list">
           ${orders.map((order) => {
-            const snapshot = order.snapshot || {};
-            const details = Object.entries(snapshot)
-              .filter(([, value]) => value != null && String(value).trim())
-              .filter(([key]) => !['customer_name', 'telegram_username', 'notes', 'paid_confirmation_text'].includes(String(key)))
-              .map(([key, value]) => `${factLabel(key)}: ${value}`)
-              .join('\n');
+            const title = getOrderTitle(order);
+            const summary = getOrderSummary(order);
+            const chips = getOrderChips(order);
             return `
               <div class="client-order-card">
                 <div class="client-order-top">
-                  <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
                   <span class="client-order-status ${escapeHtml(order.status || '')}">${escapeHtml(orderStatusLabel(order.status))}</span>
+                  <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
                 </div>
-                <div class="client-order-summary">${escapeHtml(order.summary || snapshot.product_interest || 'Заказ без описания')}</div>
+                <div class="client-order-title">${escapeHtml(title)}</div>
+                ${summary ? `<div class="client-order-summary">${escapeHtml(summary)}</div>` : ''}
+                ${chips.length ? `
+                  <div class="client-order-facts">
+                    ${chips.map(([label, value]) => `
+                      <span class="client-order-chip"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>
+                    `).join('')}
+                  </div>
+                ` : ''}
                 <div class="client-order-meta">
                   <span>Создан: ${escapeHtml(formatCrmDate(order.created_at))}</span>
                   <span>${order.paid_at ? `Оплачен: ${escapeHtml(formatCrmDate(order.paid_at))}` : 'Оплата еще не подтверждена'}</span>
                 </div>
-                ${details ? `<div class="client-order-snapshot">${escapeHtml(details)}</div>` : ''}
               </div>
             `;
           }).join('')}
