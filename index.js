@@ -1001,12 +1001,42 @@ function estimateBetweenMessagesMs({ previousText, nextText, betweenDelayMs, nig
   return Math.max(350, Math.min(2600, Math.round(total)));
 }
 
+function shouldForceSingleTemplateReply(items) {
+  if (!Array.isArray(items) || items.length < 2) return false;
+  const joined = items.join('\n').toLowerCase();
+  const paymentHits = [
+    'сумма к оплате',
+    'способ оплаты',
+    'реквизиты:',
+    'получатель:',
+    'банк:',
+    'жду ваш чек',
+  ].filter((token) => joined.includes(token)).length;
+  if (paymentHits >= 3) return true;
+
+  const deliveryHits = [
+    'для оформления заказа',
+    'фио полностью',
+    'номер телефона',
+    'город доставки',
+    'удобная служба доставки',
+    'адрес выбранного пвз',
+    'обратите внимание:',
+  ].filter((token) => joined.includes(token)).length;
+  if (deliveryHits >= 3) return true;
+
+  const numberedLines = items.filter((item) => /^\d+\.\s/.test(item)).length;
+  if (numberedLines >= 3) return true;
+
+  return false;
+}
+
 function collapseReplyMessages(replyMessages, { preferSingle = false } = {}) {
   const items = Array.isArray(replyMessages)
     ? replyMessages.map((item) => String(item || '').trim()).filter(Boolean)
     : [];
   if (!items.length) return [];
-  if (!preferSingle) return items;
+  if (!preferSingle && !shouldForceSingleTemplateReply(items)) return items;
   return [items.join('\n\n')];
 }
 
