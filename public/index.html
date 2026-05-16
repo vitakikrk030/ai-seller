@@ -1811,6 +1811,24 @@
       box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
     }
 
+    .client-order-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .client-order-body.has-media {
+      grid-template-columns: minmax(0, 1fr) 64px;
+      align-items: start;
+    }
+
+    .client-order-copy {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
     .client-order-top,
     .client-order-meta {
       display: flex;
@@ -1833,6 +1851,44 @@
       font-size: 12px;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }
+
+    .client-order-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: rgba(20,20,20,.56);
+      font-size: 12px;
+      line-height: 1.2;
+      text-decoration: none;
+    }
+
+    .client-order-link:hover {
+      color: rgba(20,20,20,.8);
+    }
+
+    .client-order-link span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-order-thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(20,20,20,.04);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.06);
+    }
+
+    .client-order-thumb img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .client-order-amount {
@@ -4197,11 +4253,83 @@
       return rows.slice(0, 8);
     }
 
-    function getOrderTitle(order = {}) {
+    function getFactValue(chat = {}, keys = []) {
+      const facts = Array.isArray(chat.facts) ? chat.facts : [];
+      for (const key of keys) {
+        const fact = facts.find((row) => String(row?.key || '') === String(key));
+        const value = prettifyValue(fact?.value);
+        if (value) return value;
+      }
+      return '';
+    }
+
+    function safeExternalUrl(value = '') {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try {
+        const parsed = new URL(raw);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+        return parsed.toString();
+      } catch {
+        return '';
+      }
+    }
+
+    function formatOrderLinkLabel(url = '') {
+      const safe = safeExternalUrl(url);
+      if (!safe) return '';
+      try {
+        const parsed = new URL(safe);
+        const host = parsed.hostname.replace(/^www\./i, '');
+        const pathText = decodeURIComponent(parsed.pathname || '')
+          .replace(/^\/+/, '')
+          .replace(/\/+$/, '')
+          .replace(/^product\//i, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return pathText ? `${host}/${pathText}` : host;
+      } catch {
+        return safe;
+      }
+    }
+
+    function deriveOrderTitleFromLink(url = '') {
+      const safe = safeExternalUrl(url);
+      if (!safe) return '';
+      try {
+        const parsed = new URL(safe);
+        const slug = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '')
+          .replace(/-\d+$/, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!slug) return '';
+        return slug.replace(/\b\w/g, (char) => char.toUpperCase());
+      } catch {
+        return '';
+      }
+    }
+
+    function getOrderLink(order = {}, chat = {}) {
+      const snapshot = order.snapshot || {};
+      return safeExternalUrl(
+        snapshot.product_link
+        || snapshot.link
+        || snapshot.url
+        || getFactValue(chat, ['product_link', 'link', 'url'])
+      );
+    }
+
+    function getOrderTitle(order = {}, chat = {}) {
       const snapshot = order.snapshot || {};
       const itemValue = prettifyValue(snapshot.item);
       if (itemValue) return itemValue;
-      return prettifyValue(snapshot.product_interest) || order.summary || 'Заказ';
+      const productInterest = prettifyValue(snapshot.product_interest) || getFactValue(chat, ['product_interest', 'item']);
+      if (productInterest) return productInterest;
+      const linkTitle = deriveOrderTitleFromLink(getOrderLink(order, chat));
+      if (linkTitle) return linkTitle;
+      return order.summary || 'Заказ';
     }
 
     function getOrderSummary(order = {}) {
@@ -4225,6 +4353,36 @@
         ['ПВЗ', prettifyValue(snapshot.pickup_point)],
       ];
       return rawRows.filter(([, value]) => value).slice(0, 6);
+    }
+
+    function getOrderThumb(order = {}, chat = {}) {
+      const snapshot = order.snapshot || {};
+      const directImage = safeExternalUrl(
+        snapshot.product_image_url
+        || snapshot.image
+        || snapshot.photo_url
+        || getFactValue(chat, ['product_image_url', 'image', 'photo_url'])
+      );
+      if (directImage) return { src: directImage, alt: getOrderTitle(order, chat) };
+
+      const targetAt = new Date(order.paid_at || order.created_at || 0).getTime() || Infinity;
+      const candidates = (Array.isArray(crmState.messages) ? crmState.messages : [])
+        .filter((message) => message?.direction === 'in' && message?.role === 'customer')
+        .filter((message) => {
+          const media = telegramMedia(message);
+          return media?.type === 'photo';
+        })
+        .filter((message) => {
+          const createdAt = new Date(message.created_at || 0).getTime();
+          return Number.isFinite(createdAt) && createdAt <= targetAt;
+        })
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const media = candidates.length ? telegramMedia(candidates[0]) : null;
+      if (!media?.fileId) return null;
+      return {
+        src: `/api/telegram/file/${encodeURIComponent(media.fileId)}`,
+        alt: 'Фото клиента',
+      };
     }
 
     function sourceLabel(source) {
@@ -4470,17 +4628,26 @@
         <div class="client-section-title">История заказов</div>
         <div class="client-orders-list">
           ${orders.map((order) => {
-            const title = getOrderTitle(order);
+            const title = getOrderTitle(order, chat);
             const summary = getOrderSummary(order);
             const chips = getOrderChips(order);
+            const orderLink = getOrderLink(order, chat);
+            const orderLinkLabel = formatOrderLinkLabel(orderLink);
+            const thumb = getOrderThumb(order, chat);
             return `
               <div class="client-order-card">
                 <div class="client-order-top">
                   <span class="client-order-status ${escapeHtml(order.status || '')}">${escapeHtml(orderStatusLabel(order.status))}</span>
                   <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
                 </div>
-                <div class="client-order-title">${escapeHtml(title)}</div>
-                ${summary ? `<div class="client-order-summary">${escapeHtml(summary)}</div>` : ''}
+                <div class="client-order-body${thumb ? ' has-media' : ''}">
+                  <div class="client-order-copy">
+                    <div class="client-order-title">${escapeHtml(title)}</div>
+                    ${summary ? `<div class="client-order-summary">${escapeHtml(summary)}</div>` : ''}
+                    ${orderLink ? `<a class="client-order-link" href="${escapeHtml(orderLink)}" target="_blank" rel="noopener"><strong>↗</strong><span>${escapeHtml(orderLinkLabel || orderLink)}</span></a>` : ''}
+                  </div>
+                  ${thumb ? `<div class="client-order-thumb"><img src="${escapeHtml(thumb.src)}" alt="${escapeHtml(thumb.alt)}" loading="lazy"></div>` : ''}
+                </div>
                 ${chips.length ? `
                   <div class="client-order-facts">
                     ${chips.map(([label, value]) => `
