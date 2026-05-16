@@ -284,7 +284,7 @@ function telegramApi(method) {
 }
 
 async function fetchTelegramAvatarFileId(userId) {
-  if (!runtimeConfig.telegram_token || !userId) return '';
+  if (!runtimeConfig.telegram_token || !userId) return { ok: false, fileId: '' };
   try {
     const response = await axios.get(telegramApi('getUserProfilePhotos'), {
       timeout: 8000,
@@ -295,19 +295,21 @@ async function fetchTelegramAvatarFileId(userId) {
     });
     const photoSizes = response.data?.result?.photos?.[0] || [];
     const bestPhoto = Array.isArray(photoSizes) ? photoSizes[photoSizes.length - 1] : null;
-    return bestPhoto?.file_id || '';
+    return { ok: true, fileId: bestPhoto?.file_id || '' };
   } catch (error) {
     logEvent('TG_AVATAR_ERROR', {
       userId: String(userId),
       error: error.message,
       providerError: error.response?.data || null,
     });
-    return '';
+    return { ok: false, fileId: '' };
   }
 }
 
 async function refreshTelegramCustomerAvatar({ customerId, userId, chatDbId, traceId }) {
-  const avatarFileId = await fetchTelegramAvatarFileId(userId);
+  const avatar = await fetchTelegramAvatarFileId(userId);
+  if (!avatar.ok) return;
+  const avatarFileId = avatar.fileId || '';
   const updatedId = await db.setCustomerAvatar(customerId, avatarFileId || null);
   if (!updatedId) return;
   logEvent('TG_AVATAR_UPDATED', { traceId, customerId, chatDbId, hasAvatar: Boolean(avatarFileId) });

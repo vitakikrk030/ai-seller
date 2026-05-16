@@ -2,16 +2,35 @@
 
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const db = require('../db/postgres');
 
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function loadTelegramToken() {
+  const runtimeConfig = readJson(path.join(__dirname, '..', 'data', 'runtime-config.json'), {});
+  return process.env.TELEGRAM_TOKEN
+    || process.env.telegram_token
+    || runtimeConfig.telegram_token
+    || '';
+}
+
+const telegramToken = loadTelegramToken();
+
 function telegramApi(method) {
-  return `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN || process.env.telegram_token}/${method}`;
+  return `https://api.telegram.org/bot${telegramToken}/${method}`;
 }
 
 async function fetchTelegramAvatarFileId(userId) {
-  const token = process.env.TELEGRAM_TOKEN || process.env.telegram_token || '';
-  if (!token || !userId) return '';
+  if (!telegramToken || !userId) return { ok: false, fileId: '', reason: 'no_token_or_user' };
   try {
     const response = await axios.get(telegramApi('getUserProfilePhotos'), {
       timeout: 8000,
@@ -22,9 +41,9 @@ async function fetchTelegramAvatarFileId(userId) {
     });
     const photoSizes = response.data?.result?.photos?.[0] || [];
     const bestPhoto = Array.isArray(photoSizes) ? photoSizes[photoSizes.length - 1] : null;
-    return bestPhoto?.file_id || '';
-  } catch {
-    return '';
+    return { ok: true, fileId: bestPhoto?.file_id || '' };
+  } catch (error) {
+    return { ok: false, fileId: '', reason: error.message };
   }
 }
 
@@ -40,10 +59,16 @@ async function repairAvatars() {
   let scanned = 0;
   let repaired = 0;
   let cleared = 0;
+  let skipped = 0;
 
   for (const customer of customers.rows) {
     scanned += 1;
-    const nextAvatar = await fetchTelegramAvatarFileId(customer.telegram_user_id);
+    const avatar = await fetchTelegramAvatarFileId(customer.telegram_user_id);
+    if (!avatar.ok) {
+      skipped += 1;
+      continue;
+    }
+    const nextAvatar = avatar.fileId || '';
     const currentAvatar = String(customer.avatar_file_id || '');
     if (String(nextAvatar || '') === currentAvatar) continue;
     const updatedId = await db.setCustomerAvatar(customer.id, nextAvatar || null);
@@ -52,7 +77,7 @@ async function repairAvatars() {
     if (!nextAvatar) cleared += 1;
   }
 
-  return { scanned, repaired, cleared };
+  return { scanned, repaired, cleared, skipped, token_loaded: Boolean(telegramToken) };
 }
 
 async function main() {
