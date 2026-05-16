@@ -216,8 +216,8 @@ async function upsertTelegramCustomer(from = {}, chat = {}) {
   return result.rows[0]?.id || null;
 }
 
-async function updateCustomerAvatar(customerId, avatarFileId) {
-  if (!ready || !customerId || !avatarFileId) return null;
+async function setCustomerAvatar(customerId, avatarFileId = null) {
+  if (!ready || !customerId) return null;
   const result = await query(`
     update customers
     set
@@ -227,8 +227,13 @@ async function updateCustomerAvatar(customerId, avatarFileId) {
     where id = $1
       and coalesce(avatar_file_id, '') is distinct from $2
     returning id
-  `, [customerId, avatarFileId]);
+  `, [customerId, avatarFileId || null]);
   return result.rows[0]?.id || null;
+}
+
+async function updateCustomerAvatar(customerId, avatarFileId) {
+  if (!avatarFileId) return null;
+  return setCustomerAvatar(customerId, avatarFileId);
 }
 
 async function upsertTelegramChat({ chat = {}, customerId = null, businessConnectionId = '' }) {
@@ -1028,6 +1033,7 @@ module.exports = {
   query,
   recordEvent,
   upsertTelegramCustomer,
+  setCustomerAvatar,
   updateCustomerAvatar,
   upsertTelegramChat,
   recordMessage,

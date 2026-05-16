@@ -308,10 +308,9 @@ async function fetchTelegramAvatarFileId(userId) {
 
 async function refreshTelegramCustomerAvatar({ customerId, userId, chatDbId, traceId }) {
   const avatarFileId = await fetchTelegramAvatarFileId(userId);
-  if (!avatarFileId) return;
-  const updatedId = await db.updateCustomerAvatar(customerId, avatarFileId);
+  const updatedId = await db.setCustomerAvatar(customerId, avatarFileId || null);
   if (!updatedId) return;
-  logEvent('TG_AVATAR_UPDATED', { traceId, customerId, chatDbId });
+  logEvent('TG_AVATAR_UPDATED', { traceId, customerId, chatDbId, hasAvatar: Boolean(avatarFileId) });
   emitLive('chat.updated', { traceId, chatId: chatDbId, customerId, source: 'telegram', reason: 'avatar.updated' });
 }
 
@@ -2299,7 +2298,7 @@ app.post('/api/telegram/webhook', (req, res) => {
       }
       refreshTelegramCustomerAvatar({
         customerId,
-        userId: message.from?.id || message.chat?.id || '',
+        userId: customerIdentity.id || message.chat?.id || '',
         chatDbId,
         traceId,
       }).catch(() => {});
