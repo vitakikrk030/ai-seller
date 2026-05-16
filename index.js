@@ -8,6 +8,7 @@ const net = require('node:net');
 const express = require('express');
 const axios = require('axios');
 const db = require('./db/postgres');
+const dialogDetector = require('./lib/crm-dialog-detector');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 3001);
@@ -962,6 +963,61 @@ function summarizeOrderSnapshot(snapshot = {}) {
   return parts.join(' · ').slice(0, 500);
 }
 
+function dialogDetectionFromRow(row = {}) {
+  const dropStage = row.detection_drop_stage || 'none';
+  const expectedAction = row.detection_expected_action || 'none';
+  return {
+    stage: row.detection_stage || 'none',
+    expected_action: expectedAction,
+    expected_since: row.detection_expected_since || null,
+    drop_stage: dropStage,
+    drop_detected_at: row.detection_drop_detected_at || null,
+    confidence: Number(row.detection_confidence || 0),
+    reason: row.detection_reason || '',
+    evidence: row.detection_evidence || {},
+    blocked_reason: row.detection_blocked_reason || '',
+    followup_attempted: Boolean(row.detection_followup_attempted),
+    last_customer_message_at: row.detection_last_customer_message_at || null,
+    last_outbound_message_at: row.detection_last_outbound_message_at || null,
+    last_followup_at: row.detection_last_followup_at || null,
+    followup_actor: row.detection_followup_actor || '',
+    calculated_at: row.detection_calculated_at || null,
+    label: dialogDetector.STAGE_LABELS[dropStage] || dialogDetector.STAGE_LABELS.none,
+    expected_label: dialogDetector.EXPECTED_LABELS[expectedAction] || dialogDetector.EXPECTED_LABELS.none,
+  };
+}
+
+function attachDialogDetection(row = {}) {
+  return {
+    ...row,
+    dialog_state: dialogDetectionFromRow(row),
+  };
+}
+
+async function refreshDialogDetection(chatDbId, traceId = '') {
+  if (!chatDbId) return null;
+  try {
+    const input = await db.getDialogDetectionInput(chatDbId);
+    if (!input) return null;
+    const state = dialogDetector.buildState(input);
+    await db.upsertDialogState(chatDbId, state);
+    logEvent('CRM_DIALOG_STATE', {
+      traceId,
+      chatDbId,
+      dropStage: state.drop_stage,
+      expectedAction: state.expected_action,
+      confidence: state.confidence,
+      reason: state.reason,
+      blockedReason: state.blocked_reason,
+    });
+    emitLive('chat.updated', { traceId, chatId: chatDbId, source: input.chat?.source || 'crm', reason: 'dialog.state' });
+    return state;
+  } catch (error) {
+    logEvent('CRM_DIALOG_STATE_ERROR', { traceId, chatDbId, error: error.message });
+    return null;
+  }
+}
+
 function pickSmartReaction({ chatId, texts, mediaFileId, stage, lastClientText }) {
   if (runtimeConfig.reaction_enabled === false) return null;
   if (getReactionMode() === 'off') return null;
@@ -1472,6 +1528,7 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
           traceId,
           raw: photoResult?.result || photoResult,
         });
+        refreshDialogDetection(chatDbId, traceId).catch(() => {});
         emitLive('message.created', { traceId, chatId: chatDbId, customerId, direction: 'out', role: 'assistant', source: 'telegram' });
         await sleep(Math.round((1000 + Math.random() * 1000) * nightMultiplier));
       }
@@ -1518,6 +1575,7 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
       traceId,
       raw: response.data?.result || response.data,
     });
+    refreshDialogDetection(chatDbId, traceId).catch(() => {});
 
     emitLive('message.created', { traceId, chatId: chatDbId, customerId, direction: 'out', role: 'assistant', source: 'telegram' });
 
@@ -1573,6 +1631,7 @@ async function sendTelegramMessage({ chatId, chatDbId = null, customerId = null,
     traceId,
     raw: response.data?.result || response.data,
   });
+  refreshDialogDetection(chatDbId, traceId).catch(() => {});
   emitLive('message.created', {
     traceId,
     chatId: chatDbId,
@@ -1794,7 +1853,7 @@ app.get('/api/crm/chats', crmHandler(async (req, res) => {
     limit: req.query.limit,
     cursor: req.query.cursor,
   });
-  crmOk(res, result.items, result.page);
+  crmOk(res, result.items.map(attachDialogDetection), result.page);
 }));
 
 app.get('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
@@ -1812,7 +1871,7 @@ app.get('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
     : [[], [], { orders_total: 0, paid_orders: 0, paid_amount_total: 0 }];
   const phoneFact = facts.find((fact) => ['phone', 'phone_number', 'customer_phone'].includes(String(fact.key || '')));
   crmOk(res, {
-    ...chat,
+    ...attachDialogDetection(chat),
     phone: chat.phone || phoneFact?.value || '',
     facts,
     orders,
@@ -1898,6 +1957,7 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
       snapshot,
       paymentMessageId: null,
     });
+    refreshDialogDetection(chat.id, traceId).catch(() => {});
   }
   // CRM manual send also activates passive mode and clears escalation
   const chatKey = String(chat.external_chat_id);
@@ -2333,6 +2393,7 @@ app.post('/api/telegram/webhook', (req, res) => {
           },
         });
       }
+      refreshDialogDetection(chatDbId, traceId).catch(() => {});
       emitLive('message.created', {
         traceId,
         chatId: chatDbId,

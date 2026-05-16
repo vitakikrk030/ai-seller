@@ -79,7 +79,7 @@ function status() {
 
 async function foundationStatus() {
   const baseStatus = status();
-  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts', 'orders'];
+  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts', 'orders', 'crm_dialog_state'];
   if (!ready) {
     return {
       ...baseStatus,
@@ -462,9 +462,23 @@ async function listCrmChats(filters = {}) {
       lm.role as last_message_role,
       lm.created_at as last_message_created_at,
       coalesce(mc.messages_count, 0)::int as messages_count,
-      coalesce(at.ai_turns_count, 0)::int as ai_turns_count
+      coalesce(at.ai_turns_count, 0)::int as ai_turns_count,
+      ds.stage as detection_stage,
+      ds.expected_action as detection_expected_action,
+      ds.expected_since as detection_expected_since,
+      ds.drop_stage as detection_drop_stage,
+      ds.drop_detected_at as detection_drop_detected_at,
+      ds.confidence as detection_confidence,
+      ds.reason as detection_reason,
+      ds.evidence as detection_evidence,
+      ds.blocked_reason as detection_blocked_reason,
+      ds.followup_attempted as detection_followup_attempted,
+      ds.last_followup_at as detection_last_followup_at,
+      ds.followup_actor as detection_followup_actor,
+      ds.calculated_at as detection_calculated_at
     from chats c
     left join customers cu on cu.id = c.customer_id
+    left join crm_dialog_state ds on ds.chat_id = c.id
     left join lateral (
       select text, direction, role, created_at
       from messages
@@ -508,9 +522,25 @@ async function getCrmChat(chatId) {
       cu.created_at as customer_created_at,
       cu.updated_at as customer_updated_at,
       coalesce(mc.messages_count, 0)::int as messages_count,
-      coalesce(at.ai_turns_count, 0)::int as ai_turns_count
+      coalesce(at.ai_turns_count, 0)::int as ai_turns_count,
+      ds.stage as detection_stage,
+      ds.expected_action as detection_expected_action,
+      ds.expected_since as detection_expected_since,
+      ds.drop_stage as detection_drop_stage,
+      ds.drop_detected_at as detection_drop_detected_at,
+      ds.confidence as detection_confidence,
+      ds.reason as detection_reason,
+      ds.evidence as detection_evidence,
+      ds.blocked_reason as detection_blocked_reason,
+      ds.followup_attempted as detection_followup_attempted,
+      ds.last_customer_message_at as detection_last_customer_message_at,
+      ds.last_outbound_message_at as detection_last_outbound_message_at,
+      ds.last_followup_at as detection_last_followup_at,
+      ds.followup_actor as detection_followup_actor,
+      ds.calculated_at as detection_calculated_at
     from chats c
     left join customers cu on cu.id = c.customer_id
+    left join crm_dialog_state ds on ds.chat_id = c.id
     left join lateral (
       select count(*) as messages_count from messages where chat_id = c.id
     ) mc on true
@@ -914,6 +944,141 @@ async function listCustomerOrders(customerId, limit = 20) {
   return result.rows;
 }
 
+async function listChatOrders(chatId, limit = 20) {
+  if (!ready || !chatId) return [];
+  const result = await query(`
+    select
+      id,
+      customer_id,
+      chat_id,
+      source,
+      trace_id,
+      status,
+      total_amount,
+      currency,
+      summary,
+      snapshot,
+      payment_message_id,
+      receipt_message_id,
+      paid_at,
+      created_at,
+      updated_at
+    from orders
+    where chat_id = $1
+    order by created_at desc, id desc
+    limit $2
+  `, [chatId, clampLimit(limit, 20, 100)]);
+  return result.rows;
+}
+
+async function getDialogDetectionInput(chatId) {
+  if (!ready || !chatId) return null;
+  const chat = await getCrmChat(chatId);
+  if (!chat) return null;
+  const [messagesResult, facts, orders] = await Promise.all([
+    query(`
+      select
+        id,
+        chat_id,
+        customer_id,
+        direction,
+        role,
+        text,
+        telegram_message_id,
+        trace_id,
+        raw,
+        created_at
+      from messages
+      where chat_id = $1
+      order by created_at asc, id asc
+      limit 300
+    `, [chatId]),
+    chat.customer_id ? getCustomerFacts(chat.customer_id) : Promise.resolve([]),
+    listChatOrders(chatId, 50),
+  ]);
+  const factMap = Object.fromEntries((facts || []).map((fact) => [fact.key, fact.value]));
+  return {
+    chat,
+    messages: messagesResult.rows || [],
+    facts: factMap,
+    orders,
+  };
+}
+
+async function upsertDialogState(chatId, state = {}) {
+  if (!ready || !chatId) return null;
+  const result = await query(`
+    insert into crm_dialog_state (
+      chat_id,
+      stage,
+      expected_action,
+      expected_since,
+      drop_stage,
+      drop_detected_at,
+      confidence,
+      reason,
+      evidence,
+      blocked_reason,
+      followup_attempted,
+      last_customer_message_at,
+      last_outbound_message_at,
+      last_followup_at,
+      followup_actor,
+      calculated_at,
+      updated_at
+    )
+    values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, now(), now())
+    on conflict (chat_id)
+    do update set
+      stage = excluded.stage,
+      expected_action = excluded.expected_action,
+      expected_since = excluded.expected_since,
+      drop_stage = excluded.drop_stage,
+      drop_detected_at = excluded.drop_detected_at,
+      confidence = excluded.confidence,
+      reason = excluded.reason,
+      evidence = excluded.evidence,
+      blocked_reason = excluded.blocked_reason,
+      followup_attempted = excluded.followup_attempted,
+      last_customer_message_at = excluded.last_customer_message_at,
+      last_outbound_message_at = excluded.last_outbound_message_at,
+      last_followup_at = excluded.last_followup_at,
+      followup_actor = excluded.followup_actor,
+      calculated_at = now(),
+      updated_at = now()
+    returning chat_id
+  `, [
+    chatId,
+    state.stage || 'none',
+    state.expected_action || 'none',
+    state.expected_since || null,
+    state.drop_stage || 'none',
+    state.drop_detected_at || null,
+    Number(state.confidence || 0),
+    state.reason || '',
+    json(state.evidence || {}),
+    state.blocked_reason || '',
+    Boolean(state.followup_attempted),
+    state.last_customer_message_at || null,
+    state.last_outbound_message_at || null,
+    state.last_followup_at || null,
+    state.followup_actor || '',
+  ]);
+  return result.rows[0]?.chat_id || null;
+}
+
+async function listChatIdsForDetection(limit = 1000) {
+  if (!ready) return [];
+  const result = await query(`
+    select id
+    from chats
+    where status <> 'archived'
+    order by coalesce(last_message_at, updated_at, created_at) desc
+    limit $1
+  `, [clampLimit(limit, 1000, 10000)]);
+  return result.rows.map((row) => row.id);
+}
+
 async function getCustomerOrderStats(customerId) {
   if (!ready || !customerId) {
     return { orders_total: 0, paid_orders: 0, paid_amount_total: 0 };
@@ -993,6 +1158,9 @@ async function resetChatHistory(chatId) {
     // Delete AI turns only for the selected chat.
     const aiTurns = await query('delete from ai_turns where chat_id = $1', [chatId]);
 
+    // Delete computed CRM dialog state only for this selected chat.
+    const dialogState = await query('delete from crm_dialog_state where chat_id = $1', [chatId]);
+
     // Delete memory facts only for this selected chat's customer.
     let facts = { rowCount: 0 };
     if (customerId) {
@@ -1017,6 +1185,7 @@ async function resetChatHistory(chatId) {
         events: events.rowCount,
         messages: messages.rowCount,
         aiTurns: aiTurns.rowCount,
+        dialogState: dialogState.rowCount,
         customerFacts: facts.rowCount,
       },
     };
@@ -1052,6 +1221,10 @@ module.exports = {
   upsertOrderDraft,
   markLatestOrderPaid,
   listCustomerOrders,
+  listChatOrders,
+  getDialogDetectionInput,
+  upsertDialogState,
+  listChatIdsForDetection,
   getCustomerOrderStats,
   buildMemorySummary,
   getChatHistory,

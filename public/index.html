@@ -723,6 +723,26 @@
       line-height: 1;
     }
 
+    .dialog-stage-chip {
+      width: fit-content;
+      max-width: 100%;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: rgba(20,20,20,.055);
+      color: rgba(20,20,20,.58);
+      font-size: 10px;
+      font-weight: 760;
+      line-height: 1;
+    }
+
+    .dialog-stage-chip.first_touch_drop { background: rgba(70,130,180,.12); color: #426d91; }
+    .dialog-stage-chip.sizing_drop { background: rgba(255,149,0,.13); color: #a85b00; }
+    .dialog-stage-chip.checkout_drop { background: rgba(90,100,170,.12); color: #555f9f; }
+    .dialog-stage-chip.payment_drop { background: rgba(255,94,58,.13); color: #b24a2f; }
+
     .dialog-preview {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1710,6 +1730,57 @@
       margin-top: 14px;
       padding-top: 13px;
       border-top: 1px solid rgba(20,20,20,.08);
+    }
+
+    .client-dialog-state {
+      display: none;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 13px;
+      border-top: 1px solid rgba(20,20,20,.08);
+    }
+
+    .client-dialog-state.active {
+      display: grid;
+    }
+
+    .dialog-state-card {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.62);
+      box-shadow: inset 0 0 0 1px rgba(20,20,20,.05);
+    }
+
+    .dialog-state-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .dialog-state-label {
+      color: rgba(20,20,20,.44);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .dialog-state-value {
+      color: rgba(20,20,20,.78);
+      font-size: 12px;
+      font-weight: 720;
+      line-height: 1.25;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .dialog-state-reason {
+      color: rgba(20,20,20,.5);
+      font-size: 12px;
+      line-height: 1.35;
     }
 
     .client-stats-grid,
@@ -3306,6 +3377,7 @@
                 </div>
               </div>
               <div class="client-profile-grid" id="crmClientInfo"></div>
+              <div class="client-dialog-state" id="crmDialogState"></div>
               <div class="client-stats-grid" id="crmClientStats"></div>
               <div class="client-facts-block" id="crmClientFacts"></div>
               <div class="client-orders-block" id="crmClientOrders"></div>
@@ -4552,6 +4624,7 @@
         chat.ai_enabled,
         chat.status,
         chat.customer_avatar_file_id,
+        chat.dialog_state,
       ]));
     }
 
@@ -4570,6 +4643,7 @@
         facts: chat.facts,
         orders: chat.orders,
         order_stats: chat.order_stats,
+        dialog_state: chat.dialog_state,
         aiTyping: aiTypingChatId === chat.id,
       });
     }
@@ -4648,6 +4722,96 @@
           <div class="info-value">${escapeHtml(value || '—')}</div>
         </div>
       `).join('');
+    }
+
+    function dialogStateLabel(state = {}) {
+      const labels = {
+        first_touch_drop: 'Первое касание',
+        sizing_drop: 'Размер',
+        checkout_drop: 'Оформление',
+        payment_drop: 'Реквизиты',
+      };
+      return labels[state.drop_stage] || state.label || '';
+    }
+
+    function dialogExpectedLabel(state = {}) {
+      const labels = {
+        reply_any: 'ответ клиента',
+        send_size: 'размер или стельку',
+        send_checkout_data: 'данные для оформления',
+        send_payment_confirmation: 'оплату или чек',
+      };
+      return labels[state.expected_action] || state.expected_label || '';
+    }
+
+    function humanDurationSince(value) {
+      if (!value) return '';
+      const diffMs = Date.now() - new Date(value).getTime();
+      if (!Number.isFinite(diffMs) || diffMs < 0) return '';
+      const minutes = Math.floor(diffMs / 60000);
+      if (minutes < 60) return `${minutes} мин`;
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      if (hours < 24) return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+      const days = Math.floor(hours / 24);
+      const restHours = hours % 24;
+      return restHours ? `${days} д ${restHours} ч` : `${days} д`;
+    }
+
+    function renderDialogStageChip(state = {}) {
+      const dropStage = state.drop_stage || 'none';
+      if (!dropStage || dropStage === 'none') return '';
+      const label = dialogStateLabel(state);
+      if (!label) return '';
+      return `<span class="dialog-stage-chip ${escapeHtml(dropStage)}">${escapeHtml(label)}</span>`;
+    }
+
+    function renderDialogStateBlock(chat = {}) {
+      const state = chat.dialog_state || {};
+      const dropStage = state.drop_stage || 'none';
+      const boxClass = dropStage && dropStage !== 'none' ? 'client-dialog-state active' : 'client-dialog-state';
+      if (!dropStage || dropStage === 'none') return { className: boxClass, html: '' };
+      const label = dialogStateLabel(state);
+      const expected = dialogExpectedLabel(state);
+      const silence = humanDurationSince(state.expected_since || state.last_customer_message_at || state.drop_detected_at);
+      const actor = state.followup_attempted
+        ? state.followup_actor === 'manager'
+          ? 'менеджер уже писал'
+          : state.followup_actor === 'ai'
+            ? 'AI уже писал'
+            : 'повторное касание было'
+        : 'ещё не трогали';
+      const reason = {
+        first_touch_drop: 'Клиент написал и не продолжил диалог после ответа.',
+        sizing_drop: 'Запрошен размер или стелька, но нужный ответ не пришёл.',
+        checkout_drop: 'Запрошены данные для оформления, но комплект данных не закрыт.',
+        payment_drop: 'Реквизиты отправлены, оплаты или чека пока нет.',
+      }[dropStage] || state.reason || '';
+      return {
+        className: boxClass,
+        html: `
+          <div class="client-section-title">Точка зависания</div>
+          <div class="dialog-state-card">
+            <div class="dialog-state-row">
+              <span class="dialog-state-label">Этап</span>
+              <span class="dialog-state-value">${escapeHtml(label)}</span>
+            </div>
+            <div class="dialog-state-row">
+              <span class="dialog-state-label">Ждём</span>
+              <span class="dialog-state-value">${escapeHtml(expected || 'ответ клиента')}</span>
+            </div>
+            <div class="dialog-state-row">
+              <span class="dialog-state-label">Тишина</span>
+              <span class="dialog-state-value">${escapeHtml(silence || '—')}</span>
+            </div>
+            <div class="dialog-state-row">
+              <span class="dialog-state-label">Касание</span>
+              <span class="dialog-state-value">${escapeHtml(actor)}</span>
+            </div>
+            <div class="dialog-state-reason">${escapeHtml(reason)}</div>
+          </div>
+        `,
+      };
     }
 
     function profileLine(icon, value, copyValue = '') {
@@ -4886,6 +5050,7 @@
                 <span class="source-badge" title="${escapeHtml(sourceLabel(chat.source))}">${escapeHtml(sourceIcon(chat.source))}</span>
               </div>
               <div class="dialog-preview">${escapeHtml(preview)}</div>
+              ${renderDialogStageChip(chat.dialog_state || {})}
             </div>
             <div class="dialog-side">
               <span>${escapeHtml(formatCrmDate(chat.last_message_created_at || chat.updated_at))}</span>
@@ -5047,6 +5212,10 @@
           profileLine('◴', `Первый диалог: ${formatCrmDate(chat.created_at)}`),
           channelProfileLine(chat.source),
         ].join('');
+        const dialogState = renderDialogStateBlock(chat);
+        const dialogStateNode = document.getElementById('crmDialogState');
+        dialogStateNode.className = dialogState.className;
+        dialogStateNode.innerHTML = dialogState.html;
         document.getElementById('crmClientStats').innerHTML = renderClientStats(chat);
         document.getElementById('crmClientFacts').innerHTML = renderClientFacts(chat);
         document.getElementById('crmClientOrders').innerHTML = renderClientOrders(chat);
