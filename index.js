@@ -325,6 +325,19 @@ function getTelegramMessage(update = {}) {
   };
 }
 
+function getTelegramCustomerIdentity(message = {}, businessConnectionId = '') {
+  const privateChat = message.chat?.type === 'private' ? message.chat : null;
+  if (businessConnectionId && privateChat?.id) {
+    return {
+      id: privateChat.id,
+      username: privateChat.username || '',
+      first_name: privateChat.first_name || '',
+      last_name: privateChat.last_name || '',
+    };
+  }
+  return message.from || message.chat || {};
+}
+
 function normalizeTelegramText(message = {}) {
   const text = String(message.text || message.caption || '').trim();
   if (text) return text;
@@ -2257,7 +2270,8 @@ app.post('/api/telegram/webhook', (req, res) => {
       const chatId = message.chat.id;
       const text = normalizeTelegramText(message);
       const media = extractTelegramMedia(message);
-      const customerId = await db.upsertTelegramCustomer(message.from || {}, message.chat || {});
+      const customerIdentity = getTelegramCustomerIdentity(message, businessConnectionId);
+      const customerId = await db.upsertTelegramCustomer(customerIdentity, message.chat || {});
       const chatDbId = await db.upsertTelegramChat({
         chat: message.chat || {},
         customerId,
