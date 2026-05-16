@@ -4294,6 +4294,85 @@
       }
     }
 
+    function normalizeCompareText(value = '') {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, ' ')
+        .replace(/['"«»`]/g, '')
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function compactOrderItemLabel(value = '') {
+      const raw = String(value || '')
+        .replace(/^\d+\.\s*/, '')
+        .replace(/\s*[—-]\s*\d[\d\s]*\s*₽.*$/i, '')
+        .trim();
+      if (!raw) return '';
+      const bySize = raw.split(/,\s*\d+\s*размер\b/i)[0]?.trim() || raw;
+      const byInsole = bySize.split(/,\s*\d+(?:[.,]\d+)?\s*см\b/i)[0]?.trim() || bySize;
+      return byInsole;
+    }
+
+    function parseSnapshotItems(value) {
+      if (value == null) return [];
+      const direct = Array.isArray(value) ? value : [value];
+      const extracted = direct.flatMap((entry) => {
+        if (entry == null) return [];
+        if (typeof entry === 'object') {
+          const name = entry.name || entry.title || entry.product_name || entry.label || '';
+          return name ? [String(name).trim()] : [];
+        }
+        const text = String(entry).trim();
+        if (!text || /^\[object Object\](,\[object Object\])*$/i.test(text)) return [];
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed !== entry) return parseSnapshotItems(parsed);
+        } catch {}
+        return text.split(/\s*\|\s*|\s*;\s*|\s*,\s*(?=\{)/).map((item) => item.trim()).filter(Boolean);
+      });
+      return Array.from(new Set(extracted.map(compactOrderItemLabel).filter(Boolean)));
+    }
+
+    function extractOrderItemsFromMessageText(text = '') {
+      const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+      const numbered = lines
+        .filter((line) => /^\d+\.\s+/.test(line))
+        .map((line) => compactOrderItemLabel(line))
+        .filter(Boolean);
+      if (numbered.length) return Array.from(new Set(numbered));
+      return [];
+    }
+
+    function findOrderItemsFromMessages(order = {}) {
+      const targetAt = new Date(order.paid_at || order.created_at || 0).getTime() || Infinity;
+      const messages = (Array.isArray(crmState.messages) ? crmState.messages : [])
+        .filter((message) => new Date(message.created_at || 0).getTime() <= targetAt)
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      for (const message of messages) {
+        const items = extractOrderItemsFromMessageText(message.text || '');
+        if (!items.length) continue;
+        if (/итого|значит, у вас|у вас два заказа|у вас 2 заказа/i.test(String(message.text || ''))) {
+          return items;
+        }
+      }
+      return [];
+    }
+
+    function getResolvedOrderItems(order = {}, chat = {}) {
+      const snapshot = order.snapshot || {};
+      const snapshotItems = parseSnapshotItems(snapshot.item);
+      if (snapshotItems.length) return snapshotItems;
+      const messageItems = findOrderItemsFromMessages(order);
+      if (messageItems.length) return messageItems;
+      const productInterest = prettifyValue(snapshot.product_interest);
+      if (productInterest) return [compactOrderItemLabel(productInterest)];
+      const factInterest = getFactValue(chat, ['product_interest']);
+      if (factInterest) return [compactOrderItemLabel(factInterest)];
+      return [];
+    }
+
     function deriveOrderTitleFromLink(url = '') {
       const safe = safeExternalUrl(url);
       if (!safe) return '';
@@ -4313,20 +4392,28 @@
 
     function getOrderLink(order = {}, chat = {}) {
       const snapshot = order.snapshot || {};
-      return safeExternalUrl(
+      const safe = safeExternalUrl(
         snapshot.product_link
         || snapshot.link
         || snapshot.url
-        || getFactValue(chat, ['product_link', 'link', 'url'])
       );
+      if (!safe) return '';
+      const items = getResolvedOrderItems(order, chat);
+      if (items.length > 1) return '';
+      const linkTitle = normalizeCompareText(deriveOrderTitleFromLink(safe));
+      if (!linkTitle) return safe;
+      if (!items.length) return safe;
+      const matches = items.some((item) => {
+        const normalizedItem = normalizeCompareText(item);
+        return normalizedItem && (normalizedItem.includes(linkTitle) || linkTitle.includes(normalizedItem));
+      });
+      return matches ? safe : '';
     }
 
     function getOrderTitle(order = {}, chat = {}) {
-      const snapshot = order.snapshot || {};
-      const itemValue = prettifyValue(snapshot.item);
-      if (itemValue) return itemValue;
-      const productInterest = prettifyValue(snapshot.product_interest) || getFactValue(chat, ['product_interest', 'item']);
-      if (productInterest) return productInterest;
+      const items = getResolvedOrderItems(order, chat);
+      if (items.length > 1) return `${items[0]} +${items.length - 1} ещё`;
+      if (items.length === 1) return items[0];
       const linkTitle = deriveOrderTitleFromLink(getOrderLink(order, chat));
       if (linkTitle) return linkTitle;
       return order.summary || 'Заказ';
@@ -4361,7 +4448,6 @@
         snapshot.product_image_url
         || snapshot.image
         || snapshot.photo_url
-        || getFactValue(chat, ['product_image_url', 'image', 'photo_url'])
       );
       if (directImage) return { src: directImage, alt: getOrderTitle(order, chat) };
 

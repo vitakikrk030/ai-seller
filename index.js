@@ -2192,7 +2192,13 @@ async function processBatchedMessages(bufferKey, buffer) {
 
     const factsEntries = Object.entries(structured.facts || {});
     for (const [key, value] of factsEntries) {
-      if (value) await db.upsertCustomerFact(customerId, key, String(value), 'ai');
+      if (!value) continue;
+      const normalizedValue = typeof value === 'string'
+        ? value
+        : JSON.stringify(value);
+      if (normalizedValue) {
+        await db.upsertCustomerFact(customerId, key, normalizedValue, 'ai');
+      }
     }
     if (structured.stage) {
       await db.upsertCustomerFact(customerId, 'funnel_stage', structured.stage, 'ai');
