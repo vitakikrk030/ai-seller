@@ -2328,6 +2328,21 @@ async function processBatchedMessages(bufferKey, buffer) {
       await db.upsertCustomerFact(customerId, 'funnel_stage', structured.stage, 'ai');
     }
 
+    const aiPaymentStatus = String(structured.facts?.payment_status || '').trim().toLowerCase();
+    if (aiPaymentStatus === 'paid') {
+      const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+      await db.markLatestOrderPaid({
+        customerId,
+        chatId: chatDbId,
+        traceId,
+        snapshotPatch: {
+          ...snapshot,
+          payment_detected_by: 'ai_fact',
+          paid_confirmation_text: combinedText,
+        },
+      });
+    }
+
     if (processingState.cancelled) {
       logEvent('AI_CANCELLED', { traceId, chatId, reason: 'new_message_before_send' });
       return;
