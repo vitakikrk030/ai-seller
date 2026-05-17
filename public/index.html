@@ -4879,17 +4879,30 @@
       const draftPayment = draft?.payment_data || {};
       const draftItems = Array.isArray(draftIntent.items) ? draftIntent.items : [];
       const activeDraftProduct = draftIntent.product_name || (draftItems[0]?.product_name || '');
+      const deliveryMissingLabels = {
+        recipient_name: 'ФИО',
+        delivery_phone: 'телефон',
+        delivery_city: 'город',
+        delivery_service: 'служба доставки',
+        delivery_target: 'адрес/ПВЗ',
+      };
+      const missingDelivery = Array.isArray(draftDelivery.missing_fields)
+        ? draftDelivery.missing_fields.map((key) => deliveryMissingLabels[key] || key).filter(Boolean)
+        : [];
       const draftFlags = [
         draft?.meta?.product_changed === 'true' ? 'Смена товара' : '',
         draftIntent.multi_item === 'true' ? `Позиций: ${draftIntent.item_count || draftItems.length}` : '',
         draftIntent.size_status === 'obsolete' ? 'Размер надо перепроверить' : '',
+        draftDelivery.completeness === 'partial' && missingDelivery.length ? `Не хватает: ${missingDelivery.join(', ')}` : '',
       ].filter(Boolean).join(' · ');
       const draftRows = [
         ['Этап заказа', draft?.current_step || ''],
         ['Товар', prettifyValue(activeDraftProduct)],
         ['Размер', prettifyValue(draftIntent.shoe_size || draftIntent.clothing_size)],
+        ['Доставка статус', prettifyValue(draftDelivery.completeness)],
         ['Доставка', prettifyValue(draftDelivery.delivery_service)],
         ['Город', prettifyValue(draftDelivery.delivery_city)],
+        ['Оплата статус', prettifyValue(draftPayment.payment_state || draftPayment.payment_status || draftPayment.order_status)],
         ['Сумма', prettifyValue(draftPayment.payment_amount)],
         ['Статус', draft?.status || ''],
       ].filter(([, value]) => value);

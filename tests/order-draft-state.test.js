@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   normalizeOrderSnapshot,
+  buildDeliveryState,
+  buildPaymentState,
   getDraftStep,
   buildOrderDraftPayload,
 } = require('../lib/order-draft-state');
@@ -79,4 +81,52 @@ test('getDraftStep returns support when payment is confirmed', () => {
   });
 
   assert.equal(step, 'support');
+});
+
+test('buildDeliveryState marks delivery complete when required fields are present', () => {
+  const state = buildDeliveryState({
+    delivery_fio: 'Иван Иванов',
+    delivery_phone: '89990001122',
+    delivery_city: 'Москва',
+    delivery_service: 'Ozon',
+    delivery_address: 'ул. Пушкина 1',
+  });
+
+  assert.equal(state.deliveryData.completeness, 'complete');
+  assert.deepEqual(state.deliveryData.missing_fields, []);
+  assert.equal(state.deliveryData.delivery_kind, 'address');
+});
+
+test('buildDeliveryState marks delivery partial when address or pickup point is missing', () => {
+  const state = buildDeliveryState({
+    delivery_fio: 'Иван Иванов',
+    delivery_phone: '89990001122',
+    delivery_city: 'Москва',
+    delivery_service: 'Ozon',
+  });
+
+  assert.equal(state.deliveryData.completeness, 'partial');
+  assert.deepEqual(state.deliveryData.missing_fields, ['delivery_target']);
+});
+
+test('buildPaymentState marks requested after payment template was sent', () => {
+  const state = buildPaymentState({
+    facts: { price: '3990' },
+    paymentTemplateSent: true,
+    paymentAmount: 3990,
+    paymentConfirmed: false,
+  });
+
+  assert.equal(state.paymentData.payment_state, 'requested');
+  assert.equal(state.paymentData.payment_amount, '3990');
+});
+
+test('buildPaymentState marks paid after confirmation', () => {
+  const state = buildPaymentState({
+    facts: {},
+    paymentConfirmed: true,
+  });
+
+  assert.equal(state.paymentData.payment_state, 'paid');
+  assert.equal(state.paymentData.payment_received, 'true');
 });
