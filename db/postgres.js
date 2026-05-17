@@ -79,7 +79,7 @@ function status() {
 
 async function foundationStatus() {
   const baseStatus = status();
-  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts', 'orders', 'crm_dialog_state'];
+  const tables = ['customers', 'chats', 'messages', 'events', 'ai_turns', 'customer_facts', 'orders', 'order_drafts', 'crm_dialog_state'];
   if (!ready) {
     return {
       ...baseStatus,
@@ -112,6 +112,13 @@ async function foundationStatus() {
 
 function json(value) {
   return value == null ? null : JSON.stringify(value);
+}
+
+function mergeJson(base = {}, patch = {}) {
+  return {
+    ...(base && typeof base === 'object' ? base : {}),
+    ...(patch && typeof patch === 'object' ? patch : {}),
+  };
 }
 
 function normalizePhone(value) {
@@ -972,6 +979,132 @@ async function listChatOrders(chatId, limit = 20) {
   return result.rows;
 }
 
+async function getActiveOrderDraft({ customerId = null, chatId = null }) {
+  if (!ready || (!customerId && !chatId)) return null;
+  const result = await query(`
+    select
+      id,
+      customer_id,
+      chat_id,
+      source,
+      status,
+      current_step,
+      intent_data,
+      delivery_data,
+      payment_data,
+      meta,
+      locked_after_payment,
+      created_at,
+      updated_at
+    from order_drafts
+    where status = 'active'
+      and (
+        ($1::uuid is not null and chat_id = $1)
+        or ($2::uuid is not null and customer_id = $2)
+      )
+    order by updated_at desc, id desc
+    limit 1
+  `, [chatId, customerId]);
+  return result.rows[0] || null;
+}
+
+async function upsertOrderDraftState({
+  customerId = null,
+  chatId = null,
+  source = 'telegram',
+  status = 'active',
+  currentStep = 'intent',
+  intentDataPatch = {},
+  deliveryDataPatch = {},
+  paymentDataPatch = {},
+  metaPatch = {},
+  lockedAfterPayment = null,
+}) {
+  if (!ready || (!customerId && !chatId)) return null;
+  const existing = await getActiveOrderDraft({ customerId, chatId });
+  if (existing) {
+    const nextIntent = mergeJson(existing.intent_data, intentDataPatch);
+    const nextDelivery = mergeJson(existing.delivery_data, deliveryDataPatch);
+    const nextPayment = mergeJson(existing.payment_data, paymentDataPatch);
+    const nextMeta = mergeJson(existing.meta, metaPatch);
+    const updated = await query(`
+      update order_drafts
+      set customer_id = coalesce($2, customer_id),
+          chat_id = coalesce($3, chat_id),
+          source = $4,
+          status = $5,
+          current_step = $6,
+          intent_data = $7::jsonb,
+          delivery_data = $8::jsonb,
+          payment_data = $9::jsonb,
+          meta = $10::jsonb,
+          locked_after_payment = coalesce($11, locked_after_payment),
+          updated_at = now()
+      where id = $1
+      returning *
+    `, [
+      existing.id,
+      customerId,
+      chatId,
+      source,
+      status,
+      currentStep,
+      json(nextIntent),
+      json(nextDelivery),
+      json(nextPayment),
+      json(nextMeta),
+      typeof lockedAfterPayment === 'boolean' ? lockedAfterPayment : null,
+    ]);
+    return updated.rows[0] || null;
+  }
+  const created = await query(`
+    insert into order_drafts (
+      customer_id,
+      chat_id,
+      source,
+      status,
+      current_step,
+      intent_data,
+      delivery_data,
+      payment_data,
+      meta,
+      locked_after_payment
+    )
+    values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10)
+    returning *
+  `, [
+    customerId,
+    chatId,
+    source,
+    status,
+    currentStep,
+    json(intentDataPatch || {}),
+    json(deliveryDataPatch || {}),
+    json(paymentDataPatch || {}),
+    json(metaPatch || {}),
+    Boolean(lockedAfterPayment),
+  ]);
+  return created.rows[0] || null;
+}
+
+async function closeActiveOrderDraft({ customerId = null, chatId = null, status = 'paid', currentStep = 'done', metaPatch = {} }) {
+  if (!ready || (!customerId && !chatId)) return null;
+  const existing = await getActiveOrderDraft({ customerId, chatId });
+  if (!existing) return null;
+  const nextMeta = mergeJson(existing.meta, metaPatch);
+  const updated = await query(`
+    update order_drafts
+    set status = $2,
+        current_step = $3,
+        locked_after_payment = case when $2 = 'paid' then true else locked_after_payment end,
+        meta = $4::jsonb,
+        updated_at = now()
+    where id = $1
+    returning *
+  `, [existing.id, status, currentStep, json(nextMeta)]);
+  return updated.rows[0] || null;
+}
+
 async function getDialogDetectionInput(chatId) {
   if (!ready || !chatId) return null;
   const chat = await getCrmChat(chatId);
@@ -1162,6 +1295,9 @@ async function resetChatHistory(chatId) {
     // Delete computed CRM dialog state only for this selected chat.
     const dialogState = await query('delete from crm_dialog_state where chat_id = $1', [chatId]);
 
+    // Delete order drafts tied to this chat.
+    const orderDrafts = await query('delete from order_drafts where chat_id = $1', [chatId]);
+
     // Delete memory facts only for this selected chat's customer.
     let facts = { rowCount: 0 };
     if (customerId) {
@@ -1187,6 +1323,7 @@ async function resetChatHistory(chatId) {
         messages: messages.rowCount,
         aiTurns: aiTurns.rowCount,
         dialogState: dialogState.rowCount,
+        orderDrafts: orderDrafts.rowCount,
         customerFacts: facts.rowCount,
       },
     };
@@ -1223,6 +1360,9 @@ module.exports = {
   markLatestOrderPaid,
   listCustomerOrders,
   listChatOrders,
+  getActiveOrderDraft,
+  upsertOrderDraftState,
+  closeActiveOrderDraft,
   getDialogDetectionInput,
   upsertDialogState,
   listChatIdsForDetection,

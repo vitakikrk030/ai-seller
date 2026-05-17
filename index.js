@@ -9,6 +9,12 @@ const express = require('express');
 const axios = require('axios');
 const db = require('./db/postgres');
 const dialogDetector = require('./lib/crm-dialog-detector');
+const {
+  compactObject,
+  extractIwakProductLink,
+  normalizeOrderSnapshot,
+  buildOrderDraftPayload,
+} = require('./lib/order-draft-state');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 3001);
@@ -956,37 +962,6 @@ function hasKnownInsoleValue(value = '') {
   return normalized !== 'unknown' && normalized !== 'not_measured' && normalized !== 'not_measured_yet';
 }
 
-function normalizeOrderSnapshot(snapshot = {}) {
-  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
-  const next = { ...source };
-  const productName = String(source.product_name || source.product_interest || '').trim();
-  const deliveryCity = String(source.delivery_city || source.city || '').trim();
-  const deliveryService = String(source.delivery_service || source.delivery_method || '').trim();
-  const deliveryAddress = String(source.delivery_address || source.address || '').trim();
-  const deliveryPhone = String(source.delivery_phone || source.phone || '').trim();
-  const deliveryName = String(source.delivery_fio || source.full_name || source.fio || source.recipient_name || source.customer_name || '').trim();
-
-  if (productName) {
-    next.product_name = productName;
-    next.product_interest = productName;
-  }
-  if (deliveryCity) next.city = deliveryCity;
-  if (deliveryService) next.delivery_service = deliveryService;
-  if (deliveryAddress) next.delivery_address = deliveryAddress;
-  if (deliveryPhone) {
-    next.delivery_phone = deliveryPhone;
-    next.phone = deliveryPhone;
-  }
-  if (deliveryName) {
-    next.delivery_fio = deliveryName;
-    next.full_name = deliveryName;
-    next.fio = deliveryName;
-    next.recipient_name = deliveryName;
-  }
-
-  return next;
-}
-
 function isShoeProductContext(text = '') {
   const value = String(text || '').toLowerCase();
   return /(кроссов|кед|обув|nike|dunk|jordan|new balance|nb 9060|9060|balenciaga|track|runner|3xl|asics|gel-|converse|all star|adidas|yeezy|puma|v5 rnr|pegasus|vomero)/i.test(value);
@@ -1042,7 +1017,80 @@ async function syncPaidCustomerState({
     await db.upsertCustomerFact(customerId, 'order_status', 'paid', 'system');
     await db.upsertCustomerFact(customerId, 'funnel_stage', 'support', 'system');
   }
+  await db.closeActiveOrderDraft({
+    customerId,
+    chatId: chatDbId,
+    status: 'paid',
+    currentStep: 'done',
+    metaPatch: compactObject({
+      paid_at: paidAt || new Date().toISOString(),
+      payment_trace_id: traceId || '',
+    }),
+  });
   return orderId;
+}
+
+async function syncActiveOrderDraft({
+  customerId = null,
+  chatDbId = null,
+  source = 'telegram',
+  facts = {},
+  currentStage = '',
+  inputText = '',
+  paymentTemplateSent = false,
+  paymentAmount = null,
+  paymentConfirmed = false,
+}) {
+  if (!customerId && !chatDbId) return null;
+  const existingDraft = await db.getActiveOrderDraft({ customerId, chatId: chatDbId });
+  const payload = buildOrderDraftPayload({
+    facts,
+    currentStage,
+    inputText,
+    existingDraft,
+    paymentTemplateSent,
+    paymentAmount,
+    paymentConfirmed,
+  });
+
+  if (payload.productChanged && existingDraft && !existingDraft.locked_after_payment) {
+    await db.closeActiveOrderDraft({
+      customerId,
+      chatId: chatDbId,
+      status: 'closed',
+      currentStep: 'done',
+      metaPatch: compactObject({
+        replaced_by_new_product: 'true',
+        closed_reason: 'product_changed',
+      }),
+    });
+    return db.upsertOrderDraftState({
+      customerId,
+      chatId: chatDbId,
+      source,
+      status: payload.status,
+      currentStep: payload.currentStep,
+      intentDataPatch: payload.intentData,
+      deliveryDataPatch: existingDraft?.delivery_data || {},
+      paymentDataPatch: payload.paymentData,
+      metaPatch: payload.meta,
+      lockedAfterPayment: payload.status === 'paid',
+    });
+  }
+
+  const nextStep = payload.status === 'paid' ? 'support' : payload.currentStep;
+  return db.upsertOrderDraftState({
+    customerId,
+    chatId: chatDbId,
+    source,
+    status: payload.status,
+    currentStep: nextStep,
+    intentDataPatch: payload.intentData,
+    deliveryDataPatch: payload.deliveryData,
+    paymentDataPatch: payload.paymentData,
+    metaPatch: payload.meta,
+    lockedAfterPayment: payload.status === 'paid',
+  });
 }
 
 function isPaymentTemplateReply(replyMessages = []) {
@@ -1987,19 +2035,21 @@ app.get('/api/crm/chats/:chatId', crmHandler(async (req, res) => {
     res.status(404).json({ ok: false, error: 'Chat not found' });
     return;
   }
-  const [facts, orders, orderStats] = chat.customer_id
+  const [facts, orders, orderStats, activeOrderDraft] = chat.customer_id
     ? await Promise.all([
         db.getCustomerFacts(chat.customer_id),
         db.listCustomerOrders(chat.customer_id, 20),
         db.getCustomerOrderStats(chat.customer_id),
+        db.getActiveOrderDraft({ customerId: chat.customer_id, chatId: chat.id }),
       ])
-    : [[], [], { orders_total: 0, paid_orders: 0, paid_amount_total: 0 }];
+    : [[], [], { orders_total: 0, paid_orders: 0, paid_amount_total: 0 }, null];
   const phoneFact = facts.find((fact) => ['phone', 'phone_number', 'customer_phone'].includes(String(fact.key || '')));
   crmOk(res, {
     ...attachDialogDetection(chat),
     phone: chat.phone || phoneFact?.value || '',
     facts,
     orders,
+    active_order_draft: activeOrderDraft,
     order_stats: orderStats,
   });
 }));
@@ -2071,16 +2121,30 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
   });
   if (isPaymentTemplateReply([text]) && chat.customer_id) {
     const snapshot = normalizeOrderSnapshot(await db.getCustomerSnapshot(chat.customer_id));
+    const paymentAmount = parsePaymentAmount(text);
     await db.upsertOrderDraft({
       customerId: chat.customer_id,
       chatId: chat.id,
       source: 'telegram',
       traceId,
-      totalAmount: parsePaymentAmount(text),
+      totalAmount: paymentAmount,
       currency: 'RUB',
       summary: summarizeOrderSnapshot(snapshot),
       snapshot,
       paymentMessageId: null,
+    });
+    await syncActiveOrderDraft({
+      customerId: chat.customer_id,
+      chatDbId: chat.id,
+      source: 'telegram',
+      facts: {
+        ...snapshot,
+        payment_amount: paymentAmount != null ? String(paymentAmount) : '',
+      },
+      currentStage: 'checkout',
+      inputText: text,
+      paymentTemplateSent: true,
+      paymentAmount,
     });
     refreshDialogDetection(chat.id, traceId).catch(() => {});
   }
@@ -2390,6 +2454,22 @@ async function processBatchedMessages(bufferKey, buffer) {
       await db.upsertCustomerFact(customerId, 'funnel_stage', structured.stage, 'ai');
     }
 
+    const mergedFacts = {
+      ...(customerId ? customerFactsMap(await db.getCustomerFacts(customerId)) : {}),
+      ...(structured.facts || {}),
+      ...(structured.stage ? { funnel_stage: structured.stage } : {}),
+    };
+
+    await syncActiveOrderDraft({
+      customerId,
+      chatDbId,
+      source: 'telegram',
+      facts: mergedFacts,
+      currentStage: structured.stage || mergedFacts.funnel_stage || '',
+      inputText: combinedText,
+      paymentConfirmed: false,
+    });
+
     const aiPaymentStatus = String(structured.facts?.payment_status || '').trim().toLowerCase();
     if (aiPaymentStatus === 'paid') {
       await syncPaidCustomerState({
@@ -2423,6 +2503,19 @@ async function processBatchedMessages(bufferKey, buffer) {
           summary: summarizeOrderSnapshot(snapshot),
           snapshot,
           paymentMessageId: null,
+        });
+        await syncActiveOrderDraft({
+          customerId,
+          chatDbId,
+          source: 'telegram',
+          facts: {
+            ...snapshot,
+            payment_amount: paymentAmount != null ? String(paymentAmount) : '',
+          },
+          currentStage: structured.stage || mergedFacts.funnel_stage || 'checkout',
+          inputText: normalizedReply.join('\n'),
+          paymentTemplateSent: true,
+          paymentAmount,
         });
       }
       const reactionEmoji = getReactionMode() === 'smart'

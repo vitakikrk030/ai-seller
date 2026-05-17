@@ -4872,11 +4872,36 @@
     }
 
     function renderClientFacts(chat = {}) {
+      const draft = chat.active_order_draft || null;
       const relevant = compactFactRows(chat);
+      const draftIntent = draft?.intent_data || {};
+      const draftDelivery = draft?.delivery_data || {};
+      const draftPayment = draft?.payment_data || {};
+      const draftRows = [
+        ['Этап заказа', draft?.current_step || ''],
+        ['Товар', prettifyValue(draftIntent.product_name)],
+        ['Размер', prettifyValue(draftIntent.shoe_size || draftIntent.clothing_size)],
+        ['Доставка', prettifyValue(draftDelivery.delivery_service)],
+        ['Город', prettifyValue(draftDelivery.delivery_city)],
+        ['Сумма', prettifyValue(draftPayment.payment_amount)],
+        ['Статус', draft?.status || ''],
+      ].filter(([, value]) => value);
+      const draftHtml = draftRows.length ? `
+        <div class="client-section-title">Активный заказ</div>
+        <div class="client-facts-list">
+          ${draftRows.map(([label, value]) => `
+            <div class="client-fact-item">
+              <span class="client-fact-key">${escapeHtml(label)}</span>
+              <span class="client-fact-value">${escapeHtml(String(value))}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
       if (!relevant.length) {
-        return `<div class="client-section-title">Данные клиента</div><div class="crm-empty">Пока нет сохраненных данных.</div>`;
+        return `${draftHtml}<div class="client-section-title">Данные клиента</div><div class="crm-empty">Пока нет сохраненных данных.</div>`;
       }
       return `
+        ${draftHtml}
         <div class="client-section-title">Данные клиента</div>
         <div class="client-facts-list">
           ${relevant.map((fact) => `
