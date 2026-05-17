@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js",
+    "test": "node --test tests/*.test.js",
     "backfill:crm-sales": "node scripts/backfill-crm-sales-history.js",
     "backfill:crm-dialog-state": "node scripts/backfill-crm-dialog-state.js",
     "repair:crm-customers": "node scripts/repair-business-chat-customers.js",
