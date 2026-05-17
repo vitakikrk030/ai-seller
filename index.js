@@ -984,6 +984,34 @@ function needsPostPaymentInsolePrompt({ inputText = '', history = [], customerFa
   return { shoeSize };
 }
 
+async function syncPaidCustomerState({
+  customerId = null,
+  chatDbId = null,
+  traceId = null,
+  receiptMessageId = null,
+  snapshotPatch = {},
+}) {
+  if (!customerId && !chatDbId) return null;
+  const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+  const orderId = await db.markLatestOrderPaid({
+    customerId,
+    chatId: chatDbId,
+    traceId,
+    receiptMessageId,
+    snapshotPatch: {
+      ...snapshot,
+      ...(snapshotPatch || {}),
+    },
+  });
+  if (customerId) {
+    await db.upsertCustomerFact(customerId, 'payment_status', 'paid', 'system');
+    await db.upsertCustomerFact(customerId, 'payment_received', 'true', 'system');
+    await db.upsertCustomerFact(customerId, 'order_status', 'paid', 'system');
+    await db.upsertCustomerFact(customerId, 'funnel_stage', 'support', 'system');
+  }
+  return orderId;
+}
+
 function isPaymentTemplateReply(replyMessages = []) {
   const joined = String((replyMessages || []).join('\n')).toLowerCase();
   return joined.includes('сумма к оплате')
@@ -2330,13 +2358,11 @@ async function processBatchedMessages(bufferKey, buffer) {
 
     const aiPaymentStatus = String(structured.facts?.payment_status || '').trim().toLowerCase();
     if (aiPaymentStatus === 'paid') {
-      const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
-      await db.markLatestOrderPaid({
+      await syncPaidCustomerState({
         customerId,
         chatId: chatDbId,
         traceId,
         snapshotPatch: {
-          ...snapshot,
           payment_detected_by: 'ai_fact',
           paid_confirmation_text: combinedText,
         },
@@ -2459,14 +2485,12 @@ app.post('/api/telegram/webhook', (req, res) => {
         raw: message,
       });
       if (!isManager && isReceiptLikeMessage(message, text)) {
-        const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
-        await db.markLatestOrderPaid({
+        await syncPaidCustomerState({
           customerId,
           chatId: chatDbId,
           traceId,
           receiptMessageId: message.message_id || null,
           snapshotPatch: {
-            ...snapshot,
             paid_confirmation_text: text,
           },
         });
