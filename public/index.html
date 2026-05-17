@@ -4438,11 +4438,31 @@
       if (snapshotItems.length) return snapshotItems;
       const messageItems = findOrderItemsFromMessages(order);
       if (messageItems.length) return messageItems;
+      const productName = prettifyValue(snapshot.product_name);
+      if (productName) return [compactOrderItemLabel(productName)];
       const productInterest = prettifyValue(snapshot.product_interest);
       if (productInterest) return [compactOrderItemLabel(productInterest)];
+      const factProductName = getFactValue(chat, ['product_name']);
+      if (factProductName) return [compactOrderItemLabel(factProductName)];
       const factInterest = getFactValue(chat, ['product_interest']);
       if (factInterest) return [compactOrderItemLabel(factInterest)];
       return [];
+    }
+
+    function findOrderLinkFromMessages(order = {}) {
+      const targetAt = new Date(order.paid_at || order.created_at || 0).getTime() || Infinity;
+      const messages = (Array.isArray(crmState.messages) ? crmState.messages : [])
+        .filter((message) => {
+          const createdAt = new Date(message.created_at || 0).getTime();
+          return Number.isFinite(createdAt) && createdAt <= targetAt;
+        })
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      for (const message of messages) {
+        const text = String(message?.text || '');
+        const match = text.match(/https?:\/\/[^\s]*iwak\.(?:ru|рф)\/product\/[^\s]+/i);
+        if (match) return safeExternalUrl(match[0]);
+      }
+      return '';
     }
 
     function deriveOrderTitleFromLink(url = '') {
@@ -4468,7 +4488,7 @@
         snapshot.product_link
         || snapshot.link
         || snapshot.url
-      );
+      ) || findOrderLinkFromMessages(order);
       if (!safe) return '';
       const items = getResolvedOrderItems(order, chat);
       if (items.length > 1) return '';
@@ -4491,27 +4511,42 @@
       return order.summary || 'Заказ';
     }
 
-    function getOrderSummary(order = {}) {
+    function getOrderSummary(order = {}, chat = {}) {
       const snapshot = order.snapshot || {};
       const parts = [
-        prettifyValue(snapshot.city),
-        prettifyValue(snapshot.delivery_service || snapshot.delivery_method),
-        prettifyValue(snapshot.pickup_point),
+        prettifyValue(snapshot.city || snapshot.delivery_city || getFactValue(chat, ['city', 'delivery_city'])),
+        prettifyValue(snapshot.delivery_service || snapshot.delivery_method || getFactValue(chat, ['delivery_service', 'delivery_method'])),
+        prettifyValue(snapshot.pickup_point || getFactValue(chat, ['pickup_point'])),
       ].filter(Boolean);
       return parts.join(' · ');
     }
 
-    function getOrderChips(order = {}) {
+    function getOrderChips(order = {}, chat = {}) {
       const snapshot = order.snapshot || {};
       const rawRows = [
-        ['Размер', prettifyValue(snapshot.shoe_size || snapshot.size)],
-        ['Стелька', prettifyValue(snapshot.insole_cm)],
-        ['Получатель', prettifyValue(snapshot.full_name || snapshot.fio || snapshot.recipient_name)],
-        ['Телефон', prettifyValue(snapshot.phone)],
-        ['Адрес', prettifyValue(snapshot.delivery_address)],
-        ['ПВЗ', prettifyValue(snapshot.pickup_point)],
+        ['Размер', prettifyValue(snapshot.shoe_size || snapshot.size || getFactValue(chat, ['shoe_size', 'size']))],
+        ['Стелька', prettifyValue(snapshot.insole_cm || getFactValue(chat, ['insole_cm']))],
+        ['Получатель', prettifyValue(snapshot.full_name || snapshot.fio || snapshot.recipient_name || snapshot.delivery_fio || getFactValue(chat, ['full_name', 'fio', 'recipient_name', 'delivery_fio', 'customer_name']))],
+        ['Телефон', prettifyValue(snapshot.delivery_phone || snapshot.phone || getFactValue(chat, ['delivery_phone', 'phone']))],
+        ['Адрес', prettifyValue(snapshot.delivery_address || getFactValue(chat, ['delivery_address']))],
+        ['ПВЗ', prettifyValue(snapshot.pickup_point || getFactValue(chat, ['pickup_point']))],
       ];
       return rawRows.filter(([, value]) => value).slice(0, 6);
+    }
+
+    function findCatalogProductForOrder(order = {}, chat = {}) {
+      const snapshot = order.snapshot || {};
+      const productId = String(snapshot.product_id || '').trim();
+      if (productId) {
+        const byId = productCatalog.find((product) => String(product?.id || '').trim() === productId);
+        if (byId) return byId;
+      }
+      const title = normalizeCompareText(getOrderTitle(order, chat));
+      if (!title) return null;
+      return productCatalog.find((product) => {
+        const productName = normalizeCompareText(product?.name || '');
+        return productName && (productName.includes(title) || title.includes(productName));
+      }) || null;
     }
 
     function getOrderThumb(order = {}, chat = {}) {
@@ -4522,25 +4557,10 @@
         || snapshot.photo_url
       );
       if (directImage) return { src: directImage, alt: getOrderTitle(order, chat) };
-
-      const targetAt = new Date(order.paid_at || order.created_at || 0).getTime() || Infinity;
-      const candidates = (Array.isArray(crmState.messages) ? crmState.messages : [])
-        .filter((message) => message?.direction === 'in' && message?.role === 'customer')
-        .filter((message) => {
-          const media = telegramMedia(message);
-          return media?.type === 'photo';
-        })
-        .filter((message) => {
-          const createdAt = new Date(message.created_at || 0).getTime();
-          return Number.isFinite(createdAt) && createdAt <= targetAt;
-        })
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-      const media = candidates.length ? telegramMedia(candidates[0]) : null;
-      if (!media?.fileId) return null;
-      return {
-        src: `/api/telegram/file/${encodeURIComponent(media.fileId)}`,
-        alt: 'Фото клиента',
-      };
+      const catalogProduct = findCatalogProductForOrder(order, chat);
+      const catalogImage = safeExternalUrl(catalogProduct?.photo_url || '');
+      if (catalogImage) return { src: catalogImage, alt: getOrderTitle(order, chat) };
+      return null;
     }
 
     function sourceLabel(source) {
@@ -4879,8 +4899,8 @@
         <div class="client-orders-list">
           ${orders.map((order) => {
             const title = getOrderTitle(order, chat);
-            const summary = getOrderSummary(order);
-            const chips = getOrderChips(order);
+            const summary = getOrderSummary(order, chat);
+            const chips = getOrderChips(order, chat);
             const orderLink = getOrderLink(order, chat);
             const orderLinkLabel = formatOrderLinkLabel(orderLink);
             const thumb = getOrderThumb(order, chat);

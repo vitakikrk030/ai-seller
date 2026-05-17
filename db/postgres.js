@@ -883,6 +883,7 @@ async function markLatestOrderPaid({
   chatId = null,
   traceId = null,
   receiptMessageId = null,
+  paidAt = null,
   snapshotPatch = {},
 }) {
   if (!ready || (!customerId && !chatId)) return null;
@@ -909,11 +910,11 @@ async function markLatestOrderPaid({
         trace_id = coalesce($2, trace_id),
         receipt_message_id = coalesce($3, receipt_message_id),
         snapshot = $4::jsonb,
-        paid_at = now(),
+        paid_at = coalesce($5::timestamptz, paid_at, now()),
         updated_at = now()
     where id = $1
     returning id
-  `, [order.id, traceId, receiptMessageId ? String(receiptMessageId) : null, json(nextSnapshot)]);
+  `, [order.id, traceId, receiptMessageId ? String(receiptMessageId) : null, json(nextSnapshot), paidAt || null]);
   return updated.rows[0]?.id || null;
 }
 

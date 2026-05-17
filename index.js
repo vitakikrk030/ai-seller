@@ -956,6 +956,37 @@ function hasKnownInsoleValue(value = '') {
   return normalized !== 'unknown' && normalized !== 'not_measured' && normalized !== 'not_measured_yet';
 }
 
+function normalizeOrderSnapshot(snapshot = {}) {
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const next = { ...source };
+  const productName = String(source.product_name || source.product_interest || '').trim();
+  const deliveryCity = String(source.delivery_city || source.city || '').trim();
+  const deliveryService = String(source.delivery_service || source.delivery_method || '').trim();
+  const deliveryAddress = String(source.delivery_address || source.address || '').trim();
+  const deliveryPhone = String(source.delivery_phone || source.phone || '').trim();
+  const deliveryName = String(source.delivery_fio || source.full_name || source.fio || source.recipient_name || source.customer_name || '').trim();
+
+  if (productName) {
+    next.product_name = productName;
+    next.product_interest = productName;
+  }
+  if (deliveryCity) next.city = deliveryCity;
+  if (deliveryService) next.delivery_service = deliveryService;
+  if (deliveryAddress) next.delivery_address = deliveryAddress;
+  if (deliveryPhone) {
+    next.delivery_phone = deliveryPhone;
+    next.phone = deliveryPhone;
+  }
+  if (deliveryName) {
+    next.delivery_fio = deliveryName;
+    next.full_name = deliveryName;
+    next.fio = deliveryName;
+    next.recipient_name = deliveryName;
+  }
+
+  return next;
+}
+
 function isShoeProductContext(text = '') {
   const value = String(text || '').toLowerCase();
   return /(кроссов|кед|обув|nike|dunk|jordan|new balance|nb 9060|9060|balenciaga|track|runner|3xl|asics|gel-|converse|all star|adidas|yeezy|puma|v5 rnr|pegasus|vomero)/i.test(value);
@@ -989,18 +1020,20 @@ async function syncPaidCustomerState({
   chatDbId = null,
   traceId = null,
   receiptMessageId = null,
+  paidAt = null,
   snapshotPatch = {},
 }) {
   if (!customerId && !chatDbId) return null;
-  const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+  const snapshot = normalizeOrderSnapshot(customerId ? await db.getCustomerSnapshot(customerId) : {});
   const orderId = await db.markLatestOrderPaid({
     customerId,
     chatId: chatDbId,
     traceId,
     receiptMessageId,
+    paidAt,
     snapshotPatch: {
       ...snapshot,
-      ...(snapshotPatch || {}),
+      ...normalizeOrderSnapshot(snapshotPatch || {}),
     },
   });
   if (customerId) {
@@ -1030,11 +1063,12 @@ function isReceiptLikeMessage(message = {}, text = '') {
 }
 
 function summarizeOrderSnapshot(snapshot = {}) {
+  const normalized = normalizeOrderSnapshot(snapshot);
   const parts = [];
-  if (snapshot.product_interest) parts.push(snapshot.product_interest);
-  if (snapshot.shoe_size) parts.push(`${snapshot.shoe_size} размер`);
-  if (snapshot.clothing_size) parts.push(`${snapshot.clothing_size} размер`);
-  if (snapshot.city) parts.push(snapshot.city);
+  if (normalized.product_interest) parts.push(normalized.product_interest);
+  if (normalized.shoe_size) parts.push(`${normalized.shoe_size} размер`);
+  if (normalized.clothing_size) parts.push(`${normalized.clothing_size} размер`);
+  if (normalized.city) parts.push(normalized.city);
   return parts.join(' · ').slice(0, 500);
 }
 
@@ -2036,7 +2070,7 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
     role: 'operator',
   });
   if (isPaymentTemplateReply([text]) && chat.customer_id) {
-    const snapshot = await db.getCustomerSnapshot(chat.customer_id);
+    const snapshot = normalizeOrderSnapshot(await db.getCustomerSnapshot(chat.customer_id));
     await db.upsertOrderDraft({
       customerId: chat.customer_id,
       chatId: chat.id,
@@ -2378,7 +2412,7 @@ async function processBatchedMessages(bufferKey, buffer) {
       const normalizedReply = collapseReplyMessages(structured.reply, { preferSingle: texts.length > 1 });
       if (isPaymentTemplateReply(normalizedReply)) {
         const paymentAmount = parsePaymentAmount(normalizedReply.join('\n'));
-        const snapshot = customerId ? await db.getCustomerSnapshot(customerId) : {};
+        const snapshot = normalizeOrderSnapshot(customerId ? await db.getCustomerSnapshot(customerId) : {});
         await db.upsertOrderDraft({
           customerId,
           chatId: chatDbId,
@@ -2490,6 +2524,7 @@ app.post('/api/telegram/webhook', (req, res) => {
           chatId: chatDbId,
           traceId,
           receiptMessageId: message.message_id || null,
+          paidAt: message.date ? new Date(Number(message.date) * 1000).toISOString() : null,
           snapshotPatch: {
             paid_confirmation_text: text,
           },
