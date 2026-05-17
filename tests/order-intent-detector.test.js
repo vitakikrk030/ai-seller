@@ -101,3 +101,60 @@ test('buildIntentState keeps fresh size and price when they arrive with the new 
   assert.equal(state.intentData.price_status, 'confirmed');
   assert.equal(state.intentData.product_price, '5500');
 });
+
+test('buildIntentState marks footwear partial until shoe size is known', () => {
+  const state = buildIntentState({
+    facts: {
+      product_name: 'Nike Dunk Low',
+      product_id: '837',
+      category: 'sneakers',
+      price: '3990',
+    },
+    inputText: 'Хочу заказать Nike Dunk Low за 3990 ₽',
+  });
+
+  assert.equal(state.intentData.product_category, 'footwear');
+  assert.equal(state.intentData.completeness, 'partial');
+  assert.deepEqual(state.intentData.missing_fields, ['shoe_size']);
+});
+
+test('buildIntentState marks clothing complete with clothing size', () => {
+  const state = buildIntentState({
+    facts: {
+      product_name: 'Stone Island Hoodie',
+      product_id: '501',
+      category: 'hoodie',
+      size: 'L',
+    },
+    inputText: 'Нужен Stone Island Hoodie, размер L',
+  });
+
+  assert.equal(state.intentData.product_category, 'clothing');
+  assert.equal(state.intentData.clothing_size, 'L');
+  assert.equal(state.intentData.completeness, 'complete');
+});
+
+test('buildIntentState does not require size for accessories and keeps fragrance volume', () => {
+  const accessoryState = buildIntentState({
+    facts: {
+      product_name: 'Prada Sunglasses',
+      product_id: '777',
+      category: 'accessories',
+    },
+    inputText: 'Нужны очки Prada',
+  });
+  const fragranceState = buildIntentState({
+    facts: {
+      product_name: 'Tom Ford Lost Cherry',
+      product_id: '778',
+      category: 'perfume',
+    },
+    inputText: 'Tom Ford Lost Cherry 50 мл',
+  });
+
+  assert.equal(accessoryState.intentData.product_category, 'accessory');
+  assert.equal(accessoryState.intentData.completeness, 'complete');
+  assert.equal(fragranceState.intentData.product_category, 'fragrance');
+  assert.equal(fragranceState.intentData.volume_ml, '50');
+  assert.equal(fragranceState.intentData.completeness, 'complete');
+});

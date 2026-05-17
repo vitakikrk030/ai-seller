@@ -4879,6 +4879,11 @@
       const draftPayment = draft?.payment_data || {};
       const draftItems = Array.isArray(draftIntent.items) ? draftIntent.items : [];
       const activeDraftProduct = draftIntent.product_name || (draftItems[0]?.product_name || '');
+      const intentMissingLabels = {
+        product: 'товар',
+        shoe_size: 'размер обуви',
+        clothing_size: 'размер одежды',
+      };
       const deliveryMissingLabels = {
         recipient_name: 'ФИО',
         delivery_phone: 'телефон',
@@ -4886,20 +4891,30 @@
         delivery_service: 'служба доставки',
         delivery_target: 'адрес/ПВЗ',
       };
+      const missingIntent = Array.isArray(draftIntent.missing_fields)
+        ? draftIntent.missing_fields.map((key) => intentMissingLabels[key] || key).filter(Boolean)
+        : [];
       const missingDelivery = Array.isArray(draftDelivery.missing_fields)
         ? draftDelivery.missing_fields.map((key) => deliveryMissingLabels[key] || key).filter(Boolean)
         : [];
+      const draftVariant = [
+        draftIntent.shoe_size || draftIntent.clothing_size || '',
+        draftIntent.volume_ml ? `${draftIntent.volume_ml} мл` : '',
+      ].filter(Boolean).join(' · ');
       const draftFlags = [
         draft?.meta?.product_changed === 'true' ? 'Смена товара' : '',
         draftIntent.multi_item === 'true' ? `Позиций: ${draftIntent.item_count || draftItems.length}` : '',
         draftIntent.size_status === 'obsolete' ? 'Размер надо перепроверить' : '',
         draftIntent.price_status === 'obsolete' ? 'Цену надо перепроверить' : '',
+        draftIntent.completeness === 'partial' && missingIntent.length ? `Не хватает по товару: ${missingIntent.join(', ')}` : '',
         draftDelivery.completeness === 'partial' && missingDelivery.length ? `Не хватает: ${missingDelivery.join(', ')}` : '',
       ].filter(Boolean).join(' · ');
       const draftRows = [
         ['Этап заказа', draft?.current_step || ''],
+        ['Категория', prettifyValue(draftIntent.product_category_label || draftIntent.product_category)],
         ['Товар', prettifyValue(activeDraftProduct)],
-        ['Размер', prettifyValue(draftIntent.shoe_size || draftIntent.clothing_size)],
+        ['Товар статус', prettifyValue(draftIntent.completeness)],
+        ['Размер / вариант', prettifyValue(draftVariant)],
         ['Цена товара', prettifyValue(draftIntent.product_price)],
         ['Доставка статус', prettifyValue(draftDelivery.completeness)],
         ['Доставка', prettifyValue(draftDelivery.delivery_service)],
