@@ -4893,12 +4893,14 @@
         draft?.meta?.product_changed === 'true' ? 'Смена товара' : '',
         draftIntent.multi_item === 'true' ? `Позиций: ${draftIntent.item_count || draftItems.length}` : '',
         draftIntent.size_status === 'obsolete' ? 'Размер надо перепроверить' : '',
+        draftIntent.price_status === 'obsolete' ? 'Цену надо перепроверить' : '',
         draftDelivery.completeness === 'partial' && missingDelivery.length ? `Не хватает: ${missingDelivery.join(', ')}` : '',
       ].filter(Boolean).join(' · ');
       const draftRows = [
         ['Этап заказа', draft?.current_step || ''],
         ['Товар', prettifyValue(activeDraftProduct)],
         ['Размер', prettifyValue(draftIntent.shoe_size || draftIntent.clothing_size)],
+        ['Цена товара', prettifyValue(draftIntent.product_price)],
         ['Доставка статус', prettifyValue(draftDelivery.completeness)],
         ['Доставка', prettifyValue(draftDelivery.delivery_service)],
         ['Город', prettifyValue(draftDelivery.delivery_city)],

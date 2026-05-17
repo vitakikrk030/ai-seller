@@ -54,3 +54,50 @@ test('buildIntentState marks previous size obsolete when product changes', () =>
   assert.equal(state.intentData.size_status, 'obsolete');
   assert.equal(state.meta.previous_product_id, '837');
 });
+
+test('buildIntentState clears stale price when product changes without new price signal', () => {
+  const state = buildIntentState({
+    facts: {
+      product_id: '999',
+      product_name: 'Balenciaga 3XL',
+      price: '3990',
+    },
+    existingDraft: {
+      intent_data: {
+        product_id: '837',
+        product_name: 'Nike Dunk Low',
+        product_price: '3990',
+      },
+    },
+  });
+
+  assert.equal(state.productChanged, true);
+  assert.equal(state.intentData.price_status, 'obsolete');
+  assert.equal(state.intentData.product_price, undefined);
+  assert.equal(state.meta.previous_product_price, '3990');
+});
+
+test('buildIntentState keeps fresh size and price when they arrive with the new product message', () => {
+  const state = buildIntentState({
+    facts: {
+      product_id: '999',
+      product_name: 'Balenciaga 3XL',
+      shoe_size: '45',
+      price: '5500',
+    },
+    inputText: 'Хочу заказать Balenciaga 3XL, 45 размер, 5500 ₽',
+    existingDraft: {
+      intent_data: {
+        product_id: '837',
+        product_name: 'Nike Dunk Low',
+        shoe_size: '44',
+        product_price: '3990',
+      },
+    },
+  });
+
+  assert.equal(state.productChanged, true);
+  assert.equal(state.intentData.size_status, 'confirmed');
+  assert.equal(state.intentData.price_status, 'confirmed');
+  assert.equal(state.intentData.product_price, '5500');
+});
