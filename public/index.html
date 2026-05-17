@@ -4877,9 +4877,16 @@
       const draftIntent = draft?.intent_data || {};
       const draftDelivery = draft?.delivery_data || {};
       const draftPayment = draft?.payment_data || {};
+      const draftItems = Array.isArray(draftIntent.items) ? draftIntent.items : [];
+      const activeDraftProduct = draftIntent.product_name || (draftItems[0]?.product_name || '');
+      const draftFlags = [
+        draft?.meta?.product_changed === 'true' ? 'Смена товара' : '',
+        draftIntent.multi_item === 'true' ? `Позиций: ${draftIntent.item_count || draftItems.length}` : '',
+        draftIntent.size_status === 'obsolete' ? 'Размер надо перепроверить' : '',
+      ].filter(Boolean).join(' · ');
       const draftRows = [
         ['Этап заказа', draft?.current_step || ''],
-        ['Товар', prettifyValue(draftIntent.product_name)],
+        ['Товар', prettifyValue(activeDraftProduct)],
         ['Размер', prettifyValue(draftIntent.shoe_size || draftIntent.clothing_size)],
         ['Доставка', prettifyValue(draftDelivery.delivery_service)],
         ['Город', prettifyValue(draftDelivery.delivery_city)],
@@ -4895,6 +4902,18 @@
               <span class="client-fact-value">${escapeHtml(String(value))}</span>
             </div>
           `).join('')}
+          ${draftFlags ? `
+            <div class="client-fact-item">
+              <span class="client-fact-key">Контекст</span>
+              <span class="client-fact-value">${escapeHtml(draftFlags)}</span>
+            </div>
+          ` : ''}
+          ${draftItems.length > 1 ? `
+            <div class="client-fact-item">
+              <span class="client-fact-key">Состав</span>
+              <span class="client-fact-value">${escapeHtml(draftItems.map((item) => item.product_name || '').filter(Boolean).join(' • '))}</span>
+            </div>
+          ` : ''}
         </div>
       ` : '';
       if (!relevant.length) {
