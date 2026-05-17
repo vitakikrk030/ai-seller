@@ -979,6 +979,110 @@ async function listChatOrders(chatId, limit = 20) {
   return result.rows;
 }
 
+function hasDraftIntent(intent = {}) {
+  return Boolean(intent.product_id || intent.product_name || intent.product_link || intent.shoe_size || intent.clothing_size || intent.volume_ml);
+}
+
+function hasDraftDelivery(delivery = {}) {
+  return Boolean(
+    delivery.recipient_name
+    || delivery.delivery_phone
+    || delivery.delivery_city
+    || delivery.delivery_service
+    || delivery.delivery_address
+    || delivery.pickup_point
+  );
+}
+
+async function deleteCrmOrder(orderId, { customerId = null, chatId = null } = {}) {
+  if (!ready || !orderId) return null;
+  const existing = await query(`
+    select *
+    from orders
+    where id = $1
+      and (
+        ($2::uuid is not null and chat_id = $2)
+        or ($3::uuid is not null and customer_id = $3)
+      )
+    limit 1
+  `, [orderId, chatId, customerId]);
+  if (!existing.rowCount) return null;
+  const order = existing.rows[0];
+
+  await query('delete from orders where id = $1', [orderId]);
+
+  const activeDraft = await getActiveOrderDraft({ customerId: order.customer_id, chatId: order.chat_id });
+  if (activeDraft) {
+    const draftAmount = String(activeDraft.payment_data?.payment_amount || '').trim();
+    const orderAmount = order.total_amount != null ? String(order.total_amount) : '';
+    const draftState = String(activeDraft.payment_data?.payment_state || '').trim();
+    const deletedState = order.status === 'paid'
+      ? 'paid'
+      : order.status === 'awaiting_payment'
+        ? 'requested'
+        : '';
+
+    if (draftAmount && orderAmount && draftAmount === orderAmount && draftState === deletedState) {
+      const remaining = await query(`
+        select status, total_amount
+        from orders
+        where chat_id = $1
+        order by created_at desc, id desc
+        limit 1
+      `, [order.chat_id]);
+
+      const latest = remaining.rows[0] || null;
+      const paymentPatch = latest
+        ? {
+            payment_amount: latest.total_amount != null ? String(latest.total_amount) : '',
+            payment_status: latest.status === 'paid' ? 'paid' : '',
+            order_status: latest.status === 'paid' ? 'paid' : '',
+            payment_received: latest.status === 'paid' ? 'true' : '',
+            payment_request_sent: latest.status === 'awaiting_payment' ? 'true' : '',
+            payment_state: latest.status === 'paid' ? 'paid' : 'requested',
+          }
+        : {
+            payment_amount: '',
+            payment_status: '',
+            order_status: '',
+            payment_received: '',
+            payment_request_sent: '',
+            payment_requested_at: '',
+            payment_state: 'not_requested',
+          };
+
+      const nextStep = latest
+        ? (latest.status === 'paid' ? 'support' : 'payment')
+        : hasDraftDelivery(activeDraft.delivery_data)
+          ? 'delivery'
+          : hasDraftIntent(activeDraft.intent_data)
+            ? 'intent'
+            : 'intent';
+
+      await upsertOrderDraftState({
+        customerId: order.customer_id,
+        chatId: order.chat_id,
+        source: order.source || activeDraft.source || 'telegram',
+        status: 'active',
+        currentStep: nextStep,
+        paymentDataPatch: paymentPatch,
+        metaPatch: {
+          last_order_deleted_at: new Date().toISOString(),
+        },
+        lockedAfterPayment: false,
+      });
+    }
+  }
+
+  return {
+    id: order.id,
+    customer_id: order.customer_id,
+    chat_id: order.chat_id,
+    status: order.status,
+    total_amount: order.total_amount,
+  };
+}
+
 async function getActiveOrderDraft({ customerId = null, chatId = null }) {
   if (!ready || (!customerId && !chatId)) return null;
   const result = await query(`
@@ -1360,6 +1464,7 @@ module.exports = {
   markLatestOrderPaid,
   listCustomerOrders,
   listChatOrders,
+  deleteCrmOrder,
   getActiveOrderDraft,
   upsertOrderDraftState,
   closeActiveOrderDraft,

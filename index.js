@@ -2228,6 +2228,32 @@ app.post('/api/crm/chats/:chatId/reset-history', crmHandler(async (req, res) => 
   crmOk(res, result);
 }));
 
+app.delete('/api/crm/chats/:chatId/orders/:orderId', crmHandler(async (req, res) => {
+  const chat = await db.getCrmChat(req.params.chatId);
+  if (!chat) {
+    res.status(404).json({ ok: false, error: 'Chat not found' });
+    return;
+  }
+  const deleted = await db.deleteCrmOrder(req.params.orderId, {
+    customerId: chat.customer_id || null,
+    chatId: chat.id,
+  });
+  if (!deleted) {
+    res.status(404).json({ ok: false, error: 'Order not found' });
+    return;
+  }
+  logEvent('CRM_ORDER_DELETED', {
+    chatId: chat.external_chat_id,
+    chatDbId: chat.id,
+    customerId: chat.customer_id || null,
+    orderId: deleted.id,
+    orderStatus: deleted.status,
+    totalAmount: deleted.total_amount,
+  });
+  emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'order.deleted' });
+  crmOk(res, deleted);
+}));
+
 app.get('/api/crm/escalations', crmHandler(async (req, res) => {
   const list = [];
   for (const [chatId, esc] of escalatedChats.entries()) {

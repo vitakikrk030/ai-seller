@@ -1969,6 +1969,41 @@
       line-height: 1;
     }
 
+    .client-order-top-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .client-order-delete {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 999px;
+      background: rgba(255,59,48,.08);
+      color: #c0392b;
+      font-size: 14px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background .16s ease, transform .16s ease;
+      flex: 0 0 auto;
+    }
+
+    .client-order-delete:hover {
+      background: rgba(255,59,48,.14);
+      transform: translateY(-1px);
+    }
+
+    .client-order-delete:disabled {
+      opacity: .5;
+      cursor: default;
+      transform: none;
+    }
+
     .client-order-status {
       display: inline-flex;
       align-items: center;
@@ -4979,10 +5014,13 @@
             const orderLinkLabel = formatOrderLinkLabel(orderLink);
             const thumb = getOrderThumb(order, chat);
             return `
-              <div class="client-order-card">
+              <div class="client-order-card" data-order-id="${escapeHtml(order.id)}">
                 <div class="client-order-top">
                   <span class="client-order-status ${escapeHtml(order.status || '')}">${escapeHtml(orderStatusLabel(order.status))}</span>
-                  <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
+                  <div class="client-order-top-actions">
+                    <span class="client-order-amount">${escapeHtml(formatRubAmount(order.total_amount || 0))}</span>
+                    <button class="client-order-delete" type="button" data-delete-order-id="${escapeHtml(order.id)}" aria-label="Удалить заказ" title="Удалить заказ">✕</button>
+                  </div>
                 </div>
                 <div class="client-order-body${thumb ? ' has-media' : ''}">
                   <div class="client-order-copy">
@@ -5356,6 +5394,28 @@
           resetHistoryButton.disabled = !crmState.selectedChatId;
         }
       };
+
+      document.querySelectorAll('[data-delete-order-id]').forEach((button) => {
+        button.onclick = async () => {
+          const orderId = button.dataset.deleteOrderId || '';
+          if (!selectedChatId || !orderId) return;
+          if (!window.confirm('Удалить только эту карточку заказа? Суммы и статистика клиента сразу пересчитаются.')) return;
+          button.disabled = true;
+          const previousText = button.textContent;
+          button.textContent = '…';
+          try {
+            await crmFetch(`/api/crm/chats/${encodeURIComponent(selectedChatId)}/orders/${encodeURIComponent(orderId)}`, {
+              method: 'DELETE',
+            });
+            await loadCrmChats({ refreshSelected: false });
+            await loadCrmChat(selectedChatId, { updateList: true, forceRender: true });
+          } catch (error) {
+            button.textContent = previousText;
+            button.disabled = false;
+            alert(error.message || 'Ошибка при удалении заказа');
+          }
+        };
+      });
 
       renderCrmMessages();
     }
