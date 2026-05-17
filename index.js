@@ -937,6 +937,53 @@ function parsePaymentAmount(text = '') {
   return Number.isFinite(digits) && digits > 0 ? digits : null;
 }
 
+function customerFactsMap(customerFacts = []) {
+  return Object.fromEntries((customerFacts || []).map((fact) => [String(fact.key || ''), String(fact.value || '')]));
+}
+
+function extractShoeSizeFromText(text = '') {
+  const value = String(text || '');
+  const explicit = value.match(/\b(3[5-9]|4\d|5[0-2])\s*размер\b/i);
+  if (explicit) return explicit[1];
+  const short = value.match(/\bразмер\s*(3[5-9]|4\d|5[0-2])\b/i);
+  if (short) return short[1];
+  return '';
+}
+
+function hasKnownInsoleValue(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized !== 'unknown' && normalized !== 'not_measured' && normalized !== 'not_measured_yet';
+}
+
+function isShoeProductContext(text = '') {
+  const value = String(text || '').toLowerCase();
+  return /(кроссов|кед|обув|nike|dunk|jordan|new balance|nb 9060|9060|balenciaga|track|runner|3xl|asics|gel-|converse|all star|adidas|yeezy|puma|v5 rnr|pegasus|vomero)/i.test(value);
+}
+
+function needsPostPaymentInsolePrompt({ inputText = '', history = [], customerFacts = [] }) {
+  const currentInput = String(inputText || '');
+  const joinedHistory = history.map((msg) => String(msg.text || '')).join('\n');
+  const joinedAll = `${joinedHistory}\n${currentInput}`;
+  const facts = customerFactsMap(customerFacts);
+
+  const paymentReceived = isReceiptLikeMessage({}, currentInput)
+    || String(facts.payment_received || '').toLowerCase() === 'true'
+    || String(facts.order_status || '').toLowerCase() === 'paid';
+  if (!paymentReceived) return null;
+
+  const shoeSize = String(facts.shoe_size || '') || extractShoeSizeFromText(joinedAll);
+  const insoleValue = String(facts.insole_cm || '');
+  const postPaymentAlreadyAsked = /(чек получил|перед отправкой точнее проверить размер|длину стельки в см в вашей удобной обуви)/i.test(joinedHistory);
+  const shoeContext = isShoeProductContext(joinedAll) || Boolean(shoeSize);
+
+  if (!shoeContext || !shoeSize || hasKnownInsoleValue(insoleValue) || postPaymentAlreadyAsked) {
+    return null;
+  }
+
+  return { shoeSize };
+}
+
 function isPaymentTemplateReply(replyMessages = []) {
   const joined = String((replyMessages || []).join('\n')).toLowerCase();
   return joined.includes('сумма к оплате')
@@ -1314,6 +1361,22 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
     messages.push({
       role: 'system',
       content: `Контекст товара по ссылке iwak.ru:\n${JSON.stringify(iwakContext, null, 2)}`,
+    });
+  }
+  const postPaymentInsole = needsPostPaymentInsolePrompt({ inputText, history, customerFacts });
+  if (postPaymentInsole) {
+    messages.push({
+      role: 'system',
+      content: [
+        'КРИТИЧЕСКИЙ ПРИОРИТЕТ ЭТОГО ОТВЕТА:',
+        'клиент уже подтвердил оплату, товар относится к обуви, размер известен, длина стельки ещё не указана.',
+        'В ЭТОМ ЖЕ ОТВЕТЕ ты обязан:',
+        '1. коротко подтвердить получение оплаты и поблагодарить;',
+        '2. обязательно попросить длину стельки в сантиметрах как финальную проверку перед отправкой;',
+        '3. использовать смысл формулировки: «Чтобы перед отправкой точнее проверить размер, подскажите, пожалуйста, длину стельки в см в вашей удобной обуви.»',
+        '4. не пропускать этот вопрос и не заменять его только текстом про отслеживание.',
+        `Размер в контексте: ${postPaymentInsole.shoeSize}.`,
+      ].join(' '),
     });
   }
   for (const msg of history) {
