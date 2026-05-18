@@ -3272,6 +3272,40 @@
         </div>
       </section>
 
+      <section class="panel collapsible" id="vk">
+        <button class="panel-toggle" type="button" data-toggle-panel="vk" aria-expanded="false">
+          <h2>VK <span class="node-light" id="vkStatusLight" aria-label="VK не настроен"></span></h2>
+          <span class="chevron">⌄</span>
+        </button>
+        <div class="panel-body">
+        <div class="form">
+          <div class="field">
+            <label>Токен сообщества VK</label>
+            <input id="vk_group_token" placeholder="загрузка">
+          </div>
+          <div class="field">
+            <label>ID группы</label>
+            <input id="vk_group_id" placeholder="например 238603174">
+          </div>
+          <div class="field">
+            <label>Callback secret</label>
+            <input id="vk_callback_secret" placeholder="необязательно, но желательно">
+          </div>
+          <div class="field">
+            <label>Confirmation code</label>
+            <input id="vk_confirmation_token" placeholder="код из настроек Callback API">
+          </div>
+          <div class="field">
+            <label>Webhook VK</label>
+            <input id="vk_webhook_url" readonly>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="action" id="saveVk">Сохранить</button>
+        </div>
+        </div>
+      </section>
+
       <section class="panel" id="test">
         <h2>Тест-чат <button class="mini-action" id="clearTestChat" type="button">Очистить</button></h2>
         <div class="chat-shell">
@@ -3726,7 +3760,7 @@
 
   <script>
     const chatBox = document.getElementById('chatBox');
-    const secretFields = ['telegram_token', 'ai_key'];
+    const secretFields = ['telegram_token', 'vk_group_token', 'vk_callback_secret', 'vk_confirmation_token', 'ai_key'];
     const testChatStorageKey = 'sai:test-chat:v1';
     const quickEmojis = ['👍', '👌', '🙏', '✅', '🔥', '❤️', '🙂', '😉', '😊', '🤝', '💬', '📦', '🚚', '💳', '⭐', '✨'];
     const testHistory = [];
@@ -3783,20 +3817,35 @@
       const data = await response.json();
       const cfg = data.config || {};
       document.getElementById('webhook_url').value = cfg.webhook_url || '';
+      document.getElementById('vk_webhook_url').value = cfg.webhook_url ? cfg.webhook_url.replace('/api/telegram/webhook', '/api/vk/webhook') : '';
       document.getElementById('ai_url').value = cfg.ai_url || '';
       currentModel = cfg.model || '';
       currentVisionModel = cfg.vision_model || cfg.model || '';
       setModelOptions([], currentModel, 'model', currentModel);
       setModelOptions([], currentVisionModel, 'vision_model', currentModel);
       const telegramInput = document.getElementById('telegram_token');
+      const vkTokenInput = document.getElementById('vk_group_token');
+      const vkSecretInput = document.getElementById('vk_callback_secret');
+      const vkConfirmationInput = document.getElementById('vk_confirmation_token');
       const aiKeyInput = document.getElementById('ai_key');
       telegramInput.value = cfg.telegram_token_set ? cfg.telegram_token_preview : '';
       telegramInput.dataset.preview = cfg.telegram_token_set ? cfg.telegram_token_preview : '';
       telegramInput.placeholder = cfg.telegram_token_set ? 'очистите и сохраните, чтобы удалить' : 'вставьте токен Telegram';
+      document.getElementById('vk_group_id').value = cfg.vk_group_id || '';
+      vkTokenInput.value = cfg.vk_group_token_set ? cfg.vk_group_token_preview : '';
+      vkTokenInput.dataset.preview = cfg.vk_group_token_set ? cfg.vk_group_token_preview : '';
+      vkTokenInput.placeholder = cfg.vk_group_token_set ? 'очистите и сохраните, чтобы удалить' : 'вставьте токен сообщества VK';
+      vkSecretInput.value = cfg.vk_callback_secret_set ? '********' : '';
+      vkSecretInput.dataset.preview = cfg.vk_callback_secret_set ? '********' : '';
+      vkSecretInput.placeholder = cfg.vk_callback_secret_set ? 'очистите и сохраните, чтобы удалить' : 'секрет callback, если используете';
+      vkConfirmationInput.value = cfg.vk_confirmation_token_set ? '********' : '';
+      vkConfirmationInput.dataset.preview = cfg.vk_confirmation_token_set ? '********' : '';
+      vkConfirmationInput.placeholder = cfg.vk_confirmation_token_set ? 'очистите и сохраните, чтобы удалить' : 'код подтверждения из VK';
       aiKeyInput.value = cfg.ai_key_set ? cfg.ai_key_preview : '';
       aiKeyInput.dataset.preview = cfg.ai_key_set ? cfg.ai_key_preview : '';
       aiKeyInput.placeholder = cfg.ai_key_set ? 'очистите и сохраните, чтобы удалить' : 'вставьте ключ AI';
       setStatusLight('telegramStatusLight', cfg.telegram_token_set, 'Telegram');
+      setStatusLight('vkStatusLight', cfg.vk_group_token_set && Boolean(cfg.vk_group_id), 'VK');
       setStatusLight('aiStatusLight', cfg.ai_key_set && Boolean(cfg.ai_url) && Boolean(cfg.model), 'AI');
     }
 
@@ -5589,6 +5638,7 @@
     }
 
     document.getElementById('saveTelegram').onclick = () => saveConfig(['telegram_token', 'webhook_url']);
+    document.getElementById('saveVk').onclick = () => saveConfig(['vk_group_token', 'vk_group_id', 'vk_callback_secret', 'vk_confirmation_token']);
     document.getElementById('saveAi').onclick = () => saveConfig(['ai_key', 'ai_url', 'model', 'vision_model']);
     document.getElementById('loadModels').onclick = loadModels;
     document.getElementById('refreshLogs').onclick = loadLogs;
