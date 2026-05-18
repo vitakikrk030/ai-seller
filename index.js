@@ -45,6 +45,8 @@ const aiProcessing = new Map();
 const promptCache = { hash: '', prompt: '', catalogHash: '', mtime: 0 };
 // Manager takeover: chatId → { lastManagerAt, managerUserId }
 const passiveChats = new Map();
+// Client messages that arrived during passive mode: chatId -> buffered message batch
+const passiveResumeBuffers = new Map();
 // Manual pause: chatId → { pausedAt, pausedBy }
 const pausedChats = new Map();
 // Escalation: chatId → { at, reason, traceId }
@@ -53,6 +55,91 @@ const escalatedChats = new Map();
 const recentReactions = new Map();
 // Iwak page cache: url -> { expiresAt, data }
 const iwakPageCache = new Map();
+
+function getPassiveSeconds() {
+  return Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
+}
+
+function clearPassiveResume(bufferKey) {
+  const queued = passiveResumeBuffers.get(bufferKey);
+  if (queued?.timer) clearTimeout(queued.timer);
+  passiveResumeBuffers.delete(bufferKey);
+}
+
+function schedulePassiveResume(bufferKey) {
+  const passive = passiveChats.get(bufferKey);
+  const queued = passiveResumeBuffers.get(bufferKey);
+  if (!passive || !queued) return;
+
+  if (queued.timer) clearTimeout(queued.timer);
+  const passiveMs = getPassiveSeconds() * 1000;
+  const resumeInMs = Math.max(0, passive.lastManagerAt + passiveMs - Date.now());
+
+  queued.timer = setTimeout(() => {
+    const currentPassive = passiveChats.get(bufferKey);
+    const currentQueued = passiveResumeBuffers.get(bufferKey);
+    if (!currentQueued) return;
+
+    if (!currentPassive) {
+      passiveResumeBuffers.delete(bufferKey);
+      processBatchedMessages(bufferKey, { ...currentQueued, timer: null }).catch((error) => {
+        logEvent('ERROR', { traceId: currentQueued.traceId, scope: 'passive_resume.process', error: error.message });
+      });
+      return;
+    }
+
+    const passiveMsNow = getPassiveSeconds() * 1000;
+    if ((Date.now() - currentPassive.lastManagerAt) < passiveMsNow) {
+      schedulePassiveResume(bufferKey);
+      return;
+    }
+
+    passiveChats.delete(bufferKey);
+
+    // If manager wrote after the latest customer message, agent should stay silent.
+    if ((currentPassive.lastManagerAt || 0) > (currentQueued.lastCustomerAt || 0)) {
+      clearPassiveResume(bufferKey);
+      logEvent('PASSIVE_RESUME_SKIPPED', {
+        traceId: currentQueued.traceId,
+        chatId: currentQueued.chatId,
+        source: currentQueued.source,
+        reason: 'manager_replied_after_customer',
+      });
+      return;
+    }
+
+    passiveResumeBuffers.delete(bufferKey);
+    logEvent('PASSIVE_RESUME_PROCESS', {
+      traceId: currentQueued.traceId,
+      chatId: currentQueued.chatId,
+      source: currentQueued.source,
+      bufferedTexts: currentQueued.texts.length,
+    });
+    processBatchedMessages(bufferKey, { ...currentQueued, timer: null }).catch((error) => {
+      logEvent('ERROR', { traceId: currentQueued.traceId, scope: 'passive_resume.process', error: error.message });
+    });
+  }, resumeInMs);
+}
+
+function queuePassiveClientMessage(bufferKey, buffer) {
+  const existing = passiveResumeBuffers.get(bufferKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+  if (existing) {
+    existing.texts.push(...(buffer.texts || []));
+    existing.traceId = buffer.traceId;
+    existing.chatDbId = buffer.chatDbId;
+    existing.customerId = buffer.customerId;
+    existing.chatId = buffer.chatId;
+    existing.source = buffer.source;
+    existing.businessConnectionId = buffer.businessConnectionId;
+    existing.lastMessageId = buffer.lastMessageId || existing.lastMessageId;
+    existing.lastCustomerAt = buffer.lastCustomerAt || existing.lastCustomerAt;
+    if (buffer.media) existing.media = buffer.media;
+  } else {
+    passiveResumeBuffers.set(bufferKey, { ...buffer, timer: null });
+  }
+  schedulePassiveResume(bufferKey);
+}
 
 function getChatAiStatus(chatId, source = 'telegram') {
   const key = channelKey(source, chatId);
@@ -64,7 +151,7 @@ function getChatAiStatus(chatId, source = 'telegram') {
   }
   const passive = passiveChats.get(key);
   if (passive) {
-    const passiveSec = Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
+    const passiveSec = getPassiveSeconds();
     const elapsed = (Date.now() - passive.lastManagerAt) / 1000;
     if (elapsed < passiveSec) {
       const remaining = Math.round(passiveSec - elapsed);
@@ -2847,36 +2934,52 @@ app.post('/api/telegram/webhook', (req, res) => {
 
       if (isManager) {
         // Manager sent a message — activate passive mode
-        passiveChats.set(channelKey(source, chatId), { lastManagerAt: Date.now(), managerUserId: message.from.id });
+        const chatKey = channelKey(source, chatId);
+        passiveChats.set(chatKey, { lastManagerAt: Date.now(), managerUserId: message.from.id });
+        if (passiveResumeBuffers.has(chatKey)) schedulePassiveResume(chatKey);
         logEvent('MANAGER_TAKEOVER', { traceId, chatId, managerUserId: message.from.id, text });
         emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'manager.takeover' });
 
         // Cancel any pending AI for this chat
-        const pendingAi = aiProcessing.get(channelKey(source, chatId));
+        const pendingAi = aiProcessing.get(chatKey);
         if (pendingAi) {
           pendingAi.cancelled = true;
           logEvent('AI_CANCEL_REQUESTED', { traceId, chatId, reason: 'manager_takeover', cancelledTrace: pendingAi.traceId });
         }
-        const pendingBuffer = debounceBuffers.get(channelKey(source, chatId));
+        const pendingBuffer = debounceBuffers.get(chatKey);
         if (pendingBuffer) {
           clearTimeout(pendingBuffer.timer);
-          debounceBuffers.delete(channelKey(source, chatId));
+          debounceBuffers.delete(chatKey);
           logEvent('BATCH_CANCELLED', { traceId, chatId, reason: 'manager_takeover' });
         }
         return;
       }
 
       // Client message — check if chat is in passive mode
-      const passive = passiveChats.get(channelKey(source, chatId));
-      const passiveSec = Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
+      const chatKey = channelKey(source, chatId);
+      const passive = passiveChats.get(chatKey);
+      const passiveSec = getPassiveSeconds();
       if (passive && (Date.now() - passive.lastManagerAt) < passiveSec * 1000) {
-        const minutesAgo = Math.round((Date.now() - passive.lastManagerAt) / 60000);
-        logEvent('PASSIVE_MODE', { traceId, chatId, minutesAgo, expiresInMinutes: 30 - minutesAgo });
+        const remainingSec = Math.max(0, Math.round(passiveSec - ((Date.now() - passive.lastManagerAt) / 1000)));
+        queuePassiveClientMessage(chatKey, {
+          texts: [text],
+          traceId,
+          chatDbId,
+          customerId,
+          chatId,
+          source,
+          businessConnectionId,
+          lastMessageId: message.message_id || null,
+          media: media || null,
+          lastCustomerAt: Date.now(),
+        });
+        logEvent('PASSIVE_MODE', { traceId, chatId, remainingSec, queuedForResume: true });
         emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'passive_mode' });
         return;
       }
       if (passive) {
-        passiveChats.delete(channelKey(source, chatId));
+        passiveChats.delete(chatKey);
+        clearPassiveResume(chatKey);
         logEvent('PASSIVE_EXPIRED', { traceId, chatId });
       }
 
@@ -3053,12 +3156,27 @@ app.post('/api/vk/webhook', (req, res) => {
 
       const key = channelKey(source, peerId);
       const passive = passiveChats.get(key);
-      const passiveSec = Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
+      const passiveSec = getPassiveSeconds();
       if (passive && (Date.now() - passive.lastManagerAt) < passiveSec * 1000) {
+        queuePassiveClientMessage(key, {
+          texts: [text],
+          traceId,
+          chatDbId,
+          customerId,
+          chatId: peerId,
+          source,
+          businessConnectionId: '',
+          lastMessageId: message.id ? String(message.id) : null,
+          media: media || null,
+          lastCustomerAt: Date.now(),
+        });
         emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'passive_mode' });
         return;
       }
-      if (passive) passiveChats.delete(key);
+      if (passive) {
+        passiveChats.delete(key);
+        clearPassiveResume(key);
+      }
 
       if (!runtimeConfig.auto_reply_enabled) {
         emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'auto_reply_disabled' });
