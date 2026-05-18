@@ -1104,6 +1104,31 @@ function parsePaymentAmount(text = '') {
   return Number.isFinite(digits) && digits > 0 ? digits : null;
 }
 
+function parseLooseRubAmount(text = '') {
+  const value = String(text || '');
+  const matches = [...value.matchAll(/(?:итого|сумма|перевод|к\s+оплате)?\s*[:\-]?\s*([\d\s]{3,})\s*(?:₽|руб|р\b)/gi)];
+  for (const match of matches) {
+    const digits = Number(String(match[1] || '').replace(/[^\d]/g, ''));
+    if (Number.isFinite(digits) && digits > 0) return digits;
+  }
+  return null;
+}
+
+function derivePaymentAmount(snapshot = {}, explicitAmount = null) {
+  if (Number.isFinite(Number(explicitAmount)) && Number(explicitAmount) > 0) return Number(explicitAmount);
+  const candidates = [
+    snapshot.payment_amount,
+    snapshot.price,
+    snapshot.total_amount,
+    snapshot.amount,
+  ];
+  for (const value of candidates) {
+    const digits = Number(String(value || '').replace(/[^\d]/g, ''));
+    if (Number.isFinite(digits) && digits > 0) return digits;
+  }
+  return null;
+}
+
 function customerFactsMap(customerFacts = []) {
   return Object.fromEntries((customerFacts || []).map((fact) => [String(fact.key || ''), String(fact.value || '')]));
 }
@@ -1154,29 +1179,60 @@ function needsPostPaymentInsolePrompt({ inputText = '', history = [], customerFa
 async function syncPaidCustomerState({
   customerId = null,
   chatDbId = null,
+  source = 'telegram',
   traceId = null,
   receiptMessageId = null,
   paidAt = null,
+  paymentAmount = null,
   snapshotPatch = {},
 }) {
   if (!customerId && !chatDbId) return null;
   const snapshot = normalizeOrderSnapshot(customerId ? await db.getCustomerSnapshot(customerId) : {});
+  const mergedSnapshot = {
+    ...snapshot,
+    ...normalizeOrderSnapshot(snapshotPatch || {}),
+  };
+  const finalPaymentAmount = derivePaymentAmount(mergedSnapshot, paymentAmount);
+  if (finalPaymentAmount != null) {
+    mergedSnapshot.payment_amount = String(finalPaymentAmount);
+  }
   const orderId = await db.markLatestOrderPaid({
     customerId,
     chatId: chatDbId,
     traceId,
     receiptMessageId,
     paidAt,
-    snapshotPatch: {
-      ...snapshot,
-      ...normalizeOrderSnapshot(snapshotPatch || {}),
-    },
+    snapshotPatch: mergedSnapshot,
   });
+  const ensuredOrderId = orderId || await (async () => {
+    await db.upsertOrderDraft({
+      customerId,
+      chatId: chatDbId,
+      source,
+      traceId,
+      totalAmount: finalPaymentAmount,
+      currency: 'RUB',
+      summary: summarizeOrderSnapshot(mergedSnapshot),
+      snapshot: mergedSnapshot,
+      paymentMessageId: null,
+    });
+    return db.markLatestOrderPaid({
+      customerId,
+      chatId: chatDbId,
+      traceId,
+      receiptMessageId,
+      paidAt,
+      snapshotPatch: mergedSnapshot,
+    });
+  })();
   if (customerId) {
     await db.upsertCustomerFact(customerId, 'payment_status', 'paid', 'system');
     await db.upsertCustomerFact(customerId, 'payment_received', 'true', 'system');
     await db.upsertCustomerFact(customerId, 'order_status', 'paid', 'system');
     await db.upsertCustomerFact(customerId, 'funnel_stage', 'support', 'system');
+    if (finalPaymentAmount != null) {
+      await db.upsertCustomerFact(customerId, 'payment_amount', String(finalPaymentAmount), 'system');
+    }
   }
   await db.closeActiveOrderDraft({
     customerId,
@@ -1188,7 +1244,7 @@ async function syncPaidCustomerState({
       payment_trace_id: traceId || '',
     }),
   });
-  return orderId;
+  return ensuredOrderId;
 }
 
 async function syncActiveOrderDraft({
@@ -1256,9 +1312,119 @@ async function syncActiveOrderDraft({
 
 function isPaymentTemplateReply(replyMessages = []) {
   const joined = String((replyMessages || []).join('\n')).toLowerCase();
-  return joined.includes('сумма к оплате')
+  const hasClassicTemplate = joined.includes('сумма к оплате')
     && joined.includes('реквизиты')
     && joined.includes('получатель');
+  const hasCardDetails = (joined.includes('реквизиты') || /номер\s+карты/i.test(joined))
+    && /\b\d{16,20}\b/.test(joined.replace(/\s+/g, ''));
+  return hasClassicTemplate || hasCardDetails;
+}
+
+function getTelegramReceiptMedia(message = {}) {
+  if (message.photo?.length) {
+    const bestPhoto = message.photo[message.photo.length - 1];
+    return bestPhoto?.file_id ? { fileId: bestPhoto.file_id, mimeType: 'image/jpeg' } : null;
+  }
+  if (message.document) {
+    const mime = String(message.document.mime_type || '').toLowerCase();
+    if (mime.startsWith('image/')) {
+      return message.document.file_id ? { fileId: message.document.file_id, mimeType: mime } : null;
+    }
+    const thumbFileId = message.document.thumbnail?.file_id || message.document.thumb?.file_id || '';
+    if (thumbFileId) {
+      return { fileId: thumbFileId, mimeType: 'image/jpeg' };
+    }
+  }
+  return null;
+}
+
+function parseReceiptExtraction(raw = '') {
+  try {
+    let text = String(raw || '').trim();
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) text = fenced[1].trim();
+    const parsed = JSON.parse(text);
+    const amount = derivePaymentAmount({}, parsed.amount_rub ?? parsed.amount ?? null);
+    return {
+      amount,
+      paidAtText: String(parsed.paid_at || parsed.datetime || '').trim(),
+      dateText: String(parsed.date || '').trim(),
+      timeText: String(parsed.time || '').trim(),
+      recipient: String(parsed.recipient || '').trim(),
+      bank: String(parsed.bank || '').trim(),
+    };
+  } catch {
+    return {
+      amount: parseLooseRubAmount(raw),
+      paidAtText: '',
+      dateText: '',
+      timeText: '',
+      recipient: '',
+      bank: '',
+    };
+  }
+}
+
+async function extractReceiptDetailsFromTelegramMessage(message = {}, traceId = '') {
+  const media = getTelegramReceiptMedia(message);
+  if (!media || runtimeConfig.vision_enabled === false) return null;
+  const imageRef = await downloadTelegramFileBase64(media.fileId);
+  if (!imageRef) return null;
+  const model = String(runtimeConfig.vision_model || runtimeConfig.model || '').trim();
+  if (!model || !runtimeConfig.ai_key) return null;
+
+  const payload = {
+    model,
+    temperature: 0,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          'Ты извлекаешь данные только из банковского чека или PDF-превью.',
+          'Верни только JSON без пояснений.',
+          'Формат:',
+          '{"amount_rub": number|null, "date": string, "time": string, "paid_at": string, "recipient": string, "bank": string}',
+          'Если поле не видно, верни пустую строку или null.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Извлеки сумму перевода в рублях, дату, время, получателя и банк из чека.' },
+          { type: 'image_url', image_url: { url: imageRef } },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const baseUrl = String(runtimeConfig.ai_url || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const response = await axios.post(`${baseUrl}/chat/completions`, payload, {
+      timeout: REQUEST_TIMEOUT_MS,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${runtimeConfig.ai_key}`,
+      },
+    });
+    const raw = response.data?.choices?.[0]?.message?.content || '';
+    const extracted = parseReceiptExtraction(raw);
+    logEvent('RECEIPT_EXTRACTED', {
+      traceId,
+      amount: extracted.amount,
+      dateText: extracted.dateText,
+      timeText: extracted.timeText,
+      paidAtText: extracted.paidAtText,
+      hasRecipient: Boolean(extracted.recipient),
+      hasBank: Boolean(extracted.bank),
+    });
+    return extracted;
+  } catch (error) {
+    logEvent('RECEIPT_EXTRACT_ERROR', {
+      traceId,
+      error: error.message,
+    });
+    return null;
+  }
 }
 
 function isReceiptLikeMessage(message = {}, text = '') {
@@ -2362,7 +2528,7 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
   }
   if (isPaymentTemplateReply([text]) && chat.customer_id) {
     const snapshot = normalizeOrderSnapshot(await db.getCustomerSnapshot(chat.customer_id));
-    const paymentAmount = parsePaymentAmount(text);
+    const paymentAmount = derivePaymentAmount(snapshot, parsePaymentAmount(text));
     await db.upsertOrderDraft({
       customerId: chat.customer_id,
       chatId: chat.id,
@@ -2749,7 +2915,9 @@ async function processBatchedMessages(bufferKey, buffer) {
       await syncPaidCustomerState({
         customerId,
         chatId: chatDbId,
+        source,
         traceId,
+        paymentAmount: derivePaymentAmount(mergedFacts, null),
         snapshotPatch: {
           payment_detected_by: 'ai_fact',
           paid_confirmation_text: combinedText,
@@ -2765,8 +2933,8 @@ async function processBatchedMessages(bufferKey, buffer) {
     if (structured.reply.length > 0) {
       const normalizedReply = collapseReplyMessages(structured.reply, { preferSingle: texts.length > 1 });
       if (isPaymentTemplateReply(normalizedReply)) {
-        const paymentAmount = parsePaymentAmount(normalizedReply.join('\n'));
         const snapshot = normalizeOrderSnapshot(customerId ? await db.getCustomerSnapshot(customerId) : {});
+        const paymentAmount = derivePaymentAmount(snapshot, parsePaymentAmount(normalizedReply.join('\n')));
         await db.upsertOrderDraft({
           customerId,
           chatId: chatDbId,
@@ -2899,14 +3067,23 @@ app.post('/api/telegram/webhook', (req, res) => {
         raw: message,
       });
       if (!isManager && isReceiptLikeMessage(message, text)) {
+        const receiptDetails = await extractReceiptDetailsFromTelegramMessage(message, traceId);
         await syncPaidCustomerState({
           customerId,
           chatId: chatDbId,
+          source,
           traceId,
           receiptMessageId: message.message_id || null,
           paidAt: message.date ? new Date(Number(message.date) * 1000).toISOString() : null,
+          paymentAmount: receiptDetails?.amount ?? null,
           snapshotPatch: {
             paid_confirmation_text: text,
+            receipt_amount: receiptDetails?.amount != null ? String(receiptDetails.amount) : '',
+            receipt_date: receiptDetails?.dateText || '',
+            receipt_time: receiptDetails?.timeText || '',
+            receipt_paid_at_text: receiptDetails?.paidAtText || '',
+            receipt_recipient: receiptDetails?.recipient || '',
+            receipt_bank: receiptDetails?.bank || '',
           },
         });
       }
@@ -3128,6 +3305,7 @@ app.post('/api/vk/webhook', (req, res) => {
         await syncPaidCustomerState({
           customerId,
           chatId: chatDbId,
+          source,
           traceId,
           receiptMessageId: message.id ? String(message.id) : null,
           snapshotPatch: {

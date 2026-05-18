@@ -946,6 +946,20 @@ async function markLatestOrderPaid({
     ...(order.snapshot || {}),
     ...(snapshotPatch || {}),
   };
+  const nextAmount = (() => {
+    const candidates = [
+      nextSnapshot.payment_amount,
+      nextSnapshot.price,
+      nextSnapshot.total_amount,
+      nextSnapshot.amount,
+      null,
+    ];
+    for (const value of candidates) {
+      const digits = Number(String(value || '').replace(/[^\d]/g, ''));
+      if (Number.isFinite(digits) && digits > 0) return digits;
+    }
+    return null;
+  })();
   const updated = await query(`
     update orders
     set status = 'paid',
@@ -953,10 +967,11 @@ async function markLatestOrderPaid({
         receipt_message_id = coalesce($3, receipt_message_id),
         snapshot = $4::jsonb,
         paid_at = coalesce($5::timestamptz, paid_at, now()),
+        total_amount = coalesce($6::int, total_amount),
         updated_at = now()
     where id = $1
     returning id
-  `, [order.id, traceId, receiptMessageId ? String(receiptMessageId) : null, json(nextSnapshot), paidAt || null]);
+  `, [order.id, traceId, receiptMessageId ? String(receiptMessageId) : null, json(nextSnapshot), paidAt || null, nextAmount]);
   return updated.rows[0]?.id || null;
 }
 
