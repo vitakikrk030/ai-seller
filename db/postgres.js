@@ -187,10 +187,18 @@ async function recordEvent(event, data = {}) {
   return result.rows[0]?.id || null;
 }
 
-async function upsertTelegramCustomer(from = {}, chat = {}) {
+async function upsertExternalCustomer({
+  source = 'telegram',
+  externalUserId = '',
+  username = '',
+  firstName = '',
+  lastName = '',
+  displayName = '',
+  raw = {},
+} = {}) {
   if (!ready) return null;
-  const telegramUserId = from.id ? String(from.id) : chat.id ? String(chat.id) : '';
-  if (!telegramUserId) return null;
+  const normalizedUserId = externalUserId ? String(externalUserId) : '';
+  if (!normalizedUserId) return null;
   const result = await query(`
     insert into customers (
       source,
@@ -212,15 +220,27 @@ async function upsertTelegramCustomer(from = {}, chat = {}) {
       updated_at = now()
     returning id
   `, [
-    'telegram',
-    telegramUserId,
-    from.username || chat.username || null,
-    from.first_name || chat.first_name || null,
-    from.last_name || chat.last_name || null,
-    [from.first_name || chat.first_name, from.last_name || chat.last_name].filter(Boolean).join(' ') || from.username || chat.username || telegramUserId,
-    json({ from, chat }),
+    source,
+    normalizedUserId,
+    username || null,
+    firstName || null,
+    lastName || null,
+    displayName || [firstName, lastName].filter(Boolean).join(' ') || username || normalizedUserId,
+    json(raw || {}),
   ]);
   return result.rows[0]?.id || null;
+}
+
+async function upsertTelegramCustomer(from = {}, chat = {}) {
+  return upsertExternalCustomer({
+    source: 'telegram',
+    externalUserId: from.id ? String(from.id) : chat.id ? String(chat.id) : '',
+    username: from.username || chat.username || '',
+    firstName: from.first_name || chat.first_name || '',
+    lastName: from.last_name || chat.last_name || '',
+    displayName: [from.first_name || chat.first_name, from.last_name || chat.last_name].filter(Boolean).join(' ') || from.username || chat.username || String(from.id || chat.id || ''),
+    raw: { from, chat },
+  });
 }
 
 async function setCustomerAvatar(customerId, avatarFileId = null) {
@@ -243,9 +263,14 @@ async function updateCustomerAvatar(customerId, avatarFileId) {
   return setCustomerAvatar(customerId, avatarFileId);
 }
 
-async function upsertTelegramChat({ chat = {}, customerId = null, businessConnectionId = '' }) {
-  if (!ready || !chat.id) return null;
-  const externalChatId = String(chat.id);
+async function upsertExternalChat({
+  source = 'telegram',
+  externalChatId = '',
+  customerId = null,
+  businessConnectionId = '',
+  title = '',
+} = {}) {
+  if (!ready || !externalChatId) return null;
   const result = await query(`
     insert into chats (
       source,
@@ -264,14 +289,24 @@ async function upsertTelegramChat({ chat = {}, customerId = null, businessConnec
       updated_at = now()
     returning id
   `, [
-    'telegram',
-    externalChatId,
+    source,
+    String(externalChatId),
     customerId,
     businessConnectionId || null,
-    chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || externalChatId,
+    title || String(externalChatId),
     'open',
   ]);
   return result.rows[0]?.id || null;
+}
+
+async function upsertTelegramChat({ chat = {}, customerId = null, businessConnectionId = '' }) {
+  return upsertExternalChat({
+    source: 'telegram',
+    externalChatId: chat.id ? String(chat.id) : '',
+    customerId,
+    businessConnectionId,
+    title: chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || String(chat.id || ''),
+  });
 }
 
 async function recordMessage({
@@ -1443,9 +1478,11 @@ module.exports = {
   foundationStatus,
   query,
   recordEvent,
+  upsertExternalCustomer,
   upsertTelegramCustomer,
   setCustomerAvatar,
   updateCustomerAvatar,
+  upsertExternalChat,
   upsertTelegramChat,
   recordMessage,
   recordAiTurn,

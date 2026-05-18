@@ -4617,7 +4617,11 @@
     }
 
     function avatarUrl(fileId) {
-      return fileId ? `/api/telegram/avatar/${encodeURIComponent(fileId)}` : '';
+      const raw = String(fileId || '').trim();
+      if (!raw) return '';
+      const external = safeExternalUrl(raw);
+      if (external) return external;
+      return `/api/telegram/avatar/${encodeURIComponent(raw)}`;
     }
 
     function avatarMarkup(name, fileId, className = 'dialog-avatar') {

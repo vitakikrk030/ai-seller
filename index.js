@@ -33,6 +33,9 @@ const AUTH_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 // DEBOUNCE_MS is now read from runtimeConfig.debounce_ms at runtime
 function getDebounceMs() { return Math.max(500, Math.min(10000, Number(runtimeConfig.debounce_ms || 3000))); }
+function channelKey(source = 'telegram', externalChatId = '') {
+  return `${String(source || 'telegram')}:${String(externalChatId || '')}`;
+}
 
 // Batch debounce: chatId → { timer, texts[], traceId, chatDbId, customerId, chatId, businessConnectionId }
 const debounceBuffers = new Map();
@@ -51,8 +54,8 @@ const recentReactions = new Map();
 // Iwak page cache: url -> { expiresAt, data }
 const iwakPageCache = new Map();
 
-function getChatAiStatus(chatId) {
-  const key = String(chatId);
+function getChatAiStatus(chatId, source = 'telegram') {
+  const key = channelKey(source, chatId);
   if (!runtimeConfig.auto_reply_enabled) return { status: 'off', label: 'AI выключен' };
   if (pausedChats.has(key)) return { status: 'paused_manual', label: 'Пауза (менеджер)' };
   if (escalatedChats.has(key)) {
@@ -121,6 +124,11 @@ function loadConfig() {
   return {
     telegram_token: process.env.TELEGRAM_TOKEN || saved.telegram_token || '',
     webhook_url: process.env.WEBHOOK_URL || saved.webhook_url || '',
+    vk_group_token: process.env.VK_GROUP_TOKEN || saved.vk_group_token || '',
+    vk_group_id: process.env.VK_GROUP_ID || saved.vk_group_id || '',
+    vk_callback_secret: process.env.VK_CALLBACK_SECRET || saved.vk_callback_secret || '',
+    vk_confirmation_token: process.env.VK_CONFIRMATION_TOKEN || saved.vk_confirmation_token || '',
+    vk_api_version: process.env.VK_API_VERSION || saved.vk_api_version || '5.199',
     ai_key: process.env.AI_API_KEY || saved.ai_key || saved.sai_gpt_key || '',
     ai_url: process.env.AI_BASE_URL || saved.ai_url || saved.sai_gpt_url || 'https://api.openai.com/v1',
     model: process.env.MODEL || saved.model || saved.sai_gpt_model || 'gpt-4o-mini',
@@ -237,6 +245,11 @@ function publicConfig() {
     telegram_token_set: Boolean(runtimeConfig.telegram_token),
     telegram_token_preview: redact(runtimeConfig.telegram_token),
     webhook_url: runtimeConfig.webhook_url,
+    vk_group_token_set: Boolean(runtimeConfig.vk_group_token),
+    vk_group_token_preview: redact(runtimeConfig.vk_group_token),
+    vk_group_id: runtimeConfig.vk_group_id || '',
+    vk_callback_secret_set: Boolean(runtimeConfig.vk_callback_secret),
+    vk_confirmation_token_set: Boolean(runtimeConfig.vk_confirmation_token),
     ai_key_set: Boolean(runtimeConfig.ai_key),
     ai_key_preview: redact(runtimeConfig.ai_key),
     ai_url: runtimeConfig.ai_url,
@@ -288,6 +301,44 @@ function getRecentLogs(limit = 100) {
 
 function telegramApi(method) {
   return `https://api.telegram.org/bot${runtimeConfig.telegram_token}/${method}`;
+}
+
+async function vkApi(method, params = {}, token = runtimeConfig.vk_group_token) {
+  if (!token) throw new Error('VK group token is missing');
+  const payload = new URLSearchParams({
+    ...Object.fromEntries(Object.entries(params || {}).map(([key, value]) => [key, value == null ? '' : String(value)])),
+    access_token: token,
+    v: String(runtimeConfig.vk_api_version || '5.199'),
+  });
+  const response = await axios.post(`https://api.vk.com/method/${method}`, payload, {
+    timeout: REQUEST_TIMEOUT_MS,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (response.data?.error) {
+    const error = new Error(response.data.error.error_msg || 'VK API error');
+    error.vk = response.data.error;
+    throw error;
+  }
+  return response.data?.response;
+}
+
+async function fetchVkUserProfile(userId) {
+  if (!userId || !runtimeConfig.vk_group_token) return null;
+  try {
+    const response = await vkApi('users.get', {
+      user_ids: String(userId),
+      fields: 'screen_name,photo_100',
+    });
+    const user = Array.isArray(response) ? response[0] : null;
+    return user || null;
+  } catch (error) {
+    logEvent('VK_PROFILE_ERROR', {
+      userId: String(userId),
+      error: error.message,
+      providerError: error.vk || null,
+    });
+    return null;
+  }
 }
 
 async function fetchTelegramAvatarFileId(userId) {
@@ -371,6 +422,29 @@ function extractTelegramMedia(message = {}) {
   }
   if (message.sticker && !message.sticker.is_animated && !message.sticker.is_video) {
     return { type: 'photo', fileId: message.sticker.file_id, mimeType: 'image/webp' };
+  }
+  return null;
+}
+
+function normalizeVkText(message = {}) {
+  const text = String(message.text || '').trim();
+  if (text) return text;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (attachments.some((item) => item?.type === 'photo')) return '[photo] Клиент прислал фото.';
+  if (attachments.some((item) => item?.type === 'doc')) return '[document] Клиент прислал файл.';
+  if (attachments.some((item) => item?.type === 'audio_message')) return '[voice] Клиент прислал голосовое сообщение.';
+  if (attachments.some((item) => item?.type === 'sticker')) return '[sticker] 🙂';
+  return '';
+}
+
+function extractVkMedia(message = {}) {
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  for (const item of attachments) {
+    if (item?.type === 'photo' && Array.isArray(item.photo?.sizes)) {
+      const sorted = [...item.photo.sizes].sort((a, b) => (a.width || 0) * (a.height || 0) - (b.width || 0) * (b.height || 0));
+      const best = sorted[sorted.length - 1];
+      if (best?.url) return { type: 'photo', imageUrl: best.url, mimeType: 'image/jpeg' };
+    }
   }
   return null;
 }
@@ -1175,13 +1249,13 @@ async function refreshDialogDetection(chatDbId, traceId = '') {
   }
 }
 
-function pickSmartReaction({ chatId, texts, mediaFileId, stage, lastClientText }) {
+function pickSmartReaction({ chatId, source = 'telegram', texts, mediaFileId, stage, lastClientText }) {
   if (runtimeConfig.reaction_enabled === false) return null;
   if (getReactionMode() === 'off') return null;
 
   const probability = Math.max(0, Math.min(100, Number(runtimeConfig.reaction_probability || 28)));
   const cooldownMs = Math.max(15, Math.min(3600, Number(runtimeConfig.reaction_cooldown_sec || 180))) * 1000;
-  const lastAt = recentReactions.get(String(chatId)) || 0;
+  const lastAt = recentReactions.get(channelKey(source, chatId)) || 0;
   if (Date.now() - lastAt < cooldownMs) return null;
 
   const joined = String(texts.join('\n') || lastClientText || '');
@@ -1426,7 +1500,7 @@ function compileSystemPrompt(sellerControl, context = {}) {
   return finalPrompt;
 }
 
-async function compileAiRequest({ chatDbId, customerId, inputText, traceId, mediaFileId = null }) {
+async function compileAiRequest({ chatDbId, customerId, inputText, traceId, mediaFileId = null, mediaUrl = null }) {
   const sellerControl = loadAiSellerControl();
   const memorySummary = await db.buildMemorySummary(customerId);
   const history = await db.getChatHistory(chatDbId, 50);
@@ -1434,7 +1508,7 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
   const iwakContext = await buildIwakContextFromText(inputText, traceId);
   const currentStage = customerFacts.find((f) => f.key === 'funnel_stage')?.value || '';
   const skipGreeting = await shouldSkipGreeting(chatDbId);
-  const requestModel = mediaFileId && runtimeConfig.vision_enabled !== false
+  const requestModel = (mediaFileId || mediaUrl) && runtimeConfig.vision_enabled !== false
     ? String(runtimeConfig.vision_model || runtimeConfig.model || '').trim()
     : String(runtimeConfig.model || '').trim();
 
@@ -1454,7 +1528,7 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
       content: 'Клиент отправил несколько коротких сообщений подряд. Воспринимай их как одну общую мысль и отвечай одним цельным сообщением по суммарному смыслу, а не отдельной репликой на каждую строку.',
     });
   }
-  if (mediaFileId && runtimeConfig.vision_enabled !== false) {
+  if ((mediaFileId || mediaUrl) && runtimeConfig.vision_enabled !== false) {
     messages.push({
       role: 'system',
       content: [
@@ -1496,16 +1570,16 @@ async function compileAiRequest({ chatDbId, customerId, inputText, traceId, medi
 
   // Vision: if there's a photo and vision is enabled, build multimodal user message
   let visionUsed = false;
-  if (mediaFileId && runtimeConfig.vision_enabled !== false) {
-    const dataUri = await downloadTelegramFileBase64(mediaFileId);
-    if (dataUri) {
+  if ((mediaFileId || mediaUrl) && runtimeConfig.vision_enabled !== false) {
+    const imageRef = mediaUrl || await downloadTelegramFileBase64(mediaFileId);
+    if (imageRef) {
       const contentParts = [];
       if (inputText) contentParts.push({ type: 'text', text: inputText });
       else contentParts.push({ type: 'text', text: 'Клиент прислал фото. Опиши что видишь и ответь в контексте нашего магазина.' });
-      contentParts.push({ type: 'image_url', image_url: { url: dataUri } });
+      contentParts.push({ type: 'image_url', image_url: { url: imageRef } });
       messages.push({ role: 'user', content: contentParts });
       visionUsed = true;
-      logEvent('VISION_ATTACHED', { traceId, mediaFileId, dataUriLen: dataUri.length });
+      logEvent('VISION_ATTACHED', { traceId, mediaFileId, mediaUrl, dataUriLen: String(imageRef).length });
     } else {
       // Vision download failed — fallback to text
       messages.push({ role: 'user', content: inputText || '[Клиент прислал фото, но его не удалось загрузить]' });
@@ -1672,7 +1746,7 @@ async function sendHumanizedReply({ chatId, chatDbId, customerId, replyMessages,
     const emoji = reactionEmoji || (mode === 'fixed' ? String(runtimeConfig.reaction_emoji || '👀') : '');
     if (emoji) {
       await sendTelegramReaction({ chatId, messageId: lastMessageId, emoji, businessConnectionId });
-      recentReactions.set(String(chatId), Date.now());
+      recentReactions.set(channelKey('telegram', chatId), Date.now());
       logEvent('TG_REACTION_SENT', { traceId, chatId, businessConnectionId, messageId: lastMessageId, emoji, mode });
       await sleep(Math.round((420 + Math.random() * 780) * nightMultiplier));
     }
@@ -1822,6 +1896,73 @@ async function sendTelegramMessage({ chatId, chatDbId = null, customerId = null,
   return response.data;
 }
 
+async function sendVkMessage({ peerId, chatDbId = null, customerId = null, text, traceId, role = 'assistant' }) {
+  if (!runtimeConfig.vk_group_token) throw new Error('VK group token is missing');
+  const response = await vkApi('messages.send', {
+    peer_id: peerId,
+    random_id: Math.floor(Math.random() * 2147483647),
+    message: text,
+  });
+  const messageId = response?.message_id || response || null;
+  logEvent('VK_SEND', {
+    traceId,
+    peerId: String(peerId),
+    text,
+    vkMessageId: messageId,
+  });
+  await db.recordMessage({
+    chatId: chatDbId,
+    customerId,
+    direction: 'out',
+    role,
+    text,
+    telegramMessageId: messageId ? String(messageId) : null,
+    traceId,
+    raw: response || {},
+  });
+  refreshDialogDetection(chatDbId, traceId).catch(() => {});
+  emitLive('message.created', {
+    traceId,
+    chatId: chatDbId,
+    customerId,
+    direction: 'out',
+    role,
+    source: 'vk',
+  });
+  emitLive('vk.sent', {
+    traceId,
+    chatId: chatDbId,
+    externalChatId: String(peerId),
+    vkMessageId: messageId,
+  });
+  return response;
+}
+
+async function sendVkReply({ peerId, chatDbId, customerId, replyMessages, traceId, processingState = null }) {
+  for (let i = 0; i < replyMessages.length; i++) {
+    if (processingState?.cancelled) {
+      logEvent('VK_SEND_ABORTED', {
+        traceId,
+        peerId: String(peerId),
+        sentParts: i,
+        totalParts: replyMessages.length,
+      });
+      break;
+    }
+    if (i > 0) {
+      await sleep(Math.round((500 + Math.random() * 900)));
+    }
+    await sendVkMessage({
+      peerId,
+      chatDbId,
+      customerId,
+      text: replyMessages[i],
+      traceId,
+      role: 'assistant',
+    });
+  }
+}
+
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
@@ -1829,6 +1970,7 @@ app.get('/health', (req, res) => {
     mode: 'trunk',
     uptime: Math.round(process.uptime()),
     telegram: Boolean(runtimeConfig.telegram_token),
+    vk: Boolean(runtimeConfig.vk_group_token),
     ai: Boolean(runtimeConfig.ai_key),
     database: db.status(),
   });
@@ -1874,7 +2016,7 @@ app.get('/auth/status', (req, res) => {
 
 app.use((req, res, next) => {
   if (req.path === '/health' || req.path === '/login' || req.path === '/auth/status') return next();
-  if (req.path === '/api/telegram/webhook') return next();
+  if (req.path === '/api/telegram/webhook' || req.path === '/api/vk/webhook') return next();
   return requireAuth(req, res, next);
 });
 
@@ -1885,6 +2027,7 @@ app.get('/config/status', (req, res) => {
     config: publicConfig(),
     transport: {
       telegram: true,
+      vk: true,
       ai_connect: true,
       user_message_only: true,
     },
@@ -1895,7 +2038,8 @@ app.get('/config/status', (req, res) => {
 app.post('/config', (req, res) => {
   const body = req.body || {};
   const allowed = [
-    'telegram_token', 'webhook_url', 'ai_key', 'ai_url', 'model', 'vision_model', 'auto_reply_enabled',
+    'telegram_token', 'webhook_url', 'vk_group_token', 'vk_group_id', 'vk_callback_secret', 'vk_confirmation_token', 'vk_api_version',
+    'ai_key', 'ai_url', 'model', 'vision_model', 'auto_reply_enabled',
     'manager_passive_seconds', 'read_delay_ms', 'typing_speed_cps', 'between_messages_delay_ms',
     'greeting_dedup_enabled', 'greeting_dedup_hours',
     'reaction_enabled', 'reaction_mode', 'reaction_emoji', 'reaction_probability', 'reaction_cooldown_sec', 'debounce_ms',
@@ -2105,27 +2249,37 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
     res.status(400).json({ ok: false, error: 'Text is required' });
     return;
   }
-  if (chat.source !== 'telegram') {
-    res.status(400).json({ ok: false, error: 'Manual send is available only for Telegram chats now' });
+  const traceId = createTraceId();
+  if (chat.source === 'telegram') {
+    await sendTelegramMessage({
+      chatId: chat.external_chat_id,
+      chatDbId: chat.id,
+      customerId: chat.customer_id,
+      text,
+      businessConnectionId: chat.business_connection_id,
+      traceId,
+      role: 'operator',
+    });
+  } else if (chat.source === 'vk') {
+    await sendVkMessage({
+      peerId: chat.external_chat_id,
+      chatDbId: chat.id,
+      customerId: chat.customer_id,
+      text,
+      traceId,
+      role: 'operator',
+    });
+  } else {
+    res.status(400).json({ ok: false, error: `Manual send is not supported for source ${chat.source}` });
     return;
   }
-  const traceId = createTraceId();
-  await sendTelegramMessage({
-    chatId: chat.external_chat_id,
-    chatDbId: chat.id,
-    customerId: chat.customer_id,
-    text,
-    businessConnectionId: chat.business_connection_id,
-    traceId,
-    role: 'operator',
-  });
   if (isPaymentTemplateReply([text]) && chat.customer_id) {
     const snapshot = normalizeOrderSnapshot(await db.getCustomerSnapshot(chat.customer_id));
     const paymentAmount = parsePaymentAmount(text);
     await db.upsertOrderDraft({
       customerId: chat.customer_id,
       chatId: chat.id,
-      source: 'telegram',
+      source: chat.source || 'telegram',
       traceId,
       totalAmount: paymentAmount,
       currency: 'RUB',
@@ -2136,7 +2290,7 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
     await syncActiveOrderDraft({
       customerId: chat.customer_id,
       chatDbId: chat.id,
-      source: 'telegram',
+      source: chat.source || 'telegram',
       facts: {
         ...snapshot,
         payment_amount: paymentAmount != null ? String(paymentAmount) : '',
@@ -2149,7 +2303,7 @@ app.post('/api/crm/chats/:chatId/send', crmHandler(async (req, res) => {
     refreshDialogDetection(chat.id, traceId).catch(() => {});
   }
   // CRM manual send also activates passive mode and clears escalation
-  const chatKey = String(chat.external_chat_id);
+  const chatKey = channelKey(chat.source, chat.external_chat_id);
   passiveChats.set(chatKey, { lastManagerAt: Date.now(), managerUserId: 'crm' });
   escalatedChats.delete(chatKey);
   logEvent('CRM_MANUAL_SEND', {
@@ -2168,7 +2322,7 @@ app.get('/api/crm/chats/:chatId/ai-status', crmHandler(async (req, res) => {
     res.status(404).json({ ok: false, error: 'Chat not found' });
     return;
   }
-  const status = getChatAiStatus(chat.external_chat_id);
+  const status = getChatAiStatus(chat.external_chat_id, chat.source);
   crmOk(res, status);
 }));
 
@@ -2178,7 +2332,7 @@ app.post('/api/crm/chats/:chatId/ai-pause', crmHandler(async (req, res) => {
     res.status(404).json({ ok: false, error: 'Chat not found' });
     return;
   }
-  const chatKey = String(chat.external_chat_id);
+  const chatKey = channelKey(chat.source, chat.external_chat_id);
   pausedChats.set(chatKey, { pausedAt: Date.now(), pausedBy: 'crm' });
   // Cancel pending AI
   const pending = aiProcessing.get(chatKey);
@@ -2187,7 +2341,7 @@ app.post('/api/crm/chats/:chatId/ai-pause', crmHandler(async (req, res) => {
   if (buf) { clearTimeout(buf.timer); debounceBuffers.delete(chatKey); }
   logEvent('AI_PAUSED_MANUAL', { chatId: chatKey, chatDbId: chat.id });
   emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'ai.paused' });
-  crmOk(res, getChatAiStatus(chat.external_chat_id));
+  crmOk(res, getChatAiStatus(chat.external_chat_id, chat.source));
 }));
 
 app.post('/api/crm/chats/:chatId/ai-resume', crmHandler(async (req, res) => {
@@ -2196,13 +2350,13 @@ app.post('/api/crm/chats/:chatId/ai-resume', crmHandler(async (req, res) => {
     res.status(404).json({ ok: false, error: 'Chat not found' });
     return;
   }
-  const chatKey = String(chat.external_chat_id);
+  const chatKey = channelKey(chat.source, chat.external_chat_id);
   pausedChats.delete(chatKey);
   passiveChats.delete(chatKey);
   escalatedChats.delete(chatKey);
   logEvent('AI_RESUMED_MANUAL', { chatId: chatKey, chatDbId: chat.id });
   emitLive('chat.updated', { chatId: chat.id, source: chat.source, reason: 'ai.resumed' });
-  crmOk(res, getChatAiStatus(chat.external_chat_id));
+  crmOk(res, getChatAiStatus(chat.external_chat_id, chat.source));
 }));
 
 app.post('/api/crm/chats/:chatId/reset-history', crmHandler(async (req, res) => {
@@ -2212,7 +2366,7 @@ app.post('/api/crm/chats/:chatId/reset-history', crmHandler(async (req, res) => 
     return;
   }
   // Cancel any pending AI processing for this chat
-  const chatKey = String(chat.external_chat_id);
+  const chatKey = channelKey(chat.source, chat.external_chat_id);
   const pending = aiProcessing.get(chatKey);
   if (pending) pending.cancelled = true;
   const buf = debounceBuffers.get(chatKey);
@@ -2409,7 +2563,7 @@ app.post('/api/test-chat', async (req, res) => {
 });
 
 async function processBatchedMessages(bufferKey, buffer) {
-  const { texts, traceId, chatDbId, customerId, chatId, businessConnectionId, lastMessageId, mediaFileId } = buffer;
+  const { texts, traceId, chatDbId, customerId, chatId, businessConnectionId, lastMessageId, media = null, source = 'telegram' } = buffer;
   const combinedText = texts.join('\n');
   const processingState = { cancelled: false, traceId };
   aiProcessing.set(bufferKey, processingState);
@@ -2420,8 +2574,15 @@ async function processBatchedMessages(bufferKey, buffer) {
       return;
     }
 
-    logEvent('BATCH_PROCESS', { traceId, chatId, texts: texts.length, combinedText, hasMedia: Boolean(mediaFileId) });
-    const compiled = await compileAiRequest({ chatDbId, customerId, inputText: combinedText, traceId, mediaFileId });
+    logEvent('BATCH_PROCESS', { traceId, chatId, source, texts: texts.length, combinedText, hasMedia: Boolean(media?.fileId || media?.imageUrl) });
+    const compiled = await compileAiRequest({
+      chatDbId,
+      customerId,
+      inputText: combinedText,
+      traceId,
+      mediaFileId: media?.fileId || null,
+      mediaUrl: media?.imageUrl || null,
+    });
     logEvent('AI_COMPILED', { traceId, metadata: compiled.metadata });
 
     if (processingState.cancelled) {
@@ -2445,12 +2606,12 @@ async function processBatchedMessages(bufferKey, buffer) {
 
     if (structured.decision === 'skip') {
       logEvent('AI_DECISION_SKIP', { traceId, chatId });
-      emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'ai.skip' });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'ai.skip' });
       return;
     }
     if (structured.decision === 'wait') {
       logEvent('AI_DECISION_WAIT', { traceId, chatId });
-      emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'ai.wait' });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'ai.wait' });
       return;
     }
     if (structured.decision === 'escalate' || structured.needsHuman) {
@@ -2462,7 +2623,7 @@ async function processBatchedMessages(bufferKey, buffer) {
         chatDbId,
       });
       logEvent('AI_DECISION_ESCALATE', { traceId, chatId, reason: structured.needsHumanReason });
-      emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'ai.escalate' });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'ai.escalate' });
       return;
     }
 
@@ -2489,7 +2650,7 @@ async function processBatchedMessages(bufferKey, buffer) {
     await syncActiveOrderDraft({
       customerId,
       chatDbId,
-      source: 'telegram',
+      source,
       facts: mergedFacts,
       currentStage: structured.stage || mergedFacts.funnel_stage || '',
       inputText: combinedText,
@@ -2522,7 +2683,7 @@ async function processBatchedMessages(bufferKey, buffer) {
         await db.upsertOrderDraft({
           customerId,
           chatId: chatDbId,
-          source: 'telegram',
+          source,
           traceId,
           totalAmount: paymentAmount,
           currency: 'RUB',
@@ -2533,7 +2694,7 @@ async function processBatchedMessages(bufferKey, buffer) {
         await syncActiveOrderDraft({
           customerId,
           chatDbId,
-          source: 'telegram',
+          source,
           facts: {
             ...snapshot,
             payment_amount: paymentAmount != null ? String(paymentAmount) : '',
@@ -2544,27 +2705,39 @@ async function processBatchedMessages(bufferKey, buffer) {
           paymentAmount,
         });
       }
-      const reactionEmoji = getReactionMode() === 'smart'
+          const reactionEmoji = getReactionMode() === 'smart'
         ? pickSmartReaction({
             chatId,
+            source,
             texts,
-            mediaFileId,
+            mediaFileId: media?.fileId || media?.imageUrl || null,
             stage: structured.stage || '',
             lastClientText: combinedText,
           })
         : null;
-      await sendHumanizedReply({
-        chatId,
-        chatDbId,
-        customerId,
-        replyMessages: normalizedReply,
-        businessConnectionId,
-        traceId,
-        lastMessageId,
-        sendPhotoId: structured.sendPhoto || null,
-        reactionEmoji,
-        processingState,
-      });
+      if (source === 'telegram') {
+        await sendHumanizedReply({
+          chatId,
+          chatDbId,
+          customerId,
+          replyMessages: normalizedReply,
+          businessConnectionId,
+          traceId,
+          lastMessageId,
+          sendPhotoId: structured.sendPhoto || null,
+          reactionEmoji,
+          processingState,
+        });
+      } else if (source === 'vk') {
+        await sendVkReply({
+          peerId: chatId,
+          chatDbId,
+          customerId,
+          replyMessages: normalizedReply,
+          traceId,
+          processingState,
+        });
+      }
     }
   } catch (error) {
     if (processingState.cancelled) return;
@@ -2583,6 +2756,7 @@ app.post('/api/telegram/webhook', (req, res) => {
   res.sendStatus(200);
   setImmediate(async () => {
     try {
+      const source = 'telegram';
       if (!message?.chat?.id) {
         logEvent('IN_IGNORED', { traceId, updateType, reason: 'no_message' });
         return;
@@ -2656,9 +2830,9 @@ app.post('/api/telegram/webhook', (req, res) => {
         customerId,
         direction: messageDirection,
         role: messageRole,
-        source: 'telegram',
+        source,
       });
-      emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'telegram.in' });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'telegram.in' });
       logEvent('IN', {
         traceId,
         updateType,
@@ -2673,46 +2847,46 @@ app.post('/api/telegram/webhook', (req, res) => {
 
       if (isManager) {
         // Manager sent a message — activate passive mode
-        passiveChats.set(String(chatId), { lastManagerAt: Date.now(), managerUserId: message.from.id });
+        passiveChats.set(channelKey(source, chatId), { lastManagerAt: Date.now(), managerUserId: message.from.id });
         logEvent('MANAGER_TAKEOVER', { traceId, chatId, managerUserId: message.from.id, text });
         emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'manager.takeover' });
 
         // Cancel any pending AI for this chat
-        const pendingAi = aiProcessing.get(String(chatId));
+        const pendingAi = aiProcessing.get(channelKey(source, chatId));
         if (pendingAi) {
           pendingAi.cancelled = true;
           logEvent('AI_CANCEL_REQUESTED', { traceId, chatId, reason: 'manager_takeover', cancelledTrace: pendingAi.traceId });
         }
-        const pendingBuffer = debounceBuffers.get(String(chatId));
+        const pendingBuffer = debounceBuffers.get(channelKey(source, chatId));
         if (pendingBuffer) {
           clearTimeout(pendingBuffer.timer);
-          debounceBuffers.delete(String(chatId));
+          debounceBuffers.delete(channelKey(source, chatId));
           logEvent('BATCH_CANCELLED', { traceId, chatId, reason: 'manager_takeover' });
         }
         return;
       }
 
       // Client message — check if chat is in passive mode
-      const passive = passiveChats.get(String(chatId));
+      const passive = passiveChats.get(channelKey(source, chatId));
       const passiveSec = Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
       if (passive && (Date.now() - passive.lastManagerAt) < passiveSec * 1000) {
         const minutesAgo = Math.round((Date.now() - passive.lastManagerAt) / 60000);
         logEvent('PASSIVE_MODE', { traceId, chatId, minutesAgo, expiresInMinutes: 30 - minutesAgo });
-        emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'passive_mode' });
+        emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'passive_mode' });
         return;
       }
       if (passive) {
-        passiveChats.delete(String(chatId));
+        passiveChats.delete(channelKey(source, chatId));
         logEvent('PASSIVE_EXPIRED', { traceId, chatId });
       }
 
       if (!runtimeConfig.auto_reply_enabled) {
         logEvent('AUTO_REPLY_DISABLED', { traceId, chatId });
-        emitLive('chat.updated', { traceId, chatId: chatDbId, source: 'telegram', reason: 'auto_reply_disabled' });
+        emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'auto_reply_disabled' });
         return;
       }
 
-      const bufferKey = String(chatId);
+      const bufferKey = channelKey(source, chatId);
 
       // Cancel any pending AI processing for this chat
       const pending = aiProcessing.get(bufferKey);
@@ -2736,16 +2910,17 @@ app.post('/api/telegram/webhook', (req, res) => {
           chatDbId,
           customerId,
           chatId,
+          source,
           businessConnectionId,
           lastMessageId: message.message_id || null,
-          mediaFileId: media?.fileId || null,
+          media: media || null,
           timer: null,
         });
       }
       // Always update media if present (latest message wins)
-      if (media?.fileId) {
+      if (media) {
         const buf = debounceBuffers.get(bufferKey);
-        if (buf) buf.mediaFileId = media.fileId;
+        if (buf) buf.media = media;
       }
 
       const buf = debounceBuffers.get(bufferKey);
@@ -2768,6 +2943,167 @@ app.post('/api/telegram/webhook', (req, res) => {
         scope: 'webhook',
         error: error.message,
       });
+    }
+  });
+});
+
+app.post('/api/vk/webhook', (req, res) => {
+  const traceId = createTraceId();
+  const body = req.body || {};
+  const type = String(body.type || '').trim();
+  const source = 'vk';
+
+  if (type === 'confirmation') {
+    res.type('text/plain').send(String(runtimeConfig.vk_confirmation_token || ''));
+    return;
+  }
+
+  if (runtimeConfig.vk_callback_secret && String(body.secret || '') !== String(runtimeConfig.vk_callback_secret)) {
+    logEvent('VK_IGNORED', { traceId, type, reason: 'bad_secret' });
+    res.sendStatus(403);
+    return;
+  }
+
+  res.type('text/plain').send('ok');
+
+  setImmediate(async () => {
+    try {
+      if (type !== 'message_new') {
+        logEvent('VK_IGNORED', { traceId, type, reason: 'unsupported_type' });
+        return;
+      }
+
+      const message = body.object?.message || body.object || {};
+      if (!message?.peer_id || !message?.from_id || Number(message.from_id) <= 0) {
+        logEvent('VK_IGNORED', { traceId, type, reason: 'no_message' });
+        return;
+      }
+
+      const peerId = String(message.peer_id);
+      const text = normalizeVkText(message);
+      const media = extractVkMedia(message);
+      const profile = await fetchVkUserProfile(message.from_id);
+      const customerId = await db.upsertExternalCustomer({
+        source,
+        externalUserId: String(message.from_id),
+        username: String(profile?.screen_name || ''),
+        firstName: String(profile?.first_name || ''),
+        lastName: String(profile?.last_name || ''),
+        displayName: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || String(profile?.screen_name || message.from_id),
+        raw: { profile, message },
+      });
+      const chatDbId = await db.upsertExternalChat({
+        source,
+        externalChatId: peerId,
+        customerId,
+        title: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || String(profile?.screen_name || message.from_id),
+      });
+
+      if (customerId && profile?.photo_100) {
+        await db.setCustomerAvatar(customerId, String(profile.photo_100));
+      }
+      if (customerId && text) {
+        const phoneFromText = extractPhoneFromText(text);
+        if (phoneFromText) {
+          await db.updateCrmCustomer(customerId, { phone: phoneFromText });
+          await db.upsertCustomerFact(customerId, 'phone', phoneFromText, 'vk_text');
+        }
+      }
+
+      await db.recordMessage({
+        chatId: chatDbId,
+        customerId,
+        direction: 'in',
+        role: 'customer',
+        text,
+        telegramMessageId: message.id ? String(message.id) : (message.conversation_message_id ? String(message.conversation_message_id) : null),
+        traceId,
+        raw: message,
+      });
+
+      if (isReceiptLikeMessage({}, text)) {
+        await syncPaidCustomerState({
+          customerId,
+          chatId: chatDbId,
+          traceId,
+          receiptMessageId: message.id ? String(message.id) : null,
+          snapshotPatch: {
+            paid_confirmation_text: text,
+          },
+        });
+      }
+
+      refreshDialogDetection(chatDbId, traceId).catch(() => {});
+      emitLive('message.created', {
+        traceId,
+        chatId: chatDbId,
+        customerId,
+        direction: 'in',
+        role: 'customer',
+        source,
+      });
+      emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'vk.in' });
+      logEvent('VK_IN', {
+        traceId,
+        peerId,
+        fromId: String(message.from_id),
+        text,
+      });
+      if (!text) return;
+
+      const key = channelKey(source, peerId);
+      const passive = passiveChats.get(key);
+      const passiveSec = Math.max(10, Math.min(600, Number(runtimeConfig.manager_passive_seconds || 120)));
+      if (passive && (Date.now() - passive.lastManagerAt) < passiveSec * 1000) {
+        emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'passive_mode' });
+        return;
+      }
+      if (passive) passiveChats.delete(key);
+
+      if (!runtimeConfig.auto_reply_enabled) {
+        emitLive('chat.updated', { traceId, chatId: chatDbId, source, reason: 'auto_reply_disabled' });
+        return;
+      }
+
+      const pending = aiProcessing.get(key);
+      if (pending) pending.cancelled = true;
+
+      const existing = debounceBuffers.get(key);
+      if (existing) {
+        clearTimeout(existing.timer);
+        existing.texts.push(text);
+        existing.traceId = traceId;
+        if (media) existing.media = media;
+      } else {
+        debounceBuffers.set(key, {
+          texts: [text],
+          traceId,
+          chatDbId,
+          customerId,
+          chatId: peerId,
+          source,
+          businessConnectionId: '',
+          lastMessageId: message.id ? String(message.id) : null,
+          media: media || null,
+          timer: null,
+        });
+      }
+
+      const buf = debounceBuffers.get(key);
+      buf.timer = setTimeout(() => {
+        debounceBuffers.delete(key);
+        processBatchedMessages(key, buf).catch((err) => {
+          logEvent('ERROR', { traceId: buf.traceId, scope: 'vk_debounce_trigger', error: err.message });
+        });
+      }, getDebounceMs());
+    } catch (error) {
+      logEvent('ERROR', {
+        traceId,
+        scope: 'vk.webhook',
+        error: error.message,
+        providerError: error.vk || error.response?.data || null,
+      });
+      emitLive('error', { traceId, scope: 'vk.webhook', error: error.message });
     }
   });
 });
