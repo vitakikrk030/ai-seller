@@ -145,9 +145,10 @@
       height: 100%;
       display: grid;
       grid-template-columns: minmax(340px, 460px) minmax(460px, 1fr);
-      grid-template-rows: auto auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
       grid-template-areas:
         "telegram test"
+        "vk test"
         "ai test"
         "database test"
         "logs test";
@@ -172,6 +173,7 @@
     .panel.wide { grid-column: 1 / -1; }
 
     #telegram { grid-area: telegram; }
+    #vk { grid-area: vk; }
     #ai { grid-area: ai; }
     #database { grid-area: database; }
     #logs {
@@ -2885,6 +2887,7 @@
         grid-template-rows: auto;
         grid-template-areas:
           "telegram"
+          "vk"
           "ai"
           "database"
           "logs"
